@@ -11,11 +11,13 @@ import {
   FlatList,
   Pressable,
   Animated,
+  ActivityIndicator,
 } from 'react-native';
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
+import { supabase } from '../lib/supabase';
 
 // ─── Countries ────────────────────────────────────────────────────────────────
 const COUNTRIES = [
@@ -207,13 +209,18 @@ function SocialField({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user } = useAuth();
+  // useAuth context is populated by onAuthStateChange — does NOT depend on storage
+  const { user, session, loading: authLoading } = useAuth();
   const { show: showToast, message: toastMsg, opacity: toastOpacity } = useToast();
 
-  const email = user?.email ?? 'user@example.com';
-  const initials = (user?.user_metadata?.full_name ?? email)[0].toUpperCase();
+  console.log("PROFILE RENDER - user:", user?.email, "session:", !!session);
 
-  const [fullName,  setFullName]  = useState<string>(user?.user_metadata?.full_name ?? '');
+  const [email,        setEmail]        = useState('');
+  const [fetchLoading, setFetchLoading] = useState(true);
+  const [saveLoading,  setSaveLoading]  = useState(false);
+  const [saveError,    setSaveError]    = useState('');
+
+  const [fullName,  setFullName]  = useState('');
   const [phone,     setPhone]     = useState('');
   const [country,   setCountry]   = useState('');
   const [instagram, setInstagram] = useState('');
@@ -223,11 +230,87 @@ export default function ProfileScreen() {
   const [youtube,   setYoutube]   = useState('');
   const [linkedin,  setLinkedin]  = useState('');
 
-  function handleSave() {
-    const data = { fullName, email, phone, country, instagram, twitter, facebook, tiktok, youtube, linkedin };
-    console.log('Save Profile:', data);
-    showToast('Profile saved');
-    // TODO: save to Supabase — supabase.from('profiles').upsert(data)
+  // Derived after fullName / email state are populated
+  const initials = (fullName || email)[0]?.toUpperCase() ?? '?';
+
+  // ── Fetch profile — depends on context user, re-runs when user becomes available ──
+  const fetchProfile = useCallback(async () => {
+    // Auth context still loading — wait for onAuthStateChange to fire
+    if (authLoading) return;
+
+    console.log('fetchProfile — user from context:', user?.id ?? 'null');
+    console.log('fetchProfile — session from context:', session?.access_token ? 'present' : 'null');
+
+    if (!user) { setFetchLoading(false); return; }
+
+    if (user.email) setEmail(user.email);
+    setFetchLoading(true);
+
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      console.log('fetchProfile — profile row:', JSON.stringify(data), '| error:', error?.message ?? 'none');
+
+      if (!error && data) {
+        setFullName(data.full_name ?? '');
+        setPhone(data.phone ?? '');
+        setCountry(data.country ?? '');
+        setInstagram(data.social_instagram ?? '');
+        setTwitter(data.social_twitter ?? '');
+        setFacebook(data.social_facebook ?? '');
+        setTiktok(data.social_tiktok ?? '');
+        setYoutube(data.social_youtube ?? '');
+        setLinkedin(data.social_linkedin ?? '');
+        if (data.email) setEmail(data.email);
+      }
+    } finally {
+      setFetchLoading(false);
+    }
+  }, [user, session, authLoading]);
+
+  useEffect(() => { fetchProfile(); }, [fetchProfile]);
+
+  // ── Save profile — reads user/session from context, NOT from storage ──
+  async function handleSave() {
+    console.log("SAVE PRESSED - user:", user?.email, "session:", !!session);
+    console.log('handleSave — user from context:', user?.id ?? 'null');
+    console.log('handleSave — session from context:', session?.access_token ? 'present' : 'null');
+
+    if (!user || !session) {
+      setSaveError('Session not found. Please sign out and sign in again.');
+      return;
+    }
+
+    setSaveLoading(true);
+    setSaveError('');
+
+    const userEmail = user.email ?? email;
+
+    const { error } = await supabase.from('profiles').upsert({
+      id:               user.id,
+      email:            userEmail,
+      full_name:        fullName,
+      phone:            phone || null,
+      country:          country || null,
+      social_instagram: instagram || null,
+      social_twitter:   twitter   || null,
+      social_facebook:  facebook  || null,
+      social_tiktok:    tiktok    || null,
+      social_youtube:   youtube   || null,
+      social_linkedin:  linkedin  || null,
+    });
+    setSaveLoading(false);
+    if (error) {
+      console.log('handleSave — upsert error:', error.message, error.code);
+      setSaveError(error.message);
+    } else {
+      if (userEmail && !email) setEmail(userEmail);
+      showToast('Profile saved');
+    }
   }
 
   return (
@@ -243,6 +326,12 @@ export default function ProfileScreen() {
         <Text style={styles.headerTitle}>My Profile</Text>
         <View style={styles.backBtn} />
       </View>
+
+      {(authLoading || fetchLoading) ? (
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color="#0EA5E9" />
+        </View>
+      ) : null}
 
       <ScrollView
         contentContainerStyle={styles.scroll}
@@ -261,89 +350,105 @@ export default function ProfileScreen() {
         </View>
 
         {/* ── Required Fields ── */}
-        <Text style={styles.sectionLabel}>Account Info</Text>
+        <View
+          pointerEvents={(authLoading || fetchLoading) ? 'none' : 'auto'}
+          style={{ opacity: (authLoading || fetchLoading) ? 0.3 : 1 }}
+        >
+          <Text style={styles.sectionLabel}>Account Info</Text>
 
-        <Field label="Full Name">
-          <TextInput
-            style={[styles.input, styles.inputText]}
-            placeholder="Your full name"
-            placeholderTextColor="#6B7280"
-            value={fullName}
-            onChangeText={setFullName}
-            autoCapitalize="words"
-          />
-        </Field>
-
-        <Field label="Email">
-          <View style={[styles.inputRow, styles.inputLocked]}>
+          <Field label="Full Name">
             <TextInput
-              style={[styles.inputWithIcon, { color: '#6B7280' }]}
-              value={email}
-              editable={false}
-              selectTextOnFocus={false}
+              style={[styles.input, styles.inputText]}
+              placeholder="Your full name"
+              placeholderTextColor="#6B7280"
+              value={fullName}
+              onChangeText={setFullName}
+              autoCapitalize="words"
             />
-            <Feather name="lock" size={15} color="#4B5563" style={styles.lockIcon} />
-          </View>
-        </Field>
+          </Field>
 
-        <Field label="Phone">
-          <TextInput
-            style={[styles.input, styles.inputText]}
-            placeholder="+1 (555) 000-0000"
-            placeholderTextColor="#6B7280"
-            value={phone}
-            onChangeText={setPhone}
-            keyboardType="phone-pad"
+          <Field label="Email">
+            <View style={[styles.inputRow, styles.inputLocked]}>
+              <TextInput
+                style={[styles.inputWithIcon, { color: '#6B7280' }]}
+                value={email}
+                editable={false}
+                selectTextOnFocus={false}
+              />
+              <Feather name="lock" size={15} color="#4B5563" style={styles.lockIcon} />
+            </View>
+          </Field>
+
+          <Field label="Phone">
+            <TextInput
+              style={[styles.input, styles.inputText]}
+              placeholder="+1 (555) 000-0000"
+              placeholderTextColor="#6B7280"
+              value={phone}
+              onChangeText={setPhone}
+              keyboardType="phone-pad"
+            />
+          </Field>
+
+          <Field label="Country">
+            <CountryPicker value={country} onChange={setCountry} />
+          </Field>
+
+          {/* ── Social Media ── */}
+          <Text style={[styles.sectionLabel, { marginTop: 28 }]}>Social Media <Text style={styles.optional}>(Optional)</Text></Text>
+
+          <SocialField
+            icon={<Ionicons name="logo-instagram" size={18} color="#E1306C" />}
+            placeholder="@username"
+            value={instagram}
+            onChange={setInstagram}
           />
-        </Field>
+          <SocialField
+            icon={<MaterialCommunityIcons name="twitter" size={18} color="#1DA1F2" />}
+            placeholder="@username"
+            value={twitter}
+            onChange={setTwitter}
+          />
+          <SocialField
+            icon={<Ionicons name="logo-facebook" size={18} color="#1877F2" />}
+            placeholder="Profile URL or name"
+            value={facebook}
+            onChange={setFacebook}
+          />
+          <SocialField
+            icon={<MaterialCommunityIcons name="music-note" size={18} color="#FFFFFF" />}
+            placeholder="@username"
+            value={tiktok}
+            onChange={setTiktok}
+          />
+          <SocialField
+            icon={<Ionicons name="logo-youtube" size={18} color="#FF0000" />}
+            placeholder="Channel name or URL"
+            value={youtube}
+            onChange={setYoutube}
+          />
+          <SocialField
+            icon={<Ionicons name="logo-linkedin" size={18} color="#0A66C2" />}
+            placeholder="Profile URL or name"
+            value={linkedin}
+            onChange={setLinkedin}
+          />
+        </View>
 
-        <Field label="Country">
-          <CountryPicker value={country} onChange={setCountry} />
-        </Field>
-
-        {/* ── Social Media ── */}
-        <Text style={[styles.sectionLabel, { marginTop: 28 }]}>Social Media <Text style={styles.optional}>(Optional)</Text></Text>
-
-        <SocialField
-          icon={<Ionicons name="logo-instagram" size={18} color="#E1306C" />}
-          placeholder="@username"
-          value={instagram}
-          onChange={setInstagram}
-        />
-        <SocialField
-          icon={<MaterialCommunityIcons name="twitter" size={18} color="#1DA1F2" />}
-          placeholder="@username"
-          value={twitter}
-          onChange={setTwitter}
-        />
-        <SocialField
-          icon={<Ionicons name="logo-facebook" size={18} color="#1877F2" />}
-          placeholder="Profile URL or name"
-          value={facebook}
-          onChange={setFacebook}
-        />
-        <SocialField
-          icon={<MaterialCommunityIcons name="music-note" size={18} color="#FFFFFF" />}
-          placeholder="@username"
-          value={tiktok}
-          onChange={setTiktok}
-        />
-        <SocialField
-          icon={<Ionicons name="logo-youtube" size={18} color="#FF0000" />}
-          placeholder="Channel name or URL"
-          value={youtube}
-          onChange={setYoutube}
-        />
-        <SocialField
-          icon={<Ionicons name="logo-linkedin" size={18} color="#0A66C2" />}
-          placeholder="Profile URL or name"
-          value={linkedin}
-          onChange={setLinkedin}
-        />
+        {/* ── Save error ── */}
+        {saveError ? <Text style={styles.saveError}>{saveError}</Text> : null}
 
         {/* ── Save Button ── */}
-        <TouchableOpacity style={styles.saveBtn} onPress={handleSave} activeOpacity={0.85}>
-          <Text style={styles.saveBtnText}>Save Profile</Text>
+        <TouchableOpacity
+          style={[styles.saveBtn, saveLoading && { opacity: 0.7 }]}
+          onPress={handleSave}
+          disabled={saveLoading}
+          activeOpacity={0.85}
+        >
+          {saveLoading
+            ? <ActivityIndicator size="small" color="#FFFFFF" />
+            : <Text style={styles.saveBtnText}>Save Profile</Text>
+          }
         </TouchableOpacity>
 
         {/* ── Delete Account ── */}
@@ -431,10 +536,22 @@ const styles = StyleSheet.create({
   inputIconWrap: { width: 28, alignItems: 'center', marginRight: 8 },
   lockIcon: { marginLeft: 4 },
 
+  // Loading overlay
+  loadingWrap: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: 'center', justifyContent: 'center', zIndex: 10,
+  },
+
+  // Save error
+  saveError: {
+    color: '#EF4444', fontSize: 13, textAlign: 'center',
+    marginTop: 12, marginBottom: 4,
+  },
+
   // Save
   saveBtn: {
     backgroundColor: '#0EA5E9', borderRadius: 14,
-    paddingVertical: 15, alignItems: 'center', marginTop: 28,
+    paddingVertical: 15, alignItems: 'center', marginTop: 16,
   },
   saveBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
 

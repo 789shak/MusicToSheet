@@ -2,6 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## IMPORTANT: Active Project
+
+**Always work in `C:\Users\altafhussain\Desktop\MusicToSheet`.**
+Never edit files in `C:\Users\altafhussain\SheetMusicApp` — that is an old, abandoned project.
+
 ## App Overview
 
 **Music-To-Sheet** — converts audio/music recordings into sheet music. Domain: musictosheet.com.

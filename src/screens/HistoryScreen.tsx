@@ -8,11 +8,13 @@ import {
   RefreshControl,
   Animated,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { BottomTabBar } from '../components/BottomTabBar';
+import { supabase } from '../lib/supabase';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type HistoryItem = {
@@ -27,16 +29,39 @@ type HistoryItem = {
   saved: boolean;
 };
 
-// ─── Dummy data ───────────────────────────────────────────────────────────────
-const INITIAL_ITEMS: HistoryItem[] = [
-  { id: '1', trackName: 'Bohemian Rhapsody', instrument: 'Piano',  instrumentIcon: 'piano',         format: 'Score',      date: 'Mar 30', duration: '0:30', favorited: false, saved: false },
-  { id: '2', trackName: 'Hotel California',  instrument: 'Guitar', instrumentIcon: 'musical-note',  format: 'Tabs',       date: 'Mar 29', duration: '0:30', favorited: false, saved: false },
-  { id: '3', trackName: 'Clair de Lune',     instrument: 'Piano',  instrumentIcon: 'piano',         format: 'Staff',      date: 'Mar 28', duration: '0:30', favorited: true,  saved: true  },
-  { id: '4', trackName: 'Stairway to Heaven',instrument: 'Guitar', instrumentIcon: 'musical-note',  format: 'Lead Sheet', date: 'Mar 27', duration: '0:30', favorited: false, saved: false },
-  { id: '5', trackName: 'Für Elise',         instrument: 'Piano',  instrumentIcon: 'piano',         format: 'Score',      date: 'Mar 26', duration: '0:30', favorited: true,  saved: true  },
-];
-
 type ActiveTab = 'history' | 'saved' | 'favorites';
+
+// Maps instrument name → Ionicons icon name
+function iconForInstrument(instrument: string | null): keyof typeof Ionicons.glyphMap {
+  switch (instrument?.toLowerCase()) {
+    case 'piano':   return 'piano-outline' in Ionicons.glyphMap ? 'piano-outline' as any : 'musical-note';
+    case 'guitar':  return 'musical-note';
+    case 'violin':
+    case 'viola':
+    case 'cello':   return 'musical-notes';
+    case 'drums':   return 'musical-notes';
+    default:        return 'musical-note';
+  }
+}
+
+// Converts a raw conversion_history row + favorited ids set → HistoryItem
+function rowToItem(row: any, favIds: Set<string>): HistoryItem {
+  const secs = row.duration_seconds ?? 0;
+  const m = Math.floor(secs / 60);
+  const s = String(secs % 60).padStart(2, '0');
+  const date = new Date(row.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return {
+    id: row.id,
+    trackName: row.track_name ?? 'Untitled',
+    instrument: row.instrument ?? '',
+    instrumentIcon: iconForInstrument(row.instrument),
+    format: row.output_format ?? '',
+    date,
+    duration: `${m}:${s}`,
+    favorited: favIds.has(row.id),
+    saved: false,
+  };
+}
 
 // ─── Empty State ──────────────────────────────────────────────────────────────
 function EmptyState({ tab }: { tab: ActiveTab }) {
@@ -169,31 +194,94 @@ const card = StyleSheet.create({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function HistoryScreen() {
   const router = useRouter();
-  const [items, setItems] = useState<HistoryItem[]>(INITIAL_ITEMS);
+  const [items, setItems] = useState<HistoryItem[]>([]);
   const [activeTab, setActiveTab] = useState<ActiveTab>('history');
   const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const userIdRef = useRef<string | null>(null);
 
-  function onRefresh() {
+  const fetchItems = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const uid = session?.user?.id ?? null;
+    userIdRef.current = uid;
+
+    if (!uid) {
+      console.log('HistoryScreen: no session');
+      setItems([]);
+      return;
+    }
+
+    const [histRes, favRes] = await Promise.all([
+      supabase
+        .from('conversion_history')
+        .select('*')
+        .eq('user_id', uid)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('favorites')
+        .select('history_id')
+        .eq('user_id', uid),
+    ]);
+
+    if (histRes.error) console.log('conversion_history error:', histRes.error);
+    if (favRes.error) console.log('favorites error:', favRes.error);
+
+    const favIds = new Set<string>((favRes.data ?? []).map((f: any) => f.history_id));
+    setItems((histRes.data ?? []).map((row: any) => rowToItem(row, favIds)));
+  }, []);
+
+  useEffect(() => {
+    fetchItems().finally(() => setLoading(false));
+  }, [fetchItems]);
+
+  async function onRefresh() {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1200);
+    await fetchItems();
+    setRefreshing(false);
   }
 
-  function toggleFavorite(id: string) {
-    setItems((prev) =>
-      prev.map((it) => (it.id === id ? { ...it, favorited: !it.favorited } : it))
-    );
+  async function toggleFavorite(id: string) {
+    const uid = userIdRef.current;
+    if (!uid) return;
+    const item = items.find(it => it.id === id);
+    if (!item) return;
+
+    // Optimistic update
+    setItems(prev => prev.map(it => it.id === id ? { ...it, favorited: !it.favorited } : it));
+
+    if (item.favorited) {
+      const { error } = await supabase.from('favorites').delete().eq('user_id', uid).eq('history_id', id);
+      if (error) {
+        console.log('unfavorite error:', error);
+        setItems(prev => prev.map(it => it.id === id ? { ...it, favorited: true } : it));
+        Alert.alert('Error', error.message);
+      }
+    } else {
+      const { error } = await supabase.from('favorites').insert({ user_id: uid, history_id: id });
+      if (error) {
+        console.log('favorite error:', error);
+        setItems(prev => prev.map(it => it.id === id ? { ...it, favorited: false } : it));
+        Alert.alert('Error', error.message);
+      }
+    }
   }
 
-  function deleteItem(id: string) {
-    setItems((prev) => prev.filter((it) => it.id !== id));
+  async function deleteItem(id: string) {
+    const { error } = await supabase.from('conversion_history').delete().eq('id', id);
+    if (error) {
+      console.log('delete error:', error);
+      Alert.alert('Error', error.message);
+    } else {
+      setItems(prev => prev.filter(it => it.id !== id));
+    }
   }
 
   // Filter by tab
   const tabFiltered = items.filter((it) => {
     if (activeTab === 'saved')     return it.saved;
     if (activeTab === 'favorites') return it.favorited;
-    return true; // history = all
+    return true;
   });
 
   // Filter by search
@@ -211,6 +299,14 @@ export default function HistoryScreen() {
     { key: 'saved',     label: 'Saved' },
     { key: 'favorites', label: 'Favorites' },
   ];
+
+  if (loading) {
+    return (
+      <View style={[styles.root, { alignItems: 'center', justifyContent: 'center' }]}>
+        <ActivityIndicator color="#0EA5E9" size="large" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.root}>

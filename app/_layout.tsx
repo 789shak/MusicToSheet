@@ -35,17 +35,18 @@ function AuthGate() {
       return;
     }
 
-    // ── Case 2: Session expires / user logs out while inside the app ──────
-    // After initial routing is done, only act when session goes away.
-    if (!session) {
-      const onLoginScreen = segments.length === 0 || segments[0] === 'index';
-      if (!onLoginScreen) {
-        router.replace('/');
-      }
+    // ── Case 2: Session arrives (login) or disappears (logout) ───────────
+    // After initial routing is done, react to session changes.
+    const onLoginScreen = segments.length === 0 || segments[0] === 'index';
+    if (session && onLoginScreen) {
+      // onAuthStateChange fired and committed to context — safe to navigate now
+      router.replace('/subscription');
+    } else if (!session && !onLoginScreen) {
+      router.replace('/');
     }
 
-    // Note: post-login navigation (→ /subscription) is handled directly in
-    // LoginScreen's handlers, not here. This avoids a double-redirect race.
+    // Note: post-login navigation (→ /subscription) is now handled here via
+    // onAuthStateChange → context update → this effect, not in LoginScreen.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, loading]); // segments intentionally omitted — read as snapshot to prevent loop
 

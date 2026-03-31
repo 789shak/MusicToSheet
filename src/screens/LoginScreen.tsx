@@ -57,8 +57,9 @@ export default function LoginScreen() {
     setLoading(true);
     setError('');
     try {
-      await signUp(email, password);
-      router.replace('/subscription');
+      const data = await signUp(email, password);
+      console.log("SIGNUP SUCCESS - session:", data.session?.user?.email);
+      // Navigation handled by AuthGate in _layout.tsx once onAuthStateChange fires
     } catch (e: any) {
       setError(e.message ?? 'Sign up failed. Please try again.');
     } finally {
@@ -71,8 +72,9 @@ export default function LoginScreen() {
     setLoading(true);
     setError('');
     try {
-      await signIn(email, password);
-      router.replace('/subscription');
+      const data = await signIn(email, password);
+      console.log("LOGIN SUCCESS - session:", data.session?.user?.email);
+      // Navigation handled by AuthGate in _layout.tsx once onAuthStateChange fires
     } catch (e: any) {
       setError(e.message ?? 'Login failed. Please check your credentials.');
     } finally {
@@ -85,7 +87,7 @@ export default function LoginScreen() {
     setError('');
     try {
       await fn();
-      router.replace('/subscription');
+      // Navigation handled by AuthGate in _layout.tsx once onAuthStateChange fires
     } catch (e: any) {
       setError(e.message ?? `${label} sign-in failed. Please try again.`);
     } finally {

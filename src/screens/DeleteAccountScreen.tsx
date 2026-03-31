@@ -6,10 +6,13 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { Feather, Ionicons } from '@expo/vector-icons';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../hooks/useAuth';
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 const REASONS = [
@@ -92,8 +95,10 @@ const radio = StyleSheet.create({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function DeleteAccountScreen() {
   const router = useRouter();
+  const { user, signOut } = useAuth();
   const [selectedReason, setSelectedReason] = useState('');
   const [otherText, setOtherText] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const canProceed = selectedReason !== '' &&
     (selectedReason !== 'other' || otherText.trim().length > 0);
@@ -107,7 +112,21 @@ export default function DeleteAccountScreen() {
         {
           text: 'Deactivate',
           style: 'destructive',
-          onPress: () => console.log('Account deactivated', { reason: selectedReason, detail: otherText }),
+          onPress: async () => {
+            if (!user) return;
+            setLoading(true);
+            const { error } = await supabase
+              .from('profiles')
+              .update({ is_deactivated: true, deactivated_at: new Date().toISOString() })
+              .eq('id', user.id);
+            setLoading(false);
+            if (error) {
+              Alert.alert('Error', error.message);
+            } else {
+              await signOut();
+              router.replace('/');
+            }
+          },
         },
       ]
     );
@@ -122,7 +141,24 @@ export default function DeleteAccountScreen() {
         {
           text: 'Delete Forever',
           style: 'destructive',
-          onPress: () => console.log('Account permanently deleted', { reason: selectedReason, detail: otherText }),
+          onPress: async () => {
+            if (!user) return;
+            setLoading(true);
+            // Delete the profile row (cascades to related data via FK constraints)
+            const { error } = await supabase
+              .from('profiles')
+              .delete()
+              .eq('id', user.id);
+            setLoading(false);
+            if (error) {
+              Alert.alert('Error', error.message);
+              return;
+            }
+            // Sign out — full auth user deletion requires a server-side function
+            // (Supabase admin.deleteUser) which should be called via an Edge Function
+            await signOut();
+            router.replace('/');
+          },
         },
       ]
     );
@@ -180,32 +216,39 @@ export default function DeleteAccountScreen() {
 
         {/* ── Deactivate button ── */}
         <TouchableOpacity
-          style={[styles.btnDeactivate, !canProceed && styles.btnDisabled]}
+          style={[styles.btnDeactivate, (!canProceed || loading) && styles.btnDisabled]}
           onPress={handleDeactivate}
-          disabled={!canProceed}
+          disabled={!canProceed || loading}
           activeOpacity={0.85}
         >
-          <Text style={[styles.btnDeactivateText, !canProceed && styles.btnDisabledText]}>
-            Temporarily Deactivate
-          </Text>
+          {loading
+            ? <ActivityIndicator size="small" color="#F59E0B" />
+            : <Text style={[styles.btnDeactivateText, !canProceed && styles.btnDisabledText]}>Temporarily Deactivate</Text>
+          }
         </TouchableOpacity>
 
         {/* ── Delete button ── */}
         <TouchableOpacity
-          style={[styles.btnDelete, !canProceed && styles.btnDisabled]}
+          style={[styles.btnDelete, (!canProceed || loading) && styles.btnDisabled]}
           onPress={handleDelete}
-          disabled={!canProceed}
+          disabled={!canProceed || loading}
           activeOpacity={0.85}
         >
-          <Ionicons
-            name="trash-outline"
-            size={16}
-            color={canProceed ? '#FFFFFF' : '#4B5563'}
-            style={{ marginRight: 8 }}
-          />
-          <Text style={[styles.btnDeleteText, !canProceed && styles.btnDisabledText]}>
-            Permanently Delete
-          </Text>
+          {loading ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <>
+              <Ionicons
+                name="trash-outline"
+                size={16}
+                color={canProceed ? '#FFFFFF' : '#4B5563'}
+                style={{ marginRight: 8 }}
+              />
+              <Text style={[styles.btnDeleteText, !canProceed && styles.btnDisabledText]}>
+                Permanently Delete
+              </Text>
+            </>
+          )}
         </TouchableOpacity>
 
         {/* Hint */}
