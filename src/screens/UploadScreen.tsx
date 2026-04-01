@@ -8,15 +8,25 @@ import {
   Pressable,
   Modal,
   FlatList,
+  Alert,
 } from 'react-native';
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { BottomTabBar } from '../components/BottomTabBar';
+import { supabase } from '../lib/supabase';
+import { useSubscription } from '../hooks/useSubscription';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type PickedFile = { name: string; uri: string };
+type PickedFile = { name: string; uri: string; size: number | null; mimeType: string | null };
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function formatBytes(bytes: number | null): string {
+  if (!bytes) return '';
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 // ─── Dropdown ─────────────────────────────────────────────────────────────────
 function Dropdown({
@@ -125,14 +135,18 @@ const OUTPUT_FORMATS = [
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function UploadScreen() {
   const router = useRouter();
+  const { maxFileSizeMB } = useSubscription();
 
   const [file, setFile] = useState<PickedFile | null>(null);
   const [link, setLink] = useState('');
   const [instrument, setInstrument] = useState('');
   const [outputFormat, setOutputFormat] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState('');
 
   const hasInput = !!file || link.trim().length > 0;
-  const canConvert = hasInput && instrument.length > 0;
+  const canConvert = hasInput && instrument.length > 0 && !uploading;
 
   async function pickFile() {
     try {
@@ -142,16 +156,110 @@ export default function UploadScreen() {
       });
       if (!result.canceled && result.assets?.length > 0) {
         const asset = result.assets[0];
-        setFile({ name: asset.name, uri: asset.uri });
+        const fileSizeMB = (asset.size ?? 0) / (1024 * 1024);
+
+        if (asset.size && fileSizeMB > maxFileSizeMB) {
+          Alert.alert(
+            'File too large',
+            `Your plan allows up to ${maxFileSizeMB}MB. This file is ${fileSizeMB.toFixed(1)}MB.`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'View Plans', onPress: () => router.push('/subscription') },
+            ],
+          );
+          return;
+        }
+
+        setFile({
+          name: asset.name,
+          uri: asset.uri,
+          size: asset.size ?? null,
+          mimeType: asset.mimeType ?? null,
+        });
+        setUploadError('');
       }
     } catch (e) {
       console.log('File picker error:', e);
     }
   }
 
-  function handleConvert() {
+  async function handleConvert() {
     if (!canConvert) return;
-    router.push('/rights-declaration');
+    setUploadError('');
+
+    // Link path — no upload needed
+    if (!file && link.trim().length > 0) {
+      console.log('[UploadScreen] navigating to rights-declaration via link', { linkUrl: link.trim(), instrument, outputFormat });
+      router.push({
+        pathname: '/rights-declaration',
+        params: {
+          filePath: '',
+          fileName: '',
+          sourceType: 'link',
+          linkUrl: link.trim(),
+          instrument,
+          outputFormat,
+        },
+      });
+      return;
+    }
+
+    // File path — upload to Supabase Storage
+    if (!file) return;
+
+    try {
+      setUploading(true);
+      setUploadProgress(0);
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id;
+      if (!uid) throw new Error('Not signed in');
+
+      const ext = file.name.split('.').pop() ?? 'audio';
+      const storagePath = `${uid}/${Date.now()}_${file.name}`;
+
+      // Fetch the file as a blob from the local URI
+      setUploadProgress(10);
+      const response = await fetch(file.uri);
+      const blob = await response.blob();
+      setUploadProgress(30);
+
+      const { data, error } = await supabase.storage
+        .from('audio-uploads')
+        .upload(storagePath, blob, {
+          contentType: file.mimeType ?? `audio/${ext}`,
+          upsert: false,
+        });
+
+      setUploadProgress(100);
+
+      if (error) {
+        console.log('Storage upload error:', error);
+        setUploadError(error.message);
+        return;
+      }
+
+      console.log('[UploadScreen] uploaded successfully. Path:', data.path);
+      console.log('[UploadScreen] navigating to rights-declaration via upload', { filePath: data.path, fileName: file.name, instrument, outputFormat });
+
+      router.push({
+        pathname: '/rights-declaration',
+        params: {
+          filePath: data.path,
+          fileName: file.name,
+          sourceType: 'upload',
+          linkUrl: '',
+          instrument,
+          outputFormat,
+        },
+      });
+    } catch (e: any) {
+      console.log('Upload exception:', e);
+      setUploadError(e?.message ?? 'Upload failed. Please try again.');
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+    }
   }
 
   return (
@@ -196,8 +304,13 @@ export default function UploadScreen() {
           {file ? (
             <View style={styles.fileSelected}>
               <Ionicons name="musical-notes-outline" size={18} color="#0EA5E9" />
-              <Text style={styles.fileName} numberOfLines={1}>{file.name}</Text>
-              <TouchableOpacity onPress={() => setFile(null)} hitSlop={8}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.fileName} numberOfLines={1}>{file.name}</Text>
+                {file.size ? (
+                  <Text style={styles.fileSize}>{formatBytes(file.size)}</Text>
+                ) : null}
+              </View>
+              <TouchableOpacity onPress={() => { setFile(null); setUploadError(''); }} hitSlop={8}>
                 <Ionicons name="close-circle" size={20} color="#6B7280" />
               </TouchableOpacity>
             </View>
@@ -208,6 +321,7 @@ export default function UploadScreen() {
               <Text style={styles.uploadSubtext}>MP3, WAV, M4A, FLAC, AAC</Text>
             </TouchableOpacity>
           )}
+          <Text style={styles.fileSizeHint}>Max file size: {maxFileSizeMB}MB</Text>
 
           {/* Paste Link */}
           <Text style={[styles.sectionLabel, { marginTop: 16 }]}>Paste Link</Text>
@@ -261,22 +375,36 @@ export default function UploadScreen() {
           />
         </View>
 
-        {/* ── Section 6: Action Button ── */}
+        {/* Upload error */}
+        {uploadError ? (
+          <View style={styles.errorBox}>
+            <Ionicons name="alert-circle-outline" size={15} color="#EF4444" style={{ marginRight: 6 }} />
+            <Text style={styles.errorText}>{uploadError}</Text>
+          </View>
+        ) : null}
+
+        {/* Action Button */}
         <TouchableOpacity
           style={[styles.convertBtn, !canConvert && styles.convertBtnDisabled]}
           onPress={handleConvert}
           disabled={!canConvert}
           activeOpacity={0.85}
         >
-          <Ionicons
-            name="musical-notes"
-            size={18}
-            color={canConvert ? '#FFFFFF' : '#4B5563'}
-            style={{ marginRight: 8 }}
-          />
-          <Text style={[styles.convertBtnText, !canConvert && styles.convertBtnTextDisabled]}>
-            Convert to Sheet Music
-          </Text>
+          {uploading ? (
+            <Text style={styles.convertBtnText}>Uploading… {uploadProgress}%</Text>
+          ) : (
+            <>
+              <Ionicons
+                name="musical-notes"
+                size={18}
+                color={canConvert ? '#FFFFFF' : '#4B5563'}
+                style={{ marginRight: 8 }}
+              />
+              <Text style={[styles.convertBtnText, !canConvert && styles.convertBtnTextDisabled]}>
+                Convert to Sheet Music
+              </Text>
+            </>
+          )}
         </TouchableOpacity>
 
         <Text style={styles.legalText}>
@@ -369,7 +497,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
 
-  // Upload area — paddingVertical reduced from 36 → 27 (25% less)
+  // Upload area
   uploadArea: {
     borderWidth: 1.5,
     borderColor: '#2D2D3E',
@@ -389,6 +517,12 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     fontSize: 12,
   },
+  fileSizeHint: {
+    color: '#4B5563',
+    fontSize: 11,
+    marginTop: 6,
+    textAlign: 'center',
+  },
 
   // File selected
   fileSelected: {
@@ -403,9 +537,14 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   fileName: {
-    flex: 1,
     color: '#FFFFFF',
     fontSize: 14,
+    fontWeight: '500',
+  },
+  fileSize: {
+    color: '#6B7280',
+    fontSize: 11,
+    marginTop: 2,
   },
 
   // Link input
@@ -458,6 +597,24 @@ const styles = StyleSheet.create({
     color: '#F59E0B',
     fontSize: 12,
     fontWeight: '600',
+  },
+
+  // Error box
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1C0A0A',
+    borderWidth: 1,
+    borderColor: '#EF444440',
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 16,
+  },
+  errorText: {
+    flex: 1,
+    color: '#EF4444',
+    fontSize: 13,
+    lineHeight: 18,
   },
 
   // Convert button

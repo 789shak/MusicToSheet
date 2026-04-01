@@ -6,9 +6,10 @@ import {
   TouchableOpacity,
   Animated,
 } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { useState, useRef, useEffect } from 'react';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
+import { supabase } from '../lib/supabase';
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 const FORMATS = ['Score', 'Part', 'Lead Sheet', 'Tabs', 'Fake Book', 'Staff'];
@@ -64,11 +65,31 @@ const toast = StyleSheet.create({
 // ─── Main Screen ────────────────────────────────────────────────────────────
 export default function ResultsScreen() {
   const router = useRouter();
+  const { historyId } = useLocalSearchParams<{ historyId?: string }>();
   const { show: showToast, message: toastMessage, opacity: toastOpacity } = useToast();
 
   const [activeFormat, setActiveFormat] = useState('Score');
   const [favorited, setFavorited] = useState(false);
   const heartScale = useRef(new Animated.Value(1)).current;
+  const [trackRecord, setTrackRecord] = useState<any>(null);
+
+  useEffect(() => {
+    if (!historyId) return;
+    console.log('[ResultsScreen] fetching record for historyId:', historyId);
+    supabase
+      .from('conversion_history')
+      .select('*')
+      .eq('id', historyId)
+      .single()
+      .then(({ data, error }) => {
+        if (error) {
+          console.log('[ResultsScreen] fetch error:', error);
+        } else {
+          console.log('[ResultsScreen] fetched record:', data);
+          setTrackRecord(data);
+        }
+      });
+  }, [historyId]);
 
   function toggleFavorite() {
     const next = !favorited;
@@ -118,10 +139,10 @@ export default function ResultsScreen() {
         {/* ── Track Info Card ── */}
         <View style={styles.trackCard}>
           <View style={styles.trackLeft}>
-            <Ionicons name="piano" size={16} color="#0EA5E9" style={{ marginRight: 6 }} />
+            <Ionicons name="musical-note" size={16} color="#0EA5E9" style={{ marginRight: 6 }} />
             <View>
-              <Text style={styles.trackName}>Sample Track</Text>
-              <Text style={styles.trackMeta}>Piano · 0:30</Text>
+              <Text style={styles.trackName}>{trackRecord?.track_name ?? 'Sample Track'}</Text>
+              <Text style={styles.trackMeta}>{trackRecord?.instrument ?? 'Unknown'} · 0:30</Text>
             </View>
           </View>
           <View style={styles.formatBadge}>
@@ -130,33 +151,23 @@ export default function ResultsScreen() {
         </View>
 
         {/* ── Format Toggle Bar ── */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.formatBar}
-        >
+        <View style={styles.chipRow}>
           {FORMATS.map((f) => (
             <TouchableOpacity
               key={f}
-              style={[styles.formatPill, activeFormat === f && styles.formatPillActive]}
+              style={[styles.formatChip, activeFormat === f && styles.formatChipActive]}
               onPress={() => setActiveFormat(f)}
               activeOpacity={0.8}
             >
-              <Text style={[styles.formatPillText, activeFormat === f && styles.formatPillTextActive]}>
+              <Text style={[styles.formatChipText, activeFormat === f && styles.formatChipTextActive]}>
                 {f}
               </Text>
             </TouchableOpacity>
           ))}
-        </ScrollView>
+        </View>
 
         {/* ── Sheet Music Viewer ── */}
         <View style={styles.viewerContainer}>
-          {/* Accuracy badge */}
-          <View style={styles.accuracyBadge}>
-            <View style={styles.accuracyDot} />
-            <Text style={styles.accuracyText}>AI Confidence: 82%</Text>
-          </View>
-
           <ScrollView
             style={styles.viewerScroll}
             contentContainerStyle={styles.viewerContent}
@@ -319,25 +330,30 @@ const styles = StyleSheet.create({
   formatBadgeText: { color: '#0EA5E9', fontSize: 12, fontWeight: '600' },
 
   // Format bar
-  formatBar: {
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 8,
+    paddingVertical: 8,
+    gap: 6,
   },
-  formatPill: {
+  formatChip: {
+    height: 28,
     borderWidth: 1,
     borderColor: '#2D2D3E',
     borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
     backgroundColor: '#1C1C27',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  formatPillActive: {
+  formatChipActive: {
     backgroundColor: '#0EA5E9',
     borderColor: '#0EA5E9',
   },
-  formatPillText: { color: '#6B7280', fontSize: 13, fontWeight: '500' },
-  formatPillTextActive: { color: '#FFFFFF', fontWeight: '700' },
+  formatChipText: { color: '#6B7280', fontSize: 10, fontWeight: '500' },
+  formatChipTextActive: { color: '#FFFFFF', fontWeight: '700' },
 
   // Viewer
   viewerContainer: {
@@ -350,28 +366,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2D2D3E',
   },
-  accuracyBadge: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    zIndex: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: '#0D1F0D',
-    borderWidth: 1,
-    borderColor: '#22C55E40',
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  accuracyDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: '#22C55E',
-  },
-  accuracyText: { color: '#22C55E', fontSize: 11, fontWeight: '600' },
   viewerScroll: { flex: 1 },
   viewerContent: { flexGrow: 1 },
   sheetPlaceholder: {

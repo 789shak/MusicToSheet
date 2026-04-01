@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { useState } from 'react';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons, Feather } from '@expo/vector-icons';
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
@@ -141,6 +141,15 @@ const cb = StyleSheet.create({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function RightsDeclarationScreen() {
   const router = useRouter();
+  const { filePath, fileName, sourceType, linkUrl, instrument, outputFormat } = useLocalSearchParams<{
+    filePath?: string;
+    fileName?: string;
+    sourceType?: string;
+    linkUrl?: string;
+    instrument?: string;
+    outputFormat?: string;
+  }>();
+
   const [selectedRight, setSelectedRight] = useState<string>('');
   const [accepted, setAccepted] = useState(false);
 
@@ -148,12 +157,17 @@ export default function RightsDeclarationScreen() {
 
   function handleProceed() {
     if (!canProceed) return;
-    // Pass rights data as params — will be saved to DB with the conversion record
+    console.log('[RightsDeclaration] proceeding to processing', { filePath, fileName, sourceType, linkUrl, instrument, outputFormat, rightsDeclaration: selectedRight });
     router.push({
       pathname: '/processing',
       params: {
-        rightsOption: selectedRight,
-        rightsAccepted: 'true',
+        filePath: filePath ?? '',
+        fileName: fileName ?? '',
+        sourceType: sourceType ?? '',
+        linkUrl: linkUrl ?? '',
+        instrument: instrument ?? '',
+        outputFormat: outputFormat ?? '',
+        rightsDeclaration: selectedRight,
       },
     });
   }

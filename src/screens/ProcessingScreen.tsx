@@ -6,8 +6,9 @@ import {
   Animated,
 } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { supabase } from '../lib/supabase';
 
 // ─── Stage config ─────────────────────────────────────────────────────────────
 const STAGES = [
@@ -131,6 +132,19 @@ const row = StyleSheet.create({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ProcessingScreen() {
   const router = useRouter();
+  const { filePath, fileName, sourceType, linkUrl, instrument, outputFormat, rightsDeclaration } =
+    useLocalSearchParams<{
+      filePath?: string;
+      fileName?: string;
+      sourceType?: string;
+      linkUrl?: string;
+      instrument?: string;
+      outputFormat?: string;
+      rightsDeclaration?: string;
+    }>();
+
+  console.log('[ProcessingScreen] received params', { filePath, fileName, sourceType, linkUrl, instrument, outputFormat, rightsDeclaration });
+
   const [currentStage, setCurrentStage] = useState(0); // index of active stage
   const [done, setDone] = useState(false);
 
@@ -187,11 +201,48 @@ export default function ProcessingScreen() {
     return () => timers.forEach(clearTimeout);
   }, []);
 
-  // ── Navigate when done ──
+  // ── Save history + navigate when done ──
   useEffect(() => {
     if (!done) return;
-    const t = setTimeout(() => router.replace('/results'), 800);
-    return () => clearTimeout(t);
+    let cancelled = false;
+
+    async function saveAndNavigate() {
+      await new Promise((r) => setTimeout(r, 800));
+      if (cancelled) return;
+
+      console.log('[ProcessingScreen] saving to conversion_history');
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id;
+
+      const trackName = fileName || (linkUrl ? 'Linked Audio' : 'Untitled');
+
+      const { data, error } = await supabase
+        .from('conversion_history')
+        .insert({
+          user_id: uid,
+          track_name: trackName,
+          source_type: sourceType ?? 'upload',
+          instrument: instrument ?? '',
+          output_format: outputFormat ?? '',
+          duration_seconds: 30,
+          rights_declaration: rightsDeclaration ?? '',
+        })
+        .select('id')
+        .single();
+
+      if (cancelled) return;
+
+      if (error) {
+        console.log('[ProcessingScreen] conversion_history insert error:', error);
+        router.replace('/results');
+      } else {
+        console.log('[ProcessingScreen] saved record, historyId:', data.id);
+        router.replace({ pathname: '/results', params: { historyId: data.id } });
+      }
+    }
+
+    saveAndNavigate();
+    return () => { cancelled = true; };
   }, [done]);
 
   function handleCancel() {

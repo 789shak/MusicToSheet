@@ -373,7 +373,10 @@ export default function HistoryScreen() {
         renderItem={({ item }) => (
           <HistoryCard
             item={item}
-            onPress={() => router.push('/results')}
+            onPress={() => {
+              console.log('[HistoryScreen] opening result for historyId:', item.id);
+              router.push({ pathname: '/results', params: { historyId: item.id } });
+            }}
             onToggleFavorite={() => toggleFavorite(item.id)}
             onDelete={() => deleteItem(item.id)}
           />
