@@ -65,7 +65,14 @@ const toast = StyleSheet.create({
 // ─── Main Screen ────────────────────────────────────────────────────────────
 export default function ResultsScreen() {
   const router = useRouter();
-  const { historyId } = useLocalSearchParams<{ historyId?: string }>();
+  const { historyId, notesJson, durationSeconds } = useLocalSearchParams<{
+    historyId?: string;
+    notesJson?: string;
+    durationSeconds?: string;
+  }>();
+
+  const notes: { pitch: string; start: number; duration: number }[] =
+    notesJson ? JSON.parse(notesJson) : [];
   const { show: showToast, message: toastMessage, opacity: toastOpacity } = useToast();
 
   const [activeFormat, setActiveFormat] = useState('Score');
@@ -142,7 +149,9 @@ export default function ResultsScreen() {
             <Ionicons name="musical-note" size={16} color="#0EA5E9" style={{ marginRight: 6 }} />
             <View>
               <Text style={styles.trackName}>{trackRecord?.track_name ?? 'Sample Track'}</Text>
-              <Text style={styles.trackMeta}>{trackRecord?.instrument ?? 'Unknown'} · 0:30</Text>
+              <Text style={styles.trackMeta}>
+                {trackRecord?.instrument ?? 'Unknown'} · 0:{String(Number(durationSeconds ?? trackRecord?.duration_seconds ?? 30)).padStart(2, '0')}
+              </Text>
             </View>
           </View>
           <View style={styles.formatBadge}>
@@ -190,9 +199,18 @@ export default function ResultsScreen() {
                 style={{ marginBottom: 14, marginTop: 24 }}
               />
               <Text style={styles.placeholderTitle}>Sheet music will render here</Text>
-              <Text style={styles.placeholderSub}>
-                Real notation output will appear once{'\n'}audio processing is connected
-              </Text>
+              {notes.length > 0 ? (
+                <>
+                  <Text style={styles.placeholderSub}>Detected notes:</Text>
+                  <Text style={styles.notePitches}>
+                    {notes.map((n) => n.pitch).join(', ')}
+                  </Text>
+                </>
+              ) : (
+                <Text style={styles.placeholderSub}>
+                  Real notation output will appear once{'\n'}audio processing is connected
+                </Text>
+              )}
 
               {/* Second staff block for visual depth */}
               <View style={[styles.staffLines, { marginTop: 48 }]}>
@@ -398,6 +416,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     lineHeight: 18,
+  },
+  notePitches: {
+    color: '#0EA5E9',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 6,
+    letterSpacing: 0.5,
   },
 
   // Upgrade banner

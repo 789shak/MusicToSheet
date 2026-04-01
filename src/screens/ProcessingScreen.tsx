@@ -9,21 +9,21 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
+import { processAudio, SUPABASE_STORAGE_URL } from '../lib/api';
 
 // ─── Stage config ─────────────────────────────────────────────────────────────
+// Stages are driven by the real API call, not a fixed timer.
+// Stages 0-2 advance on a timer; stage 3 ("Formatting output") advances when
+// the API response arrives.
 const STAGES = [
-  'Analyzing audio',
-  'Separating instruments',
-  'Detecting notes',
-  'Generating sheet music',
-  'Formatting output',
+  'Analyzing audio',       // 0 — shown immediately
+  'Detecting notes',       // 1 — shown at 2 s
+  'Generating sheet music',// 2 — shown at 4 s
+  'Formatting output',     // 3 — shown when API responds
 ];
 
-// Each stage takes 2 s; after the last one finishes, we wait 0.8 s then navigate.
-const STAGE_DURATION_MS = 2000;
-
-// Estimated seconds remaining per stage index (shown before that stage starts)
-const TIME_REMAINING = ['~15 seconds', '~12 seconds', '~9 seconds', '~6 seconds', '~3 seconds'];
+// Show a cold-start warning if the server hasn't replied within this many ms
+const SLOW_WARNING_MS = 10_000;
 
 // ─── Stage Row ────────────────────────────────────────────────────────────────
 function StageRow({
@@ -42,7 +42,6 @@ function StageRow({
 
   return (
     <View style={row.container}>
-      {/* Indicator */}
       <View style={row.indicatorWrap}>
         {status === 'done' && (
           <View style={row.dotDone}>
@@ -57,7 +56,6 @@ function StageRow({
         {status === 'pending' && <View style={row.dotPending} />}
       </View>
 
-      {/* Stage label */}
       <Text
         style={[
           row.label,
@@ -96,7 +94,6 @@ const row = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Outer ring that spins
   dotActive: {
     width: 18,
     height: 18,
@@ -107,7 +104,6 @@ const row = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Inner fill so it doesn't look hollow
   spinnerInner: {
     width: 8,
     height: 8,
@@ -145,8 +141,9 @@ export default function ProcessingScreen() {
 
   console.log('[ProcessingScreen] received params', { filePath, fileName, sourceType, linkUrl, instrument, outputFormat, rightsDeclaration });
 
-  const [currentStage, setCurrentStage] = useState(0); // index of active stage
-  const [done, setDone] = useState(false);
+  const [currentStage, setCurrentStage] = useState(0);
+  const [slowWarning, setSlowWarning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Pulse animation for the music note icon
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -180,76 +177,125 @@ export default function ProcessingScreen() {
     return () => anim.stop();
   }, []);
 
-  // ── Stage advancement ──
+  // ── API call + stage advancement ──
   useEffect(() => {
-    const timers: ReturnType<typeof setTimeout>[] = [];
-
-    STAGES.forEach((_, i) => {
-      if (i === 0) return; // stage 0 is already active on mount
-      timers.push(
-        setTimeout(() => setCurrentStage(i), i * STAGE_DURATION_MS)
-      );
-    });
-
-    // After all stages, mark done and navigate
-    timers.push(
-      setTimeout(() => {
-        setDone(true);
-      }, STAGES.length * STAGE_DURATION_MS)
-    );
-
-    return () => timers.forEach(clearTimeout);
-  }, []);
-
-  // ── Save history + navigate when done ──
-  useEffect(() => {
-    if (!done) return;
     let cancelled = false;
 
-    async function saveAndNavigate() {
-      await new Promise((r) => setTimeout(r, 800));
-      if (cancelled) return;
+    // Stage timers: advance visually while waiting for the API
+    const t1 = setTimeout(() => { if (!cancelled) setCurrentStage((s) => Math.max(s, 1)); }, 2000);
+    const t2 = setTimeout(() => { if (!cancelled) setCurrentStage((s) => Math.max(s, 2)); }, 4000);
+    const tSlow = setTimeout(() => { if (!cancelled) setSlowWarning(true); }, SLOW_WARNING_MS);
 
-      console.log('[ProcessingScreen] saving to conversion_history');
-      const { data: { session } } = await supabase.auth.getSession();
-      const uid = session?.user?.id;
+    async function run() {
+      try {
+        // Build the audio URL for the API
+        const audioUrl = sourceType === 'link'
+          ? (linkUrl ?? '')
+          : `${SUPABASE_STORAGE_URL}/audio-uploads/${filePath}`;
 
-      const trackName = fileName || (linkUrl ? 'Linked Audio' : 'Untitled');
+        console.log('[ProcessingScreen] calling processAudio with audioUrl:', audioUrl);
 
-      const { data, error } = await supabase
-        .from('conversion_history')
-        .insert({
-          user_id: uid,
-          track_name: trackName,
-          source_type: sourceType ?? 'upload',
+        const result = await processAudio({
+          audioUrl,
           instrument: instrument ?? '',
-          output_format: outputFormat ?? '',
-          duration_seconds: 30,
-          rights_declaration: rightsDeclaration ?? '',
-        })
-        .select('id')
-        .single();
+          outputFormat: outputFormat ?? '',
+        });
 
-      if (cancelled) return;
+        if (cancelled) return;
 
-      if (error) {
-        console.log('[ProcessingScreen] conversion_history insert error:', error);
-        router.replace('/results');
-      } else {
-        console.log('[ProcessingScreen] saved record, historyId:', data.id);
-        router.replace({ pathname: '/results', params: { historyId: data.id } });
+        // Advance to final stage ("Formatting output")
+        setCurrentStage(3);
+        setSlowWarning(false);
+
+        // Brief pause to let the user see the final stage tick over
+        await new Promise((r) => setTimeout(r, 800));
+        if (cancelled) return;
+
+        console.log('[ProcessingScreen] API success, saving to conversion_history');
+        const { data: { session } } = await supabase.auth.getSession();
+        const uid = session?.user?.id;
+
+        const trackName = fileName || (linkUrl ? 'Linked Audio' : 'Untitled');
+
+        const { data: historyRow, error: dbError } = await supabase
+          .from('conversion_history')
+          .insert({
+            user_id: uid,
+            track_name: trackName,
+            source_type: sourceType ?? 'upload',
+            instrument: result.instrument ?? instrument ?? '',
+            output_format: result.format ?? outputFormat ?? '',
+            duration_seconds: result.duration_seconds ?? 30,
+            rights_declaration: rightsDeclaration ?? '',
+          })
+          .select('id')
+          .single();
+
+        if (cancelled) return;
+
+        if (dbError) {
+          console.log('[ProcessingScreen] conversion_history insert error:', dbError);
+          // Navigate anyway — don't block the user on a DB error
+          router.replace('/results');
+          return;
+        }
+
+        console.log('[ProcessingScreen] saved record, historyId:', historyRow.id);
+
+        router.replace({
+          pathname: '/results',
+          params: {
+            historyId: historyRow.id,
+            notesJson: JSON.stringify(result.notes ?? []),
+            durationSeconds: String(result.duration_seconds ?? 30),
+          },
+        });
+      } catch (e: any) {
+        if (cancelled) return;
+        console.log('[ProcessingScreen] processAudio error:', e);
+        setError(e?.message ?? 'Something went wrong. Please try again.');
+      } finally {
+        clearTimeout(t1);
+        clearTimeout(t2);
+        clearTimeout(tSlow);
       }
     }
 
-    saveAndNavigate();
-    return () => { cancelled = true; };
-  }, [done]);
+    run();
+    return () => {
+      cancelled = true;
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(tSlow);
+    };
+  }, []);
 
   function handleCancel() {
     router.replace('/upload');
   }
 
-  const timeLabel = done ? 'Complete!' : TIME_REMAINING[currentStage] ?? '~2 seconds';
+  function handleTryAgain() {
+    // Re-mount by navigating back then forward would require stack manipulation;
+    // simplest is to go back to upload so the user can resubmit.
+    router.replace('/upload');
+  }
+
+  // ── Error state ──
+  if (error) {
+    return (
+      <View style={styles.root}>
+        <Ionicons name="alert-circle-outline" size={52} color="#EF4444" style={{ marginBottom: 20 }} />
+        <Text style={styles.title}>Processing Failed</Text>
+        <Text style={styles.errorMessage}>{error}</Text>
+        <TouchableOpacity style={styles.retryBtn} onPress={handleTryAgain} activeOpacity={0.8}>
+          <Text style={styles.retryBtnText}>Try Again</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={handleCancel} style={{ marginTop: 16 }}>
+          <Text style={styles.cancelText}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.root}>
@@ -269,7 +315,7 @@ export default function ProcessingScreen() {
       <View style={styles.stageList}>
         {STAGES.map((label, i) => {
           const status =
-            done || i < currentStage ? 'done'
+            i < currentStage ? 'done'
             : i === currentStage ? 'active'
             : 'pending';
           return (
@@ -283,25 +329,21 @@ export default function ProcessingScreen() {
         })}
       </View>
 
-      {/* Time remaining */}
-      <View style={styles.timeWrap}>
-        <Ionicons name="time-outline" size={14} color="#6B7280" style={{ marginRight: 5 }} />
-        <Text style={styles.timeText}>
-          Estimated time remaining:{' '}
-          <Text style={done ? styles.timeTextDone : styles.timeTextValue}>{timeLabel}</Text>
-        </Text>
-      </View>
+      {/* Cold-start warning */}
+      {slowWarning && (
+        <View style={styles.slowWrap}>
+          <Ionicons name="moon-outline" size={13} color="#F59E0B" style={{ marginRight: 6 }} />
+          <Text style={styles.slowText}>Server is waking up, please wait…</Text>
+        </View>
+      )}
 
       <Text style={styles.privacyNote}>
         Audio is processed in real-time and immediately purged
       </Text>
 
-      {/* Cancel */}
-      {!done && (
-        <TouchableOpacity style={styles.cancelBtn} onPress={handleCancel} activeOpacity={0.75}>
-          <Text style={styles.cancelText}>Cancel</Text>
-        </TouchableOpacity>
-      )}
+      <TouchableOpacity style={styles.cancelBtn} onPress={handleCancel} activeOpacity={0.75}>
+        <Text style={styles.cancelText}>Cancel</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -361,23 +403,22 @@ const styles = StyleSheet.create({
     marginBottom: 28,
   },
 
-  // Time
-  timeWrap: {
+  // Cold-start warning
+  slowWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    backgroundColor: '#1A1305',
+    borderWidth: 1,
+    borderColor: '#F59E0B40',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    marginBottom: 20,
   },
-  timeText: {
-    color: '#6B7280',
+  slowText: {
+    color: '#F59E0B',
     fontSize: 13,
-  },
-  timeTextValue: {
-    color: '#D1D5DB',
-    fontWeight: '600',
-  },
-  timeTextDone: {
-    color: '#0EA5E9',
-    fontWeight: '700',
+    fontWeight: '500',
   },
 
   // Privacy note
@@ -400,5 +441,26 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '500',
+  },
+
+  // Error state
+  errorMessage: {
+    color: '#9CA3AF',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 28,
+    marginTop: 8,
+  },
+  retryBtn: {
+    backgroundColor: '#0EA5E9',
+    borderRadius: 12,
+    paddingVertical: 13,
+    paddingHorizontal: 40,
+  },
+  retryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });
