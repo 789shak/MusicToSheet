@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
-import { processAudio, SUPABASE_STORAGE_URL } from '../lib/api';
+import { processAudio } from '../lib/api';
 
 // ─── Stage config ─────────────────────────────────────────────────────────────
 // Stages are driven by the real API call, not a fixed timer.
@@ -188,10 +188,19 @@ export default function ProcessingScreen() {
 
     async function run() {
       try {
-        // Build the audio URL for the API
-        const audioUrl = sourceType === 'link'
-          ? (linkUrl ?? '')
-          : `${SUPABASE_STORAGE_URL}/audio-uploads/${filePath}`;
+        // Build the audio URL for the API.
+        // For uploaded files, generate a short-lived signed URL (5 min) so the
+        // server can download from private storage. Links pass through directly.
+        let audioUrl = linkUrl ?? '';
+        if (sourceType !== 'link' && filePath) {
+          const { data: signedData, error: signedError } = await supabase.storage
+            .from('audio-uploads')
+            .createSignedUrl(filePath, 300);
+          if (signedError || !signedData?.signedUrl) {
+            throw new Error(`Could not create signed URL: ${signedError?.message ?? 'unknown'}`);
+          }
+          audioUrl = signedData.signedUrl;
+        }
 
         console.log('[ProcessingScreen] calling processAudio with audioUrl:', audioUrl);
 

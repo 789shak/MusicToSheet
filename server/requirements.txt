@@ -1,2 +1,6 @@
 fastapi
 uvicorn
+basic-pitch
+numpy
+httpx
+python-multipart
