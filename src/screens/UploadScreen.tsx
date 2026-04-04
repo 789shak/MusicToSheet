@@ -14,7 +14,7 @@ import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
+import { readAsStringAsync } from 'expo-file-system';
 import { decode } from 'base64-arraybuffer';
 import { BottomTabBar } from '../components/BottomTabBar';
 import { supabase } from '../lib/supabase';
@@ -223,9 +223,7 @@ export default function UploadScreen() {
       // Read file as base64 and decode to ArrayBuffer for Supabase upload
       setUploadProgress(10);
       console.log('File URI:', file.uri);
-      const base64 = await FileSystem.readAsStringAsync(file.uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
+      const base64 = await readAsStringAsync(file.uri, { encoding: 'base64' });
       console.log('Base64 length:', base64.length);
       setUploadProgress(30);
 
