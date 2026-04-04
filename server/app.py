@@ -17,6 +17,21 @@ class ProcessRequest(BaseModel):
     instrument: str
     output_format: str
 
+# ─── Helpers ──────────────────────────────────────────────────────────────────
+async def download_audio(url: str, dest_path: str) -> int:
+    async with httpx.AsyncClient(follow_redirects=True, timeout=120.0) as client:
+        async with client.stream('GET', url) as response:
+            response.raise_for_status()
+            print(f"[process] Download response status: {response.status_code}")
+            print(f"[process] Content-Type: {response.headers.get('content-type')}")
+            total = 0
+            with open(dest_path, 'wb') as f:
+                async for chunk in response.aiter_bytes(chunk_size=8192):
+                    f.write(chunk)
+                    total += len(chunk)
+            print(f"[process] Streamed {total} bytes to {dest_path}")
+            return total
+
 # ─── Endpoints ────────────────────────────────────────────────────────────────
 @app.get("/")
 def root():
@@ -31,18 +46,6 @@ async def process_audio(body: ProcessRequest):
         # Step 1: Download audio
         print("[process] Step 1: Downloading audio...")
         print(f"[process] Downloading from URL: {body.audio_url[:100]}...")
-        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
-            response = await client.get(body.audio_url)
-
-        print(f"[process] Download response status: {response.status_code}")
-        print(f"[process] Download response size: {len(response.content)} bytes")
-        print(f"[process] Content-Type: {response.headers.get('content-type')}")
-
-        if response.status_code != 200:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Failed to download audio (HTTP {response.status_code})",
-            )
 
         original_name = body.audio_url.split("?")[0].split("/")[-1]
         ext = os.path.splitext(original_name)[1].lower() or ".mp3"
@@ -50,10 +53,7 @@ async def process_audio(body: ProcessRequest):
         tmp_path = f"/tmp/{uid}{ext}"
         wav_path = f"/tmp/{uid}.wav"
 
-        with open(tmp_path, "wb") as f:
-            f.write(response.content)
-
-        file_size = os.path.getsize(tmp_path)
+        file_size = await download_audio(body.audio_url, tmp_path)
         print(f"[process] Downloaded file size: {file_size} bytes")
         if file_size < 1000:
             raise Exception(f"Downloaded file too small ({file_size} bytes) — likely failed download")
