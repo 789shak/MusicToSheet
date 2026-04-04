@@ -14,7 +14,7 @@ import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
-import { readAsStringAsync } from 'expo-file-system';
+import { readAsStringAsync } from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { BottomTabBar } from '../components/BottomTabBar';
 import { supabase } from '../lib/supabase';
