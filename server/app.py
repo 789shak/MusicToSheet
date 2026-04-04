@@ -30,13 +30,19 @@ async def process_audio(body: ProcessRequest):
     try:
         # Step 1: Download audio
         print("[process] Step 1: Downloading audio...")
+        print(f"[process] Downloading from URL: {body.audio_url[:100]}...")
         async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
             response = await client.get(body.audio_url)
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"Failed to download audio (HTTP {response.status_code})",
-                )
+
+        print(f"[process] Download response status: {response.status_code}")
+        print(f"[process] Download response size: {len(response.content)} bytes")
+        print(f"[process] Content-Type: {response.headers.get('content-type')}")
+
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to download audio (HTTP {response.status_code})",
+            )
 
         original_name = body.audio_url.split("?")[0].split("/")[-1]
         ext = os.path.splitext(original_name)[1].lower() or ".mp3"

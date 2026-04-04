@@ -195,7 +195,7 @@ export default function ProcessingScreen() {
         if (sourceType !== 'link' && filePath) {
           const { data: signedData, error: signedError } = await supabase.storage
             .from('audio-uploads')
-            .createSignedUrl(filePath, 300);
+            .createSignedUrl(filePath, 3600);
           if (signedError || !signedData?.signedUrl) {
             throw new Error(`Could not create signed URL: ${signedError?.message ?? 'unknown'}`);
           }
