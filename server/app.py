@@ -30,7 +30,7 @@ async def process_audio(body: ProcessRequest):
     try:
         # Step 1: Download audio
         print("[process] Step 1: Downloading audio...")
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
             response = await client.get(body.audio_url)
             if response.status_code != 200:
                 raise HTTPException(
@@ -46,15 +46,25 @@ async def process_audio(body: ProcessRequest):
 
         with open(tmp_path, "wb") as f:
             f.write(response.content)
+
+        file_size = os.path.getsize(tmp_path)
+        print(f"[process] Downloaded file size: {file_size} bytes")
+        if file_size < 1000:
+            raise Exception(f"Downloaded file too small ({file_size} bytes) — likely failed download")
+
         print(f"[process] Saved to temp file: {tmp_path}")
 
         # Step 2: Convert to WAV via ffmpeg
         print("[process] Step 2: Converting to WAV with ffmpeg...")
-        subprocess.run(
+        result = subprocess.run(
             ['ffmpeg', '-i', tmp_path, '-ar', '22050', '-ac', '1', wav_path, '-y'],
             capture_output=True,
-            check=True,
+            text=True,
         )
+        print(f"[process] ffmpeg stdout: {result.stdout}")
+        print(f"[process] ffmpeg stderr: {result.stderr}")
+        if result.returncode != 0:
+            raise Exception(f"ffmpeg failed with code {result.returncode}: {result.stderr}")
         print(f"[process] Converted to WAV: {wav_path}")
 
         # Step 3: Load WAV with librosa
