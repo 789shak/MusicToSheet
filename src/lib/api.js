@@ -1,4 +1,4 @@
-const API_URL = 'https://musictosheet-api.onrender.com';
+const API_URL = 'https://musictosheet.onrender.com';
 
 // Base URL for constructing Supabase Storage public links
 export const SUPABASE_STORAGE_URL =
