@@ -2,6 +2,7 @@ import os
 import uuid
 import traceback
 import subprocess
+import gc
 import numpy as np
 import httpx
 import librosa
@@ -63,7 +64,7 @@ async def process_audio(body: ProcessRequest):
         # Step 2: Convert to WAV via ffmpeg
         print("[process] Step 2: Converting to WAV with ffmpeg...")
         result = subprocess.run(
-            ['ffmpeg', '-i', tmp_path, '-ar', '22050', '-ac', '1', wav_path, '-y'],
+            ['ffmpeg', '-i', tmp_path, '-t', '60', '-ar', '22050', '-ac', '1', '-sample_fmt', 's16', wav_path, '-y'],
             capture_output=True,
             text=True,
         )
@@ -75,7 +76,7 @@ async def process_audio(body: ProcessRequest):
 
         # Step 3: Load WAV with librosa
         print("[process] Step 3: Loading with librosa...")
-        y, sr = librosa.load(wav_path, sr=22050)
+        y, sr = librosa.load(wav_path, sr=22050, mono=True, duration=60.0)
         duration_seconds = float(librosa.get_duration(y=y, sr=sr))
         print(f"[process] Loaded audio: duration={duration_seconds:.2f}s, sr={sr}")
 
@@ -122,6 +123,8 @@ async def process_audio(body: ProcessRequest):
 
         track_name = os.path.splitext(original_name)[0] or "Untitled"
         print(f"[process] Done. {len(notes)} notes detected.")
+
+        gc.collect()
 
         return {
             "status":           "success",
