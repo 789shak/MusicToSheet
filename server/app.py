@@ -1,6 +1,7 @@
 import os
 import uuid
 import traceback
+import subprocess
 import numpy as np
 import httpx
 import librosa
@@ -25,6 +26,7 @@ def root():
 @app.post("/process")
 async def process_audio(body: ProcessRequest):
     tmp_path = None
+    wav_path = None
     try:
         # Step 1: Download audio
         print("[process] Step 1: Downloading audio...")
@@ -36,19 +38,33 @@ async def process_audio(body: ProcessRequest):
                     detail=f"Failed to download audio (HTTP {response.status_code})",
                 )
 
-        tmp_path = f"/tmp/{uuid.uuid4()}.mp3"
+        original_name = body.audio_url.split("?")[0].split("/")[-1]
+        ext = os.path.splitext(original_name)[1].lower() or ".mp3"
+        uid = str(uuid.uuid4())
+        tmp_path = f"/tmp/{uid}{ext}"
+        wav_path = f"/tmp/{uid}.wav"
+
         with open(tmp_path, "wb") as f:
             f.write(response.content)
         print(f"[process] Saved to temp file: {tmp_path}")
 
-        # Step 2: Load with librosa
-        print("[process] Step 2: Loading with librosa...")
-        y, sr = librosa.load(tmp_path, sr=22050)
+        # Step 2: Convert to WAV via ffmpeg
+        print("[process] Step 2: Converting to WAV with ffmpeg...")
+        subprocess.run(
+            ['ffmpeg', '-i', tmp_path, '-ar', '22050', '-ac', '1', wav_path, '-y'],
+            capture_output=True,
+            check=True,
+        )
+        print(f"[process] Converted to WAV: {wav_path}")
+
+        # Step 3: Load WAV with librosa
+        print("[process] Step 3: Loading with librosa...")
+        y, sr = librosa.load(wav_path, sr=22050)
         duration_seconds = float(librosa.get_duration(y=y, sr=sr))
         print(f"[process] Loaded audio: duration={duration_seconds:.2f}s, sr={sr}")
 
-        # Step 3: Run pitch detection
-        print("[process] Step 3: Running pitch detection...")
+        # Step 4: Run pitch detection
+        print("[process] Step 4: Running pitch detection...")
         f0, voiced_flag, voiced_probs = librosa.pyin(
             y,
             fmin=librosa.note_to_hz('C2'),
@@ -57,8 +73,8 @@ async def process_audio(body: ProcessRequest):
         )
         print(f"[process] pyin returned {len(f0)} frames")
 
-        # Step 4: Convert to note names
-        print("[process] Step 4: Converting to note names...")
+        # Step 5: Convert to note names
+        print("[process] Step 5: Converting to note names...")
         hop_length = 512
         times = librosa.frames_to_time(np.arange(len(f0)), sr=sr, hop_length=hop_length)
 
@@ -88,9 +104,7 @@ async def process_audio(body: ProcessRequest):
             else:
                 i += 1
 
-        original_name = body.audio_url.split("?")[0].split("/")[-1]
         track_name = os.path.splitext(original_name)[0] or "Untitled"
-
         print(f"[process] Done. {len(notes)} notes detected.")
 
         return {
@@ -111,6 +125,7 @@ async def process_audio(body: ProcessRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
     finally:
-        if tmp_path and os.path.exists(tmp_path):
-            os.remove(tmp_path)
-            print(f"[process] Deleted temp file: {tmp_path}")
+        for f in [tmp_path, wav_path]:
+            if f and os.path.exists(f):
+                os.remove(f)
+                print(f"[process] Deleted temp file: {f}")
