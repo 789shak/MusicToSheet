@@ -14,6 +14,8 @@ import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
+import { decode } from 'base64-arraybuffer';
 import { BottomTabBar } from '../components/BottomTabBar';
 import { supabase } from '../lib/supabase';
 import { useSubscription } from '../hooks/useSubscription';
@@ -218,24 +220,20 @@ export default function UploadScreen() {
       const ext = file.name.split('.').pop() ?? 'audio';
       const storagePath = `${uid}/${Date.now()}_${file.name}`;
 
-      // Fetch the file as a blob from the local URI
+      // Read file as base64 and decode to ArrayBuffer for Supabase upload
       setUploadProgress(10);
       console.log('File URI:', file.uri);
-      const response = await fetch(file.uri);
-      const blob = await response.blob();
-      console.log('Blob size:', blob.size);
+      const base64 = await FileSystem.readAsStringAsync(file.uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      console.log('Base64 length:', base64.length);
       setUploadProgress(30);
-
-      if (blob.size === 0) {
-        setUploadError('Could not read the file — blob is empty. Please try again.');
-        return;
-      }
 
       const { data, error } = await supabase.storage
         .from('audio-uploads')
-        .upload(storagePath, blob, {
+        .upload(storagePath, decode(base64), {
           contentType: file.mimeType ?? `audio/${ext}`,
-          upsert: false,
+          upsert: true,
         });
 
       console.log('Upload result:', data, error);
