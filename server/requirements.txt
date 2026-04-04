@@ -1,6 +1,8 @@
 fastapi
 uvicorn
-basic-pitch
-numpy
 httpx
 python-multipart
+numpy
+librosa
+pretty_midi
+soundfile

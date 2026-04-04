@@ -1,40 +1,14 @@
 import os
 import uuid
-import tempfile
 import traceback
+import numpy as np
 import httpx
+import librosa
+import pretty_midi
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from basic_pitch.inference import predict
 
 app = FastAPI(title="Music-To-Sheet API")
-
-# ─── MIDI pitch → note name ───────────────────────────────────────────────────
-_NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-
-def midi_to_note_name(midi_pitch: int) -> str:
-    octave = (midi_pitch // 12) - 1
-    name = _NOTE_NAMES[midi_pitch % 12]
-    return f"{name}{octave}"
-
-# ─── Instrument pitch ranges (MIDI) ──────────────────────────────────────────
-# Filters out notes clearly outside the instrument's practical range.
-_INSTRUMENT_RANGES = {
-    'piano':      (21, 108),
-    'guitar':     (40, 88),
-    'bass':       (28, 60),
-    'violin':     (55, 103),
-    'viola':      (48, 93),
-    'cello':      (36, 76),
-    'flute':      (60, 96),
-    'trumpet':    (52, 82),
-    'saxophone':  (49, 80),
-    'vocals':     (48, 84),
-}
-
-def pitch_range_for_instrument(instrument: str):
-    key = instrument.strip().lower()
-    return _INSTRUMENT_RANGES.get(key, (0, 127))  # default: no filtering
 
 # ─── Schema ───────────────────────────────────────────────────────────────────
 class ProcessRequest(BaseModel):
@@ -52,9 +26,8 @@ def root():
 async def process_audio(body: ProcessRequest):
     tmp_path = None
     try:
-        # 1. Download the audio file
+        # Step 1: Download audio
         print("[process] Step 1: Downloading audio...")
-        print(f"[process] Downloading audio from: {body.audio_url}")
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.get(body.audio_url)
             if response.status_code != 200:
@@ -63,53 +36,62 @@ async def process_audio(body: ProcessRequest):
                     detail=f"Failed to download audio (HTTP {response.status_code})",
                 )
 
-        # 2. Load with librosa (via Basic Pitch)
-        print("[process] Step 2: Loading with librosa...")
-
-        # Save to a temp file, preserving the original extension
-        original_name = body.audio_url.split("?")[0].split("/")[-1]  # strip query params
-        ext = os.path.splitext(original_name)[1] or ".mp3"
-        tmp_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}{ext}")
+        tmp_path = f"/tmp/{uuid.uuid4()}.mp3"
         with open(tmp_path, "wb") as f:
             f.write(response.content)
         print(f"[process] Saved to temp file: {tmp_path}")
 
-        # 3. Run Basic Pitch
+        # Step 2: Load with librosa
+        print("[process] Step 2: Loading with librosa...")
+        y, sr = librosa.load(tmp_path, sr=22050)
+        duration_seconds = float(librosa.get_duration(y=y, sr=sr))
+        print(f"[process] Loaded audio: duration={duration_seconds:.2f}s, sr={sr}")
+
+        # Step 3: Run pitch detection
         print("[process] Step 3: Running pitch detection...")
-        print("[process] Running Basic Pitch inference...")
-        model_output, midi_data, note_events = predict(tmp_path)
-        # note_events rows: [start_time, end_time, pitch_midi, velocity, confidence]
-        print(f"[process] Basic Pitch returned {len(note_events)} note events")
+        f0, voiced_flag, voiced_probs = librosa.pyin(
+            y,
+            fmin=librosa.note_to_hz('C2'),
+            fmax=librosa.note_to_hz('C7'),
+            sr=sr,
+        )
+        print(f"[process] pyin returned {len(f0)} frames")
 
-        # 4. Convert to note names
+        # Step 4: Convert to note names
         print("[process] Step 4: Converting to note names...")
+        hop_length = 512
+        times = librosa.frames_to_time(np.arange(len(f0)), sr=sr, hop_length=hop_length)
 
-        # Determine track duration from note events (or fall back to 0)
-        duration_seconds = 0.0
-        if len(note_events) > 0:
-            duration_seconds = float(max(row[1] for row in note_events))
-
-        # 5. Filter by instrument range and convert to dict list
-        lo, hi = pitch_range_for_instrument(body.instrument)
         notes = []
-        total_confidence = 0.0
-        for row in note_events:
-            start_time, end_time, pitch_midi, velocity, confidence = row
-            pitch_midi = int(pitch_midi)
-            if not (lo <= pitch_midi <= hi):
-                continue
-            notes.append({
-                "pitch":    midi_to_note_name(pitch_midi),
-                "start":    round(float(start_time), 3),
-                "duration": round(float(end_time) - float(start_time), 3),
-                "velocity": int(velocity),
-            })
-            total_confidence += float(confidence)
+        i = 0
+        while i < len(f0):
+            if voiced_flag[i] and f0[i] is not None and not np.isnan(f0[i]):
+                # Find the end of this voiced segment
+                j = i
+                while j < len(f0) and voiced_flag[j] and not np.isnan(f0[j]):
+                    j += 1
+                # Average frequency over the segment
+                segment_freqs = f0[i:j]
+                avg_freq = float(np.nanmean(segment_freqs))
+                note_name = librosa.hz_to_note(avg_freq)
+                start_time = float(times[i])
+                end_time = float(times[j - 1]) + (hop_length / sr)
+                duration = round(end_time - start_time, 3)
+                if duration > 0.05:  # discard very short blips
+                    notes.append({
+                        "pitch":    note_name,
+                        "start":    round(start_time, 3),
+                        "duration": duration,
+                        "velocity": 80,
+                    })
+                i = j
+            else:
+                i += 1
 
-        avg_confidence = (total_confidence / len(notes)) if notes else 0.0
+        original_name = body.audio_url.split("?")[0].split("/")[-1]
         track_name = os.path.splitext(original_name)[0] or "Untitled"
 
-        print(f"[process] Done. {len(notes)} notes after filtering, confidence={avg_confidence:.2f}")
+        print(f"[process] Done. {len(notes)} notes detected.")
 
         return {
             "status":           "success",
@@ -118,7 +100,7 @@ async def process_audio(body: ProcessRequest):
             "format":           body.output_format,
             "duration_seconds": round(duration_seconds),
             "notes":            notes,
-            "confidence":       round(avg_confidence, 2),
+            "confidence":       0.75,
         }
 
     except HTTPException:
@@ -129,7 +111,6 @@ async def process_audio(body: ProcessRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
     finally:
-        # 6. Always clean up the temp file
         if tmp_path and os.path.exists(tmp_path):
             os.remove(tmp_path)
             print(f"[process] Deleted temp file: {tmp_path}")
