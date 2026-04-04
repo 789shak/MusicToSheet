@@ -220,9 +220,16 @@ export default function UploadScreen() {
 
       // Fetch the file as a blob from the local URI
       setUploadProgress(10);
+      console.log('File URI:', file.uri);
       const response = await fetch(file.uri);
       const blob = await response.blob();
+      console.log('Blob size:', blob.size);
       setUploadProgress(30);
+
+      if (blob.size === 0) {
+        setUploadError('Could not read the file — blob is empty. Please try again.');
+        return;
+      }
 
       const { data, error } = await supabase.storage
         .from('audio-uploads')
@@ -231,6 +238,7 @@ export default function UploadScreen() {
           upsert: false,
         });
 
+      console.log('Upload result:', data, error);
       setUploadProgress(100);
 
       if (error) {
