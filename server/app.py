@@ -1,6 +1,7 @@
 import os
 import uuid
 import tempfile
+import traceback
 import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -52,6 +53,7 @@ async def process_audio(body: ProcessRequest):
     tmp_path = None
     try:
         # 1. Download the audio file
+        print("[process] Step 1: Downloading audio...")
         print(f"[process] Downloading audio from: {body.audio_url}")
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.get(body.audio_url)
@@ -61,7 +63,10 @@ async def process_audio(body: ProcessRequest):
                     detail=f"Failed to download audio (HTTP {response.status_code})",
                 )
 
-        # 2. Save to a temp file, preserving the original extension
+        # 2. Load with librosa (via Basic Pitch)
+        print("[process] Step 2: Loading with librosa...")
+
+        # Save to a temp file, preserving the original extension
         original_name = body.audio_url.split("?")[0].split("/")[-1]  # strip query params
         ext = os.path.splitext(original_name)[1] or ".mp3"
         tmp_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}{ext}")
@@ -70,12 +75,16 @@ async def process_audio(body: ProcessRequest):
         print(f"[process] Saved to temp file: {tmp_path}")
 
         # 3. Run Basic Pitch
+        print("[process] Step 3: Running pitch detection...")
         print("[process] Running Basic Pitch inference...")
         model_output, midi_data, note_events = predict(tmp_path)
         # note_events rows: [start_time, end_time, pitch_midi, velocity, confidence]
         print(f"[process] Basic Pitch returned {len(note_events)} note events")
 
-        # 4. Determine track duration from note events (or fall back to 0)
+        # 4. Convert to note names
+        print("[process] Step 4: Converting to note names...")
+
+        # Determine track duration from note events (or fall back to 0)
         duration_seconds = 0.0
         if len(note_events) > 0:
             duration_seconds = float(max(row[1] for row in note_events))
@@ -116,6 +125,7 @@ async def process_audio(body: ProcessRequest):
         raise
     except Exception as e:
         print(f"[process] Error: {e}")
+        print(f"[process] Full error: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
     finally:
