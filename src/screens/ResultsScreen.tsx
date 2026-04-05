@@ -2,7 +2,6 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   Animated,
 } from 'react-native';
@@ -10,6 +9,7 @@ import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { useState, useRef, useEffect } from 'react';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
+import SheetMusicViewer from '../components/SheetMusicViewer';
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 const FORMATS = ['Score', 'Part', 'Lead Sheet', 'Tabs', 'Fake Book', 'Staff'];
@@ -177,54 +177,7 @@ export default function ResultsScreen() {
 
         {/* ── Sheet Music Viewer ── */}
         <View style={styles.viewerContainer}>
-          <ScrollView
-            style={styles.viewerScroll}
-            contentContainerStyle={styles.viewerContent}
-            maximumZoomScale={4}
-            minimumZoomScale={1}
-            showsVerticalScrollIndicator={false}
-            bouncesZoom
-          >
-            <View style={styles.sheetPlaceholder}>
-              {/* Placeholder staff lines */}
-              <View style={styles.staffLines}>
-                {[0, 1, 2, 3, 4].map((i) => (
-                  <View key={i} style={styles.staffLine} />
-                ))}
-              </View>
-              <Ionicons
-                name="musical-notes-outline"
-                size={52}
-                color="#2D2D3E"
-                style={{ marginBottom: 14, marginTop: 24 }}
-              />
-              <Text style={styles.placeholderTitle}>Sheet music will render here</Text>
-              {notes.length > 0 ? (
-                <>
-                  <Text style={styles.placeholderSub}>Detected notes:</Text>
-                  <Text style={styles.notePitches}>
-                    {notes.map((n) => n.pitch).join(', ')}
-                  </Text>
-                </>
-              ) : (
-                <Text style={styles.placeholderSub}>
-                  Real notation output will appear once{'\n'}audio processing is connected
-                </Text>
-              )}
-
-              {/* Second staff block for visual depth */}
-              <View style={[styles.staffLines, { marginTop: 48 }]}>
-                {[0, 1, 2, 3, 4].map((i) => (
-                  <View key={i} style={styles.staffLine} />
-                ))}
-              </View>
-              <View style={[styles.staffLines, { marginTop: 32 }]}>
-                {[0, 1, 2, 3, 4].map((i) => (
-                  <View key={i} style={styles.staffLine} />
-                ))}
-              </View>
-            </View>
-          </ScrollView>
+          <SheetMusicViewer notes={notes} />
         </View>
 
         {/* ── Upgrade Banner ── */}
@@ -376,54 +329,12 @@ const styles = StyleSheet.create({
   // Viewer
   viewerContainer: {
     flex: 1,
-    position: 'relative',
     marginHorizontal: 16,
     marginBottom: 8,
     borderRadius: 12,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: '#2D2D3E',
-  },
-  viewerScroll: { flex: 1 },
-  viewerContent: { flexGrow: 1 },
-  sheetPlaceholder: {
-    minHeight: 400,
-    backgroundColor: '#F8F7F2',
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 32,
-    paddingHorizontal: 20,
-  },
-  staffLines: {
-    width: '90%',
-    gap: 9,
-  },
-  staffLine: {
-    height: 1,
-    backgroundColor: '#C4C0B0',
-    width: '100%',
-  },
-  placeholderTitle: {
-    color: '#6B7280',
-    fontSize: 15,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginBottom: 6,
-  },
-  placeholderSub: {
-    color: '#9CA3AF',
-    fontSize: 12,
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-  notePitches: {
-    color: '#0EA5E9',
-    fontSize: 14,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginTop: 6,
-    letterSpacing: 0.5,
   },
 
   // Upgrade banner
