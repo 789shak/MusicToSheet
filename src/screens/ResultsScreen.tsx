@@ -4,12 +4,15 @@ import {
   StyleSheet,
   TouchableOpacity,
   Animated,
+  ActivityIndicator,
 } from 'react-native';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { useState, useRef, useEffect } from 'react';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import { supabase } from '../lib/supabase';
-import SheetMusicViewer from '../components/SheetMusicViewer';
+import SheetMusicViewer, { buildPdfHtml } from '../components/SheetMusicViewer';
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 const FORMATS = ['Score', 'Part', 'Lead Sheet', 'Tabs', 'Fake Book', 'Staff'];
@@ -79,6 +82,7 @@ export default function ResultsScreen() {
   const [favorited, setFavorited] = useState(false);
   const heartScale = useRef(new Animated.Value(1)).current;
   const [trackRecord, setTrackRecord] = useState<any>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
 
   useEffect(() => {
     if (!historyId) return;
@@ -97,6 +101,28 @@ export default function ResultsScreen() {
         }
       });
   }, [historyId]);
+
+  async function handleDownloadPdf() {
+    setPdfLoading(true);
+    try {
+      const date = new Date().toLocaleDateString('en-US', {
+        year: 'numeric', month: 'long', day: 'numeric',
+      });
+      const html = buildPdfHtml(notes, {
+        trackName:  trackRecord?.track_name  ?? 'Sample Track',
+        instrument: trackRecord?.instrument  ?? 'Unknown',
+        format:     activeFormat,
+        date,
+      });
+      const { uri } = await Print.printToFileAsync({ html });
+      console.log('[ResultsScreen] PDF saved to:', uri);
+      await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Save or share sheet music' });
+    } catch (err) {
+      console.log('[ResultsScreen] PDF error:', err);
+    } finally {
+      setPdfLoading(false);
+    }
+  }
 
   function toggleFavorite() {
     const next = !favorited;
@@ -205,18 +231,19 @@ export default function ResultsScreen() {
             <Text style={styles.actionLabel}>Share</Text>
           </TouchableOpacity>
 
-          {/* Download PDF — Pro locked */}
+          {/* Download PDF */}
+          {/* TODO: Re-enable tier gating for PDF after testing */}
           <TouchableOpacity
             style={styles.actionBtn}
-            onPress={() => showToast('Upgrade to Pro to download clean PDFs')}
+            onPress={handleDownloadPdf}
             activeOpacity={0.7}
+            disabled={pdfLoading}
           >
-            <View>
+            {pdfLoading ? (
+              <ActivityIndicator size="small" color="#0EA5E9" />
+            ) : (
               <Feather name="download" size={20} color="#9CA3AF" />
-              <View style={styles.lockBadge}>
-                <MaterialIcons name="lock" size={8} color="#F59E0B" />
-              </View>
-            </View>
+            )}
             <Text style={styles.actionLabel}>PDF</Text>
           </TouchableOpacity>
 
@@ -374,12 +401,4 @@ const styles = StyleSheet.create({
   actionLabel: { color: '#6B7280', fontSize: 11, fontWeight: '500' },
   actionLabelActive: { color: '#0EA5E9' },
   actionLabelFavorited: { color: '#DC143C' },
-  lockBadge: {
-    position: 'absolute',
-    bottom: -3,
-    right: -5,
-    backgroundColor: '#111118',
-    borderRadius: 6,
-    padding: 1,
-  },
 });
