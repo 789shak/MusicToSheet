@@ -241,8 +241,9 @@ function timeSigNum(x, y, n) {
 
 // ─── PDF HTML builder (exported for use in ResultsScreen) ────────────────────
 // Generates paginated PDF HTML: 6 staff rows per page, header on page 1 only,
-// footer on every page, @page margins 20mm.
-// meta: { trackName, instrument, format, date }
+// footer on every page, @page margins 20mm left 45mm.
+// meta: { trackName, instrument, format, date, watermark }
+//   watermark: true → diagonal "preview" text stamped across every page (free tier)
 export function buildPdfHtml(notes, meta) {
   meta = meta || {};
   const trackName  = htmlEsc(meta.trackName  || 'Untitled');
@@ -252,6 +253,7 @@ export function buildPdfHtml(notes, meta) {
     meta.date ||
     new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
   );
+  const watermark = meta.watermark ? 'true' : 'false';
   const notesJson = JSON.stringify(notes);
 
   return `<!DOCTYPE html>
@@ -276,8 +278,9 @@ export function buildPdfHtml(notes, meta) {
   try {
     var notes = ${notesJson};
 
-    var DEGREE = { C:0, D:1, E:2, F:3, G:4, A:5, B:6 };
-    var BEATS         = 4;
+    var DEGREE    = { C:0, D:1, E:2, F:3, G:4, A:5, B:6 };
+    var BEATS     = 4;
+    var WATERMARK = ${watermark};   // true = free tier, stamp diagonal watermark on each page
     var W             = 500;   // content width in px (fits A4 with 45mm left / 20mm right margins)
     var LINE_GAP      = 12;
     var STEP          = LINE_GAP / 2;
@@ -420,6 +423,21 @@ export function buildPdfHtml(notes, meta) {
         // Right barline
         svgOut += vLine(W - 4, stT, stB, '#333333', 1.5);
       });
+
+      // ── Watermark overlay (free tier only) ────────────────────────────
+      // Diagonal text stamped at three evenly-spaced positions across the page.
+      if (WATERMARK) {
+        var wmText = 'Music-To-Sheet Preview \u2014 Upgrade for full version';
+        var wmCx   = W / 2;
+        [svgH * 0.22, svgH * 0.5, svgH * 0.78].forEach(function (wmY) {
+          svgOut += '<text'
+                 + ' x="' + wmCx + '" y="' + wmY + '"'
+                 + ' font-size="16" font-family="sans-serif" font-weight="700"'
+                 + ' fill="#DC143C" opacity="0.18" text-anchor="middle"'
+                 + ' transform="rotate(-40,' + wmCx + ',' + wmY + ')">'
+                 + wmText + '</text>';
+        });
+      }
 
       bodyHtml += '<div class="page' + (isLastPage ? '' : ' break') + '">';
       if (pi === 0) bodyHtml += HEADER_HTML;

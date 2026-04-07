@@ -12,6 +12,7 @@ import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { supabase } from '../lib/supabase';
+import { useSubscription } from '../hooks/useSubscription';
 import SheetMusicViewer, { buildPdfHtml } from '../components/SheetMusicViewer';
 
 // ─── Constants ─────────────────────────────────────────────────────────────
@@ -78,11 +79,15 @@ export default function ResultsScreen() {
     notesJson ? JSON.parse(notesJson) : [];
   const { show: showToast, message: toastMessage, opacity: toastOpacity } = useToast();
 
+  const { tier } = useSubscription();
+  const isPro = tier !== 'free';
+
   const [activeFormat, setActiveFormat] = useState('Score');
   const [favorited, setFavorited] = useState(false);
   const heartScale = useRef(new Animated.Value(1)).current;
   const [trackRecord, setTrackRecord] = useState<any>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [shareLoading, setShareLoading] = useState(false);
 
   useEffect(() => {
     if (!historyId) return;
@@ -102,18 +107,34 @@ export default function ResultsScreen() {
       });
   }, [historyId]);
 
+  function pdfMeta() {
+    return {
+      trackName:  trackRecord?.track_name  ?? 'Sample Track',
+      instrument: trackRecord?.instrument  ?? 'Unknown',
+      format:     activeFormat,
+      date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+      watermark:  !isPro,
+    };
+  }
+
+  async function handleShare() {
+    setShareLoading(true);
+    try {
+      const html = buildPdfHtml(notes, pdfMeta());
+      const { uri } = await Print.printToFileAsync({ html });
+      console.log('[ResultsScreen] share PDF uri:', uri);
+      await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Share sheet music' });
+    } catch (err) {
+      console.log('[ResultsScreen] handleShare error:', err);
+    } finally {
+      setShareLoading(false);
+    }
+  }
+
   async function handleDownloadPdf() {
     setPdfLoading(true);
     try {
-      const date = new Date().toLocaleDateString('en-US', {
-        year: 'numeric', month: 'long', day: 'numeric',
-      });
-      const html = buildPdfHtml(notes, {
-        trackName:  trackRecord?.track_name  ?? 'Sample Track',
-        instrument: trackRecord?.instrument  ?? 'Unknown',
-        format:     activeFormat,
-        date,
-      });
+      const html = buildPdfHtml(notes, pdfMeta());
       const { uri } = await Print.printToFileAsync({ html });
       console.log('[ResultsScreen] PDF saved to:', uri);
       await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Save or share sheet music' });
@@ -224,10 +245,15 @@ export default function ResultsScreen() {
           {/* Share */}
           <TouchableOpacity
             style={styles.actionBtn}
-            onPress={() => console.log('Share pressed')}
+            onPress={handleShare}
             activeOpacity={0.7}
+            disabled={shareLoading}
           >
-            <Feather name="share-2" size={20} color="#9CA3AF" />
+            {shareLoading ? (
+              <ActivityIndicator size="small" color="#0EA5E9" />
+            ) : (
+              <Feather name="share-2" size={20} color="#9CA3AF" />
+            )}
             <Text style={styles.actionLabel}>Share</Text>
           </TouchableOpacity>
 
