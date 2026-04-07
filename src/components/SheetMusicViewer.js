@@ -31,11 +31,15 @@ function buildHtml(notes) {
 
     // ── Layout constants ─────────────────────────────────────────────────
     var W         = Math.floor(window.innerWidth);
-    var LINE_GAP  = 10;             // px between adjacent staff lines
-    var STEP      = LINE_GAP / 2;   // px per diatonic half-step
-    var STAFF_H   = 4 * LINE_GAP;   // 40px (top line to bottom line)
-    var ROW_H     = 130;            // total px per staff row (incl. stem/ledger room)
-    var ST_OFF    = 45;             // y from row top to first (top) staff line
+    var LINE_GAP  = 12;             // px between adjacent staff lines
+    var STEP      = LINE_GAP / 2;   // px per diatonic step (half a space = 6px)
+    var STAFF_H   = 4 * LINE_GAP;   // 48px (top line to bottom line)
+    var ROW_H     = 140;            // total px per staff row — gap between staves = ROW_H − STAFF_H = 92px
+    var ST_OFF    = 48;             // y from row top to first (top) staff line
+
+    // Notehead dimensions — 10px wide × 8px tall as requested
+    var NH_RX     = 5;  // notehead half-width  (total: 10px)
+    var NH_RY     = 4;  // notehead half-height (total:  8px)
 
     var CLEF_W    = 52;             // px reserved for treble clef
     var TIME_W    = 24;             // px reserved for time sig (row 0 only)
@@ -99,9 +103,10 @@ function buildHtml(notes) {
       out += vLine(4, stT, stB, '#AAAAAA', 1.5);
 
       // ── Treble clef ────────────────────────────────────────────────
-      // U+1D11E 𝄞 — baseline at stB+14 so the G-curl sits near G4 line
-      out += '<text x="5" y="' + (stB + 14) + '"'
-           + ' font-size="64" font-family="\\'Times New Roman\\', Times, serif"'
+      // U+1D11E (𝄞) — baseline placed below the bottom staff line so the
+      // G-curl visually lands on the G4 line (2nd line from bottom).
+      out += '<text x="5" y="' + (stB + 16) + '"'
+           + ' font-size="70" font-family="Times New Roman, Times, serif"'
            + ' fill="#FFFFFF">&#x1D11E;</text>';
 
       // ── Time signature (row 0 only) ────────────────────────────────
@@ -113,7 +118,9 @@ function buildHtml(notes) {
 
       // ── Notes ─────────────────────────────────────────────────────
       row.forEach(function (note, ni) {
-        var nx  = nx0 + ni * nw + nw / 2;   // center x of this note slot
+        // Round nx to integer — prevents sub-pixel misalignment of the
+        // rotation transform centre from dragging the ellipse off the line.
+        var nx  = Math.round(nx0 + ni * nw + nw / 2);
         var gni = ri * PER_ROW + ni;         // global note index
 
         if (!note) {
@@ -124,52 +131,74 @@ function buildHtml(notes) {
           out += seg(nx - 3, mid + 4,  nx + 3, mid + 11,'#FFFFFF', 1.5);
         } else {
           // ── Pitched note ──────────────────────────────────────────
-          // steps above E4 (bottom staff line)
-          var sae = note.steps - 2;
-          var ny  = stB - sae * STEP;   // pixel y of notehead centre
+          //
+          // Treble clef staff lines (bottom → top), with their sae values:
+          //   Line 1 (E4) sae=0  → ny = stB
+          //   Line 2 (G4) sae=2  → ny = stB − 12
+          //   Line 3 (B4) sae=4  → ny = stB − 24  ← middle line
+          //   Line 4 (D5) sae=6  → ny = stB − 36
+          //   Line 5 (F5) sae=8  → ny = stB − 48
+          //
+          // Spaces between lines have odd sae values (1,3,5,7) and land
+          // exactly halfway between the two adjacent line y-values.
+          //
+          // Accidentals (#/b) do NOT change sae — D#4 and D4 share the same y.
+          //
+          var sae = note.steps - 2;          // diatonic steps above E4
 
-          // ── Ledger lines below staff ───────────────────────────────
-          // C4 = sae −2, A3 = sae −4, F3 = sae −6 …
+          // ── Transpose for display — keep note within ~2 ledger lines ─
+          // Add/subtract 7 (one octave) until sae is in [-4, 12].
+          while (sae < -4) sae += 7;
+          while (sae > 12) sae -= 7;
+
+          var ny  = stB - sae * STEP;        // integer: stB and STEP are both integers
+
+          // ── Ledger lines below staff ──────────────────────────────
+          // C4=sae−2, A3=sae−4, F3=sae−6 …
           if (sae <= -2) {
-            var lo = (sae % 2 === 0) ? sae : sae + 1;
-            for (var s = -2; s >= lo; s -= 2)
-              out += hLine(nx - 11, nx + 11, stB - s * STEP, '#AAAAAA', 1);
+            var loLedger = (sae % 2 === 0) ? sae : sae + 1;
+            for (var ls = -2; ls >= loLedger; ls -= 2)
+              out += hLine(nx - 11, nx + 11, stB - ls * STEP, '#AAAAAA', 1);
           }
 
-          // ── Ledger lines above staff ───────────────────────────────
-          // G5 = sae 10, B5 = sae 12, D6 = sae 14 …
+          // ── Ledger lines above staff ──────────────────────────────
+          // Top line F5=sae 8; first ledger above = G5=sae 10
           if (sae >= 10) {
-            var hi = (sae % 2 === 0) ? sae : sae - 1;
-            for (var s = 10; s <= hi; s += 2)
-              out += hLine(nx - 11, nx + 11, stB - s * STEP, '#AAAAAA', 1);
+            var hiLedger = (sae % 2 === 0) ? sae : sae - 1;
+            for (var hs = 10; hs <= hiLedger; hs += 2)
+              out += hLine(nx - 11, nx + 11, stB - hs * STEP, '#AAAAAA', 1);
           }
 
-          // ── Accidental ────────────────────────────────────────────
+          // ── Accidental — drawn before notehead, same y as note ────
           if (note.acc) {
             var ch = note.acc === '#' ? '&#x266F;' : '&#x266D;';
-            out += '<text x="' + (nx - 17) + '" y="' + (ny + 5) + '"'
+            out += '<text x="' + (nx - 16) + '" y="' + (ny + 5) + '"'
                  + ' font-size="14" font-family="serif" fill="#FFFFFF">' + ch + '</text>';
           }
 
-          // ── Notehead (filled ellipse, tilted −15°) ────────────────
+          // ── Notehead: 10px wide × 8px tall, tilted −15° ───────────
+          // cx/cy are integer pixel values so the rotation pivot is
+          // on a whole pixel, keeping the notehead centred on the line.
           out += '<ellipse'
                + ' cx="' + nx + '" cy="' + ny + '"'
-               + ' rx="6" ry="4" fill="#FFFFFF"'
+               + ' rx="' + NH_RX + '" ry="' + NH_RY + '" fill="#FFFFFF"'
                + ' transform="rotate(-15,' + nx + ',' + ny + ')"/>';
 
-          // ── Stem (up if below B4 middle line, else down) ──────────
-          // B4 = sae 4 (middle staff line)
+          // ── Stem ──────────────────────────────────────────────────
+          // Connects to the side EDGE of the notehead (not the centre y)
+          // so it visually anchors the note without shifting its perceived pitch.
+          var STEM_LEN = 30;
           if (sae < 4) {
-            out += vLine(nx + 5, ny,      ny - 30, '#FFFFFF', 1.5); // up
+            out += vLine(nx + NH_RX, ny - NH_RY, ny - NH_RY - STEM_LEN, '#FFFFFF', 1.5);
           } else {
-            out += vLine(nx - 5, ny,      ny + 30, '#FFFFFF', 1.5); // down
+            out += vLine(nx - NH_RX, ny + NH_RY, ny + NH_RY + STEM_LEN, '#FFFFFF', 1.5);
           }
         }
 
         // ── Barline after end of each complete measure ─────────────
         // Only draw mid-row barlines (row-end barline is drawn separately)
         if ((gni + 1) % BEATS === 0 && ni < row.length - 1) {
-          var bx = nx + nw / 2 + 1;
+          var bx = Math.round(nx + nw / 2 + 1);
           out += vLine(bx, stT, stB, '#AAAAAA', 1.5);
         }
       });
