@@ -75,17 +75,23 @@ export default function ResultsScreen() {
     durationSeconds?: string;
   }>();
 
-  const notes: { pitch: string; start: number; duration: number }[] =
-    notesJson ? JSON.parse(notesJson) : [];
+  // notes may arrive via params (fresh processing) or be loaded from output_data (history replay)
+  const [notes, setNotes] = useState<{ pitch: string; start: number; duration: number }[]>(
+    () => (notesJson ? JSON.parse(notesJson) : [])
+  );
   const { show: showToast, message: toastMessage, opacity: toastOpacity } = useToast();
 
   const { tier } = useSubscription();
-  const isPro = tier !== 'free';
+  // Tiers that can download clean PDFs: advancedPro, virtuosos, payAsYouGo
+  const canDownloadPdf = tier !== 'free';
+  // Tiers that get a watermark-free share PDF (same set)
+  const isPro = canDownloadPdf;
 
   const [activeFormat, setActiveFormat] = useState('Score');
   const [favorited, setFavorited] = useState(false);
   const heartScale = useRef(new Animated.Value(1)).current;
   const [trackRecord, setTrackRecord] = useState<any>(null);
+  const [isSaved, setIsSaved] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [shareLoading, setShareLoading] = useState(false);
 
@@ -103,6 +109,14 @@ export default function ResultsScreen() {
         } else {
           console.log('[ResultsScreen] fetched record:', data);
           setTrackRecord(data);
+          // Populate notes from saved output_data when not passed via params
+          if (!notesJson && data?.output_data) {
+            try {
+              setNotes(JSON.parse(data.output_data));
+            } catch (e) {
+              console.log('[ResultsScreen] failed to parse output_data:', e);
+            }
+          }
         }
       });
   }, [historyId]);
@@ -132,6 +146,10 @@ export default function ResultsScreen() {
   }
 
   async function handleDownloadPdf() {
+    if (!canDownloadPdf) {
+      router.push('/subscription');
+      return;
+    }
     setPdfLoading(true);
     try {
       const html = buildPdfHtml(notes, pdfMeta());
@@ -142,6 +160,32 @@ export default function ResultsScreen() {
       console.log('[ResultsScreen] PDF error:', err);
     } finally {
       setPdfLoading(false);
+    }
+  }
+
+  async function handleSave() {
+    if (isSaved) {
+      showToast('Already saved');
+      return;
+    }
+    if (!historyId) {
+      showToast('Save not available yet');
+      return;
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) return;
+
+    const { error } = await supabase
+      .from('saved_items')
+      .insert({ user_id: uid, history_id: historyId });
+
+    if (error) {
+      console.log('[ResultsScreen] save error:', error);
+      showToast('Could not save — please try again');
+    } else {
+      setIsSaved(true);
+      showToast('Saved to your library');
     }
   }
 
@@ -257,8 +301,7 @@ export default function ResultsScreen() {
             <Text style={styles.actionLabel}>Share</Text>
           </TouchableOpacity>
 
-          {/* Download PDF */}
-          {/* TODO: Re-enable tier gating for PDF after testing */}
+          {/* Download PDF — free tier redirects to subscription */}
           <TouchableOpacity
             style={styles.actionBtn}
             onPress={handleDownloadPdf}
@@ -268,7 +311,14 @@ export default function ResultsScreen() {
             {pdfLoading ? (
               <ActivityIndicator size="small" color="#0EA5E9" />
             ) : (
-              <Feather name="download" size={20} color="#9CA3AF" />
+              <View>
+                <Feather name="download" size={20} color="#9CA3AF" />
+                {!canDownloadPdf && (
+                  <View style={styles.lockBadge}>
+                    <MaterialIcons name="lock" size={8} color="#F59E0B" />
+                  </View>
+                )}
+              </View>
             )}
             <Text style={styles.actionLabel}>PDF</Text>
           </TouchableOpacity>
@@ -291,14 +341,18 @@ export default function ResultsScreen() {
             </Text>
           </TouchableOpacity>
 
-          {/* Report */}
+          {/* Save to library */}
           <TouchableOpacity
             style={styles.actionBtn}
-            onPress={() => showToast('Thanks — this helps us improve')}
+            onPress={handleSave}
             activeOpacity={0.7}
           >
-            <Feather name="flag" size={20} color="#9CA3AF" />
-            <Text style={styles.actionLabel}>Report</Text>
+            <Ionicons
+              name={isSaved ? 'bookmark' : 'bookmark-outline'}
+              size={20}
+              color={isSaved ? '#0EA5E9' : '#9CA3AF'}
+            />
+            <Text style={[styles.actionLabel, isSaved && styles.actionLabelActive]}>Save</Text>
           </TouchableOpacity>
         </View>
 
@@ -427,4 +481,12 @@ const styles = StyleSheet.create({
   actionLabel: { color: '#6B7280', fontSize: 11, fontWeight: '500' },
   actionLabelActive: { color: '#0EA5E9' },
   actionLabelFavorited: { color: '#DC143C' },
+  lockBadge: {
+    position: 'absolute',
+    bottom: -3,
+    right: -5,
+    backgroundColor: '#111118',
+    borderRadius: 6,
+    padding: 1,
+  },
 });

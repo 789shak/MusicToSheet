@@ -44,8 +44,8 @@ function iconForInstrument(instrument: string | null): keyof typeof Ionicons.gly
   }
 }
 
-// Converts a raw conversion_history row + favorited ids set → HistoryItem
-function rowToItem(row: any, favIds: Set<string>): HistoryItem {
+// Converts a raw conversion_history row + favorited/saved id sets → HistoryItem
+function rowToItem(row: any, favIds: Set<string>, savedIds: Set<string>): HistoryItem {
   const secs = row.duration_seconds ?? 0;
   const m = Math.floor(secs / 60);
   const s = String(secs % 60).padStart(2, '0');
@@ -59,7 +59,7 @@ function rowToItem(row: any, favIds: Set<string>): HistoryItem {
     date,
     duration: `${m}:${s}`,
     favorited: favIds.has(row.id),
-    saved: false,
+    saved: savedIds.has(row.id),
   };
 }
 
@@ -212,7 +212,7 @@ export default function HistoryScreen() {
       return;
     }
 
-    const [histRes, favRes] = await Promise.all([
+    const [histRes, favRes, savedRes] = await Promise.all([
       supabase
         .from('conversion_history')
         .select('*')
@@ -222,13 +222,19 @@ export default function HistoryScreen() {
         .from('favorites')
         .select('history_id')
         .eq('user_id', uid),
+      supabase
+        .from('saved_items')
+        .select('history_id')
+        .eq('user_id', uid),
     ]);
 
-    if (histRes.error) console.log('conversion_history error:', histRes.error);
-    if (favRes.error) console.log('favorites error:', favRes.error);
+    if (histRes.error)  console.log('conversion_history error:', histRes.error);
+    if (favRes.error)   console.log('favorites error:', favRes.error);
+    if (savedRes.error) console.log('saved_items error:', savedRes.error);
 
-    const favIds = new Set<string>((favRes.data ?? []).map((f: any) => f.history_id));
-    setItems((histRes.data ?? []).map((row: any) => rowToItem(row, favIds)));
+    const favIds   = new Set<string>((favRes.data   ?? []).map((f: any) => f.history_id));
+    const savedIds = new Set<string>((savedRes.data ?? []).map((s: any) => s.history_id));
+    setItems((histRes.data ?? []).map((row: any) => rowToItem(row, favIds, savedIds)));
   }, []);
 
   useEffect(() => {
@@ -375,7 +381,11 @@ export default function HistoryScreen() {
             item={item}
             onPress={() => {
               console.log('[HistoryScreen] opening result for historyId:', item.id);
-              router.push({ pathname: '/results', params: { historyId: item.id } });
+              router.push({
+                pathname: '/results',
+                params: { historyId: item.id },
+                // notesJson intentionally omitted — ResultsScreen loads output_data from DB
+              });
             }}
             onToggleFavorite={() => toggleFavorite(item.id)}
             onDelete={() => deleteItem(item.id)}

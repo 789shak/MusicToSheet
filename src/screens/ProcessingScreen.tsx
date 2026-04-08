@@ -23,7 +23,7 @@ const STAGES = [
 ];
 
 // Show a cold-start warning if the server hasn't replied within this many ms
-const SLOW_WARNING_MS = 10_000;
+const SLOW_WARNING_MS = 8_000;
 
 // ─── Stage Row ────────────────────────────────────────────────────────────────
 function StageRow({
@@ -224,17 +224,21 @@ export default function ProcessingScreen() {
         const { data: { session } } = await supabase.auth.getSession();
         const uid = session?.user?.id;
 
-        const trackName = fileName || (linkUrl ? 'Linked Audio' : 'Untitled');
+        const trackName =
+          sourceType === 'link'      ? 'Pasted Link' :
+          sourceType === 'recording' ? 'Voice Recording' :
+          (fileName || 'Untitled');
 
         const { data: historyRow, error: dbError } = await supabase
           .from('conversion_history')
           .insert({
-            user_id: uid,
-            track_name: trackName,
-            source_type: sourceType ?? 'upload',
-            instrument: result.instrument ?? instrument ?? '',
-            output_format: result.format ?? outputFormat ?? '',
-            duration_seconds: result.duration_seconds ?? 30,
+            user_id:           uid,
+            track_name:        trackName,
+            source_type:       sourceType ?? 'upload',
+            instrument:        result.instrument ?? instrument ?? '',
+            output_format:     result.format ?? outputFormat ?? '',
+            duration_seconds:  result.duration_seconds ?? 30,
+            output_data:       JSON.stringify(result.notes ?? []),
             rights_declaration: rightsDeclaration ?? '',
           })
           .select('id')
@@ -342,7 +346,7 @@ export default function ProcessingScreen() {
       {slowWarning && (
         <View style={styles.slowWrap}>
           <Ionicons name="moon-outline" size={13} color="#F59E0B" style={{ marginRight: 6 }} />
-          <Text style={styles.slowText}>Server is waking up, please wait…</Text>
+          <Text style={styles.slowText}>Server is warming up, this may take up to 30 seconds on first use…</Text>
         </View>
       )}
 
