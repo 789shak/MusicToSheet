@@ -31,3 +31,32 @@ export async function processAudio({ audioUrl, instrument, outputFormat }) {
   console.log('[api] /process response:', data);
   return data;
 }
+
+/**
+ * POST /process-with-stems — stem-separate first, then detect pitch on the
+ * relevant stem. Falls back to the caller using processAudio if this throws.
+ * @param {{ audioUrl: string, instrument: string, outputFormat: string }} params
+ * @returns {Promise<object>} API response JSON (includes stems_detected, stem_used)
+ */
+export async function processAudioWithStems({ audioUrl, instrument, outputFormat }) {
+  console.log('[api] POST /process-with-stems', { audioUrl, instrument, outputFormat });
+
+  const response = await fetch(`${API_URL}/process-with-stems`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      audio_url: audioUrl,
+      instrument,
+      output_format: outputFormat,
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Server error ${response.status}: ${text}`);
+  }
+
+  const data = await response.json();
+  console.log('[api] /process-with-stems response:', data);
+  return data;
+}

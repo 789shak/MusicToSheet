@@ -6,3 +6,4 @@ numpy
 librosa
 pretty_midi
 soundfile
+replicate

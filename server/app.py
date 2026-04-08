@@ -1,5 +1,6 @@
 import os
 import uuid
+import asyncio
 import traceback
 import subprocess
 import gc
@@ -7,6 +8,7 @@ import numpy as np
 import httpx
 import librosa
 import pretty_midi
+import replicate
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
@@ -17,6 +19,23 @@ class ProcessRequest(BaseModel):
     audio_url: str
     instrument: str
     output_format: str
+
+# Stem selection: which Demucs output stem to use per instrument
+# None → use original audio (Full Score)
+INSTRUMENT_TO_STEM = {
+    'Vocals':    'vocals',
+    'Singing':   'vocals',
+    'Drums':     'drums',
+    'Bass':      'bass',
+    'Piano':     'other',
+    'Guitar':    'other',
+    'Violin':    'other',
+    'Cello':     'other',
+    'Flute':     'other',
+    'Trumpet':   'other',
+    'Saxophone': 'other',
+    'Full Score': None,
+}
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 async def download_audio(url: str, dest_path: str) -> int:
@@ -148,3 +167,158 @@ async def process_audio(body: ProcessRequest):
             if f and os.path.exists(f):
                 os.remove(f)
                 print(f"[process] Deleted temp file: {f}")
+
+
+# ─── Shared pitch-detection logic ─────────────────────────────────────────────
+def detect_notes_from_wav(wav_path: str) -> list:
+    """Load a WAV file with librosa and return a list of note dicts."""
+    y, sr = librosa.load(wav_path, sr=22050, mono=True, duration=60.0)
+    f0, voiced_flag, _ = librosa.pyin(
+        y,
+        fmin=librosa.note_to_hz('C2'),
+        fmax=librosa.note_to_hz('C7'),
+        sr=sr,
+    )
+    hop_length = 512
+    times = librosa.frames_to_time(np.arange(len(f0)), sr=sr, hop_length=hop_length)
+    notes = []
+    i = 0
+    while i < len(f0):
+        if voiced_flag[i] and f0[i] is not None and not np.isnan(f0[i]):
+            j = i
+            while j < len(f0) and voiced_flag[j] and not np.isnan(f0[j]):
+                j += 1
+            avg_freq = float(np.nanmean(f0[i:j]))
+            note_name = librosa.hz_to_note(avg_freq)
+            start_time = float(times[i])
+            end_time = float(times[j - 1]) + (hop_length / sr)
+            duration = round(end_time - start_time, 3)
+            if duration > 0.05:
+                notes.append({
+                    "pitch":    note_name,
+                    "start":    round(start_time, 3),
+                    "duration": duration,
+                    "velocity": 80,
+                })
+            i = j
+        else:
+            i += 1
+    return notes
+
+
+# ─── /process-with-stems ──────────────────────────────────────────────────────
+@app.post("/process-with-stems")
+async def process_with_stems(body: ProcessRequest):
+    tmp_path = None
+    wav_path = None
+    stem_path = None
+    stem_wav_path = None
+    try:
+        # Step 1: Download original audio
+        print("[stems] Step 1: Downloading audio...")
+        original_name = body.audio_url.split("?")[0].split("/")[-1]
+        ext = os.path.splitext(original_name)[1].lower() or ".mp3"
+        uid = str(uuid.uuid4())
+        tmp_path = f"/tmp/{uid}{ext}"
+
+        file_size = await download_audio(body.audio_url, tmp_path)
+        print(f"[stems] Downloaded {file_size} bytes to {tmp_path}")
+        if file_size < 1000:
+            raise Exception(f"Downloaded file too small ({file_size} bytes)")
+
+        # Step 2: Call Replicate Demucs for stem separation
+        print("[stems] Step 2: Running Demucs via Replicate...")
+        replicate_token = os.environ.get("REPLICATE_API_TOKEN")
+        if not replicate_token:
+            raise Exception("REPLICATE_API_TOKEN environment variable not set")
+
+        client = replicate.Client(api_token=replicate_token)
+        output = await asyncio.to_thread(
+            client.run,
+            "cjwbw/demucs:25a173108cff36ef9f80f854c162d01df9e6528be175794b81571f6e0c0f3b12",
+            input={"audio": body.audio_url},
+        )
+        print(f"[stems] Demucs output type: {type(output)}, value: {output}")
+
+        # Step 3: Detect which stems are available
+        detected_stems = []
+        stem_urls = {}
+        if isinstance(output, dict):
+            for stem_name in ("vocals", "drums", "bass", "other"):
+                if output.get(stem_name):
+                    detected_stems.append(stem_name)
+                    stem_urls[stem_name] = str(output[stem_name])
+        else:
+            # Some model versions return a list in order: drums, bass, other, vocals
+            stem_order = ["drums", "bass", "other", "vocals"]
+            for idx, url in enumerate(output or []):
+                if idx < len(stem_order) and url:
+                    name = stem_order[idx]
+                    detected_stems.append(name)
+                    stem_urls[name] = str(url)
+        print(f"[stems] Detected stems: {detected_stems}")
+
+        # Step 4: Pick the right stem URL based on instrument
+        selected_stem = INSTRUMENT_TO_STEM.get(body.instrument)
+        print(f"[stems] Instrument '{body.instrument}' → stem '{selected_stem}'")
+
+        if selected_stem is None or selected_stem not in stem_urls:
+            # Full Score or unmapped instrument → use original audio
+            print("[stems] Using original audio (no stem)")
+            audio_for_detection = tmp_path
+            ext_for_wav = ext
+        else:
+            # Step 5: Download the selected stem
+            stem_ext = ".wav"
+            stem_path = f"/tmp/{uid}_stem{stem_ext}"
+            print(f"[stems] Step 5: Downloading stem '{selected_stem}' from {stem_urls[selected_stem][:80]}...")
+            stem_size = await download_audio(stem_urls[selected_stem], stem_path)
+            print(f"[stems] Stem downloaded: {stem_size} bytes")
+            audio_for_detection = stem_path
+            ext_for_wav = stem_ext
+
+        # Step 6: Convert to WAV with ffmpeg
+        wav_path = f"/tmp/{uid}_out.wav"
+        print("[stems] Step 6: Converting to WAV with ffmpeg...")
+        result = subprocess.run(
+            ['ffmpeg', '-i', audio_for_detection, '-t', '60', '-ar', '22050', '-ac', '1', '-sample_fmt', 's16', wav_path, '-y'],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise Exception(f"ffmpeg failed: {result.stderr}")
+        print(f"[stems] Converted to WAV: {wav_path}")
+
+        # Step 7: Run librosa pitch detection
+        print("[stems] Step 7: Running pitch detection...")
+        notes = await asyncio.to_thread(detect_notes_from_wav, wav_path)
+        print(f"[stems] Done. {len(notes)} notes detected.")
+
+        track_name = os.path.splitext(original_name)[0] or "Untitled"
+        gc.collect()
+
+        # Step 8: Return notes + detected stems
+        return {
+            "status":           "success",
+            "track_name":       track_name,
+            "instrument":       body.instrument,
+            "format":           body.output_format,
+            "duration_seconds": 60,
+            "notes":            notes,
+            "confidence":       0.80,
+            "stems_detected":   detected_stems,
+            "stem_used":        selected_stem,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[stems] Error: {e}")
+        print(f"[stems] Full error: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    finally:
+        for f in [tmp_path, wav_path, stem_path, stem_wav_path]:
+            if f and os.path.exists(f):
+                os.remove(f)
+                print(f"[stems] Deleted temp file: {f}")

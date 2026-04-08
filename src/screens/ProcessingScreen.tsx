@@ -9,17 +9,18 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
-import { processAudio } from '../lib/api';
+import { processAudio, processAudioWithStems } from '../lib/api';
 
 // ─── Stage config ─────────────────────────────────────────────────────────────
 // Stages are driven by the real API call, not a fixed timer.
-// Stages 0-2 advance on a timer; stage 3 ("Formatting output") advances when
+// Stages 0-3 advance on a timer; stage 4 ("Formatting output") advances when
 // the API response arrives.
 const STAGES = [
-  'Analyzing audio',       // 0 — shown immediately
-  'Detecting notes',       // 1 — shown at 2 s
-  'Generating sheet music',// 2 — shown at 4 s
-  'Formatting output',     // 3 — shown when API responds
+  'Analyzing audio',          // 0 — shown immediately
+  'Separating instruments',   // 1 — shown at 2 s
+  'Detecting notes',          // 2 — shown at 5 s
+  'Generating sheet music',   // 3 — shown at 9 s
+  'Formatting output',        // 4 — shown when API responds
 ];
 
 // Show a cold-start warning if the server hasn't replied within this many ms
@@ -183,7 +184,8 @@ export default function ProcessingScreen() {
 
     // Stage timers: advance visually while waiting for the API
     const t1 = setTimeout(() => { if (!cancelled) setCurrentStage((s) => Math.max(s, 1)); }, 2000);
-    const t2 = setTimeout(() => { if (!cancelled) setCurrentStage((s) => Math.max(s, 2)); }, 4000);
+    const t2 = setTimeout(() => { if (!cancelled) setCurrentStage((s) => Math.max(s, 2)); }, 5000);
+    const t3 = setTimeout(() => { if (!cancelled) setCurrentStage((s) => Math.max(s, 3)); }, 9000);
     const tSlow = setTimeout(() => { if (!cancelled) setSlowWarning(true); }, SLOW_WARNING_MS);
 
     async function run() {
@@ -202,18 +204,29 @@ export default function ProcessingScreen() {
           audioUrl = signedData.signedUrl;
         }
 
-        console.log('[ProcessingScreen] calling processAudio with audioUrl:', audioUrl);
+        console.log('[ProcessingScreen] calling processAudioWithStems with audioUrl:', audioUrl);
 
-        const result = await processAudio({
-          audioUrl,
-          instrument: instrument ?? '',
-          outputFormat: outputFormat ?? '',
-        });
+        let result: any;
+        try {
+          result = await processAudioWithStems({
+            audioUrl,
+            instrument: instrument ?? '',
+            outputFormat: outputFormat ?? '',
+          });
+          console.log('[ProcessingScreen] stems detected:', result?.stems_detected, 'stem used:', result?.stem_used);
+        } catch (stemsErr: any) {
+          console.log('[ProcessingScreen] stem separation failed, falling back to /process:', stemsErr?.message);
+          result = await processAudio({
+            audioUrl,
+            instrument: instrument ?? '',
+            outputFormat: outputFormat ?? '',
+          });
+        }
 
         if (cancelled) return;
 
         // Advance to final stage ("Formatting output")
-        setCurrentStage(3);
+        setCurrentStage(4);
         setSlowWarning(false);
 
         // Brief pause to let the user see the final stage tick over
@@ -270,6 +283,7 @@ export default function ProcessingScreen() {
       } finally {
         clearTimeout(t1);
         clearTimeout(t2);
+        clearTimeout(t3);
         clearTimeout(tSlow);
       }
     }
@@ -279,6 +293,7 @@ export default function ProcessingScreen() {
       cancelled = true;
       clearTimeout(t1);
       clearTimeout(t2);
+      clearTimeout(t3);
       clearTimeout(tSlow);
     };
   }, []);
