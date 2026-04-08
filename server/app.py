@@ -235,7 +235,7 @@ async def process_with_stems(body: ProcessRequest):
         client = replicate.Client(api_token=replicate_token)
         output = await asyncio.to_thread(
             client.run,
-            "cjwbw/demucs",
+            "cjwbw/demucs:25a173108cff36ef9f80f854c162d01df9e6528be175794b81158fa03836d953",
             input={"audio": body.audio_url},
         )
         print(f"[stems] Demucs output type: {type(output)}, value: {output}")
