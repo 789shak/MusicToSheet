@@ -5,6 +5,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Feather, Ionicons, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -167,22 +168,22 @@ export default function SettingsScreen() {
           <Row
             icon={<Feather name="file-text" size={18} color="#9CA3AF" />}
             label="Terms of Service"
-            onPress={() => console.log('Terms of Service pressed')}
+            onPress={() => Linking.openURL('https://musictosheet.com/terms.html')}
           />
           <Row
             icon={<Feather name="shield" size={18} color="#9CA3AF" />}
             label="Privacy Policy"
-            onPress={() => console.log('Privacy Policy pressed')}
+            onPress={() => Linking.openURL('https://musictosheet.com/privacy.html')}
           />
           <Row
             icon={<MaterialCommunityIcons name="copyright" size={18} color="#9CA3AF" />}
             label="Copyright Policy (DMCA)"
-            onPress={() => console.log('Copyright Policy pressed')}
+            onPress={() => Linking.openURL('https://musictosheet.com/dmca.html')}
           />
           <Row
             icon={<Feather name="flag" size={18} color="#9CA3AF" />}
             label="Submit Takedown Request"
-            onPress={() => console.log('Submit Takedown Request pressed')}
+            onPress={() => Linking.openURL('https://musictosheet.com/dmca.html#submit')}
             last
           />
         </Section>
