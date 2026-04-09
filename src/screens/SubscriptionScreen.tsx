@@ -5,10 +5,13 @@ import {
   ScrollView,
   TouchableOpacity,
   Pressable,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { getOfferings, purchasePackage, restorePurchases } from '../lib/revenuecat';
 
 type BillingCycle = 'monthly' | 'annual';
 
@@ -110,6 +113,53 @@ const feat = StyleSheet.create({
 export default function SubscriptionScreen() {
   const router = useRouter();
   const [cycle, setCycle] = useState<BillingCycle>('monthly');
+  const [offerings, setOfferings] = useState<any>(null);
+  const [purchasing, setPurchasing] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState(false);
+
+  useEffect(() => {
+    getOfferings()
+      .then(setOfferings)
+      .catch(() => { /* fall back to hardcoded prices */ });
+  }, []);
+
+  async function handlePurchase(planId: string) {
+    if (purchasing) return;
+    try {
+      setPurchasing(planId);
+
+      // Find the matching package in the current offering by identifier,
+      // or fall back to the first available package.
+      const pkg =
+        offerings?.current?.availablePackages?.find(
+          (p: any) => p.identifier === planId
+        ) ?? offerings?.current?.availablePackages?.[0];
+
+      if (!pkg) throw new Error('Package not available yet. Please try again later.');
+
+      await purchasePackage(pkg);
+      Alert.alert('Purchase successful', 'Your plan has been activated.');
+    } catch (e: any) {
+      if (!e?.userCancelled) {
+        Alert.alert('Purchase failed', e?.message ?? 'Something went wrong. Please try again.');
+      }
+    } finally {
+      setPurchasing(null);
+    }
+  }
+
+  async function handleRestore() {
+    if (restoring) return;
+    try {
+      setRestoring(true);
+      await restorePurchases();
+      Alert.alert('Purchases restored', 'Your previous purchases have been restored.');
+    } catch (e: any) {
+      Alert.alert('Restore failed', e?.message ?? 'Could not restore purchases. Please try again.');
+    } finally {
+      setRestoring(false);
+    }
+  }
 
   return (
     <ScrollView
@@ -133,10 +183,14 @@ export default function SubscriptionScreen() {
         <Feature text="No subscription needed" />
         <TouchableOpacity
           style={styles.btnGray}
-          onPress={() => console.log('Buy Per Track pressed')}
+          onPress={() => handlePurchase('pay_as_you_go')}
           activeOpacity={0.85}
+          disabled={!!purchasing}
         >
-          <Text style={styles.btnGrayText}>Buy Per Track</Text>
+          {purchasing === 'pay_as_you_go'
+            ? <ActivityIndicator size="small" color="#D1D5DB" />
+            : <Text style={styles.btnGrayText}>Buy Per Track</Text>
+          }
         </TouchableOpacity>
       </View>
 
@@ -186,10 +240,14 @@ export default function SubscriptionScreen() {
 
           <TouchableOpacity
             style={styles.btnTurquoise}
-            onPress={() => console.log('Subscribe Advanced Pro pressed')}
+            onPress={() => handlePurchase(cycle === 'monthly' ? 'pro_monthly' : 'pro_annual')}
             activeOpacity={0.85}
+            disabled={!!purchasing}
           >
-            <Text style={styles.btnTurquoiseText}>Subscribe</Text>
+            {purchasing === 'pro_monthly' || purchasing === 'pro_annual'
+              ? <ActivityIndicator size="small" color="#FFFFFF" />
+              : <Text style={styles.btnTurquoiseText}>Subscribe</Text>
+            }
           </TouchableOpacity>
         </View>
       </View>
@@ -218,10 +276,14 @@ export default function SubscriptionScreen() {
 
           <TouchableOpacity
             style={styles.btnGold}
-            onPress={() => console.log('Subscribe Virtuosos pressed')}
+            onPress={() => handlePurchase(cycle === 'monthly' ? 'virtuosos_monthly' : 'virtuosos_annual')}
             activeOpacity={0.85}
+            disabled={!!purchasing}
           >
-            <Text style={styles.btnGoldText}>Subscribe</Text>
+            {purchasing === 'virtuosos_monthly' || purchasing === 'virtuosos_annual'
+              ? <ActivityIndicator size="small" color="#111118" />
+              : <Text style={styles.btnGoldText}>Subscribe</Text>
+            }
           </TouchableOpacity>
         </View>
       </View>
@@ -233,6 +295,18 @@ export default function SubscriptionScreen() {
         activeOpacity={0.7}
       >
         <Text style={styles.btnSkipText}>Continue with Free</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.btnRestore}
+        onPress={handleRestore}
+        activeOpacity={0.7}
+        disabled={restoring}
+      >
+        {restoring
+          ? <ActivityIndicator size="small" color="#6B7280" />
+          : <Text style={styles.btnRestoreText}>Restore Purchases</Text>
+        }
       </TouchableOpacity>
 
       <Text style={styles.legalNote}>
@@ -465,6 +539,18 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     fontSize: 14,
     fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+
+  // ── Restore ──
+  btnRestore: {
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  btnRestoreText: {
+    color: '#6B7280',
+    fontSize: 13,
     textDecorationLine: 'underline',
   },
 

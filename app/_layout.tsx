@@ -8,6 +8,7 @@ import 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider, useAuth } from '@/src/hooks/useAuth';
 import { OnboardingModal } from '@/src/components/OnboardingModal';
+import { configureRevenueCat } from '@/src/lib/revenuecat';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -54,6 +55,10 @@ function AuthGate() {
 }
 
 function RootLayoutInner() {
+  useEffect(() => {
+    configureRevenueCat();
+  }, []);
+
   const [fontsLoaded] = useFonts({
     ...AntDesign.font,
     ...FontAwesome.font,
