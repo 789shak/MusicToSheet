@@ -5,6 +5,9 @@ import {
   TouchableOpacity,
   Animated,
   ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
 } from 'react-native';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { useState, useRef, useEffect } from 'react';
@@ -17,6 +20,25 @@ import SheetMusicViewer, { buildPdfHtml } from '../components/SheetMusicViewer';
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 const FORMATS = ['Score', 'Part', 'Lead Sheet', 'Tabs', 'Fake Book', 'Staff'];
+const DURATIONS = ['Whole', 'Half', 'Quarter', 'Eighth', 'Sixteenth'];
+
+// ─── Semitone shift ─────────────────────────────────────────────────────────
+const CHROMATIC = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const NOTE_TO_SEMI: Record<string, number> = {
+  C:0,'C#':1,Db:1,D:2,'D#':3,Eb:3,E:4,F:5,'F#':6,Gb:6,G:7,'G#':8,Ab:8,A:9,'A#':10,Bb:10,B:11,
+};
+
+function shiftSemitone(pitch: string, delta: number): string {
+  const m = pitch.match(/^([A-G][#b]?)([0-9])$/);
+  if (!m) return pitch;
+  const base = NOTE_TO_SEMI[m[1]];
+  if (base === undefined) return pitch;
+  const octave = parseInt(m[2], 10);
+  const newMidi = octave * 12 + base + delta;
+  const newOctave = Math.floor(newMidi / 12);
+  const newBase = ((newMidi % 12) + 12) % 12;
+  return CHROMATIC[newBase] + Math.max(0, Math.min(9, newOctave));
+}
 
 // ─── Toast ─────────────────────────────────────────────────────────────────
 function useToast() {
@@ -94,6 +116,12 @@ export default function ResultsScreen() {
   const [isSaved, setIsSaved] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [shareLoading, setShareLoading] = useState(false);
+
+  // ── Note editing ──
+  const [editModal, setEditModal] = useState(false);
+  const [editIndex, setEditIndex] = useState<number>(-1);
+  const [editPitch, setEditPitch] = useState<string>('');
+  const [editDuration, setEditDuration] = useState<string>('Quarter');
 
   useEffect(() => {
     if (!historyId) return;
@@ -189,6 +217,51 @@ export default function ResultsScreen() {
     }
   }
 
+  function handleNotePress(noteIndex: number, pitch: string) {
+    const note = notes[noteIndex];
+    if (!note) return;
+    setEditIndex(noteIndex);
+    setEditPitch(pitch);
+    // Map note duration (seconds) to closest label
+    const dur = note.duration ?? 0.5;
+    if (dur >= 2)        setEditDuration('Whole');
+    else if (dur >= 1)   setEditDuration('Half');
+    else if (dur >= 0.5) setEditDuration('Quarter');
+    else if (dur >= 0.25) setEditDuration('Eighth');
+    else                 setEditDuration('Sixteenth');
+    setEditModal(true);
+  }
+
+  async function persistNotes(updated: typeof notes) {
+    setNotes(updated);
+    if (!historyId) return;
+    await supabase
+      .from('conversion_history')
+      .update({ output_data: JSON.stringify(updated) })
+      .eq('id', historyId);
+  }
+
+  async function handleEditDone() {
+    if (editIndex < 0) return;
+    const DURATION_SECONDS: Record<string, number> = {
+      Whole: 2, Half: 1, Quarter: 0.5, Eighth: 0.25, Sixteenth: 0.125,
+    };
+    const updated = notes.map((n, i) =>
+      i === editIndex
+        ? { ...n, pitch: editPitch, duration: DURATION_SECONDS[editDuration] }
+        : n
+    );
+    setEditModal(false);
+    await persistNotes(updated);
+  }
+
+  async function handleEditDelete() {
+    if (editIndex < 0) return;
+    const updated = notes.filter((_, i) => i !== editIndex);
+    setEditModal(false);
+    await persistNotes(updated);
+  }
+
   function toggleFavorite() {
     const next = !favorited;
     setFavorited(next);
@@ -268,7 +341,12 @@ export default function ResultsScreen() {
 
         {/* ── Sheet Music Viewer ── */}
         <View style={styles.viewerContainer}>
-          <SheetMusicViewer notes={notes} />
+          <SheetMusicViewer notes={notes} onNotePress={handleNotePress} />
+          {/* Edit hint */}
+          <View style={styles.editHint} pointerEvents="none">
+            <Feather name="edit-2" size={11} color="#6B7280" />
+            <Text style={styles.editHintText}>Tap any note to edit</Text>
+          </View>
         </View>
 
         {/* ── Upgrade Banner ── */}
@@ -358,6 +436,65 @@ export default function ResultsScreen() {
 
         <Toast message={toastMessage} opacity={toastOpacity} />
       </View>
+
+      {/* ── Note Edit Modal ── */}
+      <Modal
+        visible={editModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setEditModal(false)}
+      >
+        <Pressable style={edit.backdrop} onPress={() => setEditModal(false)} />
+        <View style={edit.sheet}>
+          {/* Handle bar */}
+          <View style={edit.handle} />
+
+          {/* Pitch display */}
+          <Text style={edit.label}>Note</Text>
+          <View style={edit.pitchRow}>
+            <Pressable
+              style={edit.arrowBtn}
+              onPress={() => setEditPitch((p) => shiftSemitone(p, -1))}
+            >
+              <Feather name="chevron-down" size={22} color="#FFFFFF" />
+            </Pressable>
+            <Text style={edit.pitchText}>{editPitch}</Text>
+            <Pressable
+              style={edit.arrowBtn}
+              onPress={() => setEditPitch((p) => shiftSemitone(p, 1))}
+            >
+              <Feather name="chevron-up" size={22} color="#FFFFFF" />
+            </Pressable>
+          </View>
+
+          {/* Duration pills */}
+          <Text style={edit.label}>Duration</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={edit.pillScroll}>
+            <View style={edit.pillRow}>
+              {DURATIONS.map((d) => (
+                <Pressable
+                  key={d}
+                  style={[edit.pill, editDuration === d && edit.pillActive]}
+                  onPress={() => setEditDuration(d)}
+                >
+                  <Text style={[edit.pillText, editDuration === d && edit.pillTextActive]}>{d}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </ScrollView>
+
+          {/* Delete */}
+          <Pressable style={edit.deleteBtn} onPress={handleEditDelete}>
+            <Feather name="trash-2" size={15} color="#EF4444" />
+            <Text style={edit.deleteBtnText}>Delete Note</Text>
+          </Pressable>
+
+          {/* Done */}
+          <Pressable style={edit.doneBtn} onPress={handleEditDone}>
+            <Text style={edit.doneBtnText}>Done</Text>
+          </Pressable>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -443,6 +580,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2D2D3E',
   },
+  editHint: {
+    position: 'absolute',
+    top: 8,
+    right: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  editHintText: { color: '#6B7280', fontSize: 10 },
 
   // Upgrade banner
   upgradeBanner: {
@@ -489,4 +635,97 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     padding: 1,
   },
+});
+
+const edit = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: '#00000080',
+  },
+  sheet: {
+    backgroundColor: '#1A1A24',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 24,
+    paddingBottom: 36,
+    paddingTop: 12,
+  },
+  handle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#3D3D50',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  label: {
+    color: '#6B7280',
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 10,
+  },
+  pitchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 28,
+    marginBottom: 24,
+  },
+  arrowBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#2D2D3E',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pitchText: {
+    color: '#FFFFFF',
+    fontSize: 36,
+    fontWeight: '700',
+    minWidth: 80,
+    textAlign: 'center',
+  },
+  pillScroll: { marginBottom: 24 },
+  pillRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingRight: 8,
+  },
+  pill: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#2D2D3E',
+    backgroundColor: '#1C1C27',
+  },
+  pillActive: {
+    backgroundColor: '#0EA5E9',
+    borderColor: '#0EA5E9',
+  },
+  pillText: { color: '#6B7280', fontSize: 13, fontWeight: '500' },
+  pillTextActive: { color: '#FFFFFF', fontWeight: '700' },
+  deleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#EF444430',
+    backgroundColor: '#EF444410',
+    marginBottom: 12,
+  },
+  deleteBtnText: { color: '#EF4444', fontSize: 14, fontWeight: '600' },
+  doneBtn: {
+    backgroundColor: '#0EA5E9',
+    borderRadius: 12,
+    paddingVertical: 15,
+    alignItems: 'center',
+  },
+  doneBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
 });
