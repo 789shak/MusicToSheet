@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Music-To-Sheet — Audio to Sheet Music, Instantly</title>
+  <meta name="description" content="Music-To-Sheet converts your audio recordings into readable sheet music using AI. Coming soon to iOS and Android." />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #111118;
+      --surface:  #1C1C27;
+      --border:   #2D2D3E;
+      --accent:   #0EA5E9;
+      --text:     #FFFFFF;
+      --muted:    #9CA3AF;
+      --dim:      #6B7280;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Nav ── */
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 40px;
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 17px;
+      color: var(--text);
+      text-decoration: none;
+    }
+    .nav-logo svg { flex-shrink: 0; }
+    .nav-links { display: flex; gap: 24px; font-size: 14px; color: var(--muted); }
+    .nav-links a { color: var(--muted); }
+    .nav-links a:hover { color: var(--text); text-decoration: none; }
+
+    /* ── Hero ── */
+    .hero {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 80px 24px 60px;
+    }
+    .hero-badge {
+      display: inline-block;
+      background: rgba(14, 165, 233, 0.1);
+      border: 1px solid rgba(14, 165, 233, 0.3);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      padding: 6px 16px;
+      border-radius: 100px;
+      margin-bottom: 28px;
+    }
+    .hero h1 {
+      font-size: clamp(36px, 7vw, 72px);
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -1px;
+      margin-bottom: 20px;
+    }
+    .hero h1 span { color: var(--accent); }
+    .hero p {
+      font-size: clamp(16px, 2.5vw, 20px);
+      color: var(--muted);
+      max-width: 560px;
+      line-height: 1.6;
+      margin-bottom: 48px;
+    }
+
+    /* ── Store badges ── */
+    .badges { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; margin-bottom: 56px; }
+    .badge {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px 22px;
+      color: var(--text);
+      font-size: 14px;
+      opacity: 0.7;
+      cursor: default;
+    }
+    .badge-label { display: flex; flex-direction: column; text-align: left; }
+    .badge-label span:first-child { font-size: 11px; color: var(--muted); }
+    .badge-label span:last-child { font-weight: 700; font-size: 15px; }
+
+    /* ── Features ── */
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 20px;
+      max-width: 900px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 0 24px 80px;
+    }
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+    }
+    .feature-icon {
+      width: 40px;
+      height: 40px;
+      background: rgba(14, 165, 233, 0.12);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 14px;
+      color: var(--accent);
+      font-size: 20px;
+    }
+    .feature-card h3 { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+    .feature-card p { font-size: 13px; color: var(--muted); line-height: 1.5; }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 28px 40px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      font-size: 13px;
+      color: var(--dim);
+      text-align: center;
+    }
+    .footer-links { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
+    .footer-links a { color: var(--dim); }
+    .footer-links a:hover { color: var(--muted); text-decoration: none; }
+
+    @media (max-width: 600px) {
+      nav { padding: 16px 20px; }
+      .nav-links { gap: 14px; font-size: 13px; }
+      footer { padding: 24px 20px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Nav -->
+  <nav>
+    <a class="nav-logo" href="index.html">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0EA5E9" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+      </svg>
+      Music-To-Sheet
+    </a>
+    <div class="nav-links">
+      <a href="terms.html">Terms</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="dmca.html">Copyright</a>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-badge">Coming Soon</div>
+    <h1>Audio to <span>Sheet Music</span>,<br>Instantly.</h1>
+    <p>
+      Music-To-Sheet uses AI to convert your recordings, links, and voice
+      into readable sheet music — in seconds, not hours.
+    </p>
+
+    <!-- Store badges -->
+    <div class="badges">
+      <div class="badge">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+        <div class="badge-label">
+          <span>Download on the</span>
+          <span>App Store</span>
+        </div>
+      </div>
+      <div class="badge">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M3.18 23.76c.3.17.64.22.99.14l12.88-7.43-2.88-2.88-11 10.17zm16.28-9.89L5.45.86C5.12.54 4.7.4 4.3.46L15.5 11.67l4-3.9.96.83-4.01 3.9L17.44 13l2.02 2zm-1.55 8.77l-3.88-3.89 2.87-2.87 1 .58c1.04.6 1.04 2.16 0 2.77l-.02.01-.01.01-2 1.16.04.23zm-14.7-21.6c-.19.22-.3.56-.3.99v20.94c0 .43.11.77.3.99l.05.04L15.48 11.9v-.29L3.26 1.01l-.05.03z"/></svg>
+        <div class="badge-label">
+          <span>Get it on</span>
+          <span>Google Play</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <div class="features">
+    <div class="feature-card">
+      <div class="feature-icon">🎵</div>
+      <h3>AI Pitch Detection</h3>
+      <p>Upload any audio — we detect notes, timing, and melody using state-of-the-art pitch analysis.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🎸</div>
+      <h3>Instrument Isolation</h3>
+      <p>Separate vocals, drums, bass, and melody so each instrument gets its own accurate sheet.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📄</div>
+      <h3>Export to PDF</h3>
+      <p>Download clean, print-ready sheet music or share directly from the app.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔒</div>
+      <h3>Privacy First</h3>
+      <p>Your audio is processed ephemerally and deleted immediately. We never store or train on your recordings.</p>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer>
+    <div class="footer-links">
+      <a href="index.html">Home</a>
+      <a href="terms.html">Terms of Service</a>
+      <a href="privacy.html">Privacy Policy</a>
+      <a href="dmca.html">Copyright Policy</a>
+      <a href="mailto:support@musictosheet.com">support@musictosheet.com</a>
+    </div>
+    <p>&copy; 2025 Music-To-Sheet. All rights reserved.</p>
+  </footer>
+
+</body>
+</html>

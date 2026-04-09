@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Terms of Service — Music-To-Sheet</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #111118;
+      --surface: #1C1C27;
+      --border:  #2D2D3E;
+      --accent:  #0EA5E9;
+      --text:    #FFFFFF;
+      --muted:   #9CA3AF;
+      --dim:     #6B7280;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 40px;
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 17px;
+      color: var(--text);
+      text-decoration: none;
+    }
+    .nav-links { display: flex; gap: 24px; font-size: 14px; }
+    .nav-links a { color: var(--dim); }
+    .nav-links a:hover { color: var(--text); text-decoration: none; }
+
+    main {
+      max-width: 760px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 60px 24px 80px;
+      flex: 1;
+    }
+
+    .page-label {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      font-size: 36px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      line-height: 1.15;
+    }
+
+    .meta {
+      font-size: 13px;
+      color: var(--dim);
+      margin-bottom: 48px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    section {
+      margin-bottom: 40px;
+    }
+
+    h2 {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+    }
+
+    .clause-num {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent);
+      background: rgba(14, 165, 233, 0.1);
+      border: 1px solid rgba(14, 165, 233, 0.25);
+      border-radius: 6px;
+      padding: 2px 8px;
+      flex-shrink: 0;
+    }
+
+    p { font-size: 15px; color: var(--muted); line-height: 1.7; margin-bottom: 12px; }
+    p:last-child { margin-bottom: 0; }
+
+    ul {
+      list-style: none;
+      padding: 0;
+      margin-top: 8px;
+    }
+    ul li {
+      font-size: 15px;
+      color: var(--muted);
+      line-height: 1.65;
+      padding: 6px 0 6px 20px;
+      position: relative;
+    }
+    ul li::before {
+      content: "–";
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+    }
+
+    .highlight-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin-top: 12px;
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 28px 40px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      font-size: 13px;
+      color: var(--dim);
+      text-align: center;
+    }
+    .footer-links { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
+    .footer-links a { color: var(--dim); }
+    .footer-links a:hover { color: var(--muted); text-decoration: none; }
+
+    @media (max-width: 600px) {
+      nav { padding: 16px 20px; }
+      h1 { font-size: 28px; }
+      footer { padding: 24px 20px; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <a class="nav-logo" href="index.html">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0EA5E9" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+      </svg>
+      Music-To-Sheet
+    </a>
+    <div class="nav-links">
+      <a href="terms.html">Terms</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="dmca.html">Copyright</a>
+    </div>
+  </nav>
+
+  <main>
+    <div class="page-label">Legal</div>
+    <h1>Terms of Service</h1>
+    <p class="meta">Last updated: June 2025 &nbsp;·&nbsp; Effective upon first use of the application</p>
+
+    <p>Please read these Terms of Service ("Terms") carefully before using Music-To-Sheet ("the App", "we", "our", or "us"). By accessing or using Music-To-Sheet, you agree to be bound by these Terms. If you do not agree, do not use the App.</p>
+
+    <!-- 1 -->
+    <section>
+      <h2><span class="clause-num">1</span> Nature of Service</h2>
+      <p>Music-To-Sheet is an AI-assisted audio transcription tool designed for <strong>personal practice and educational use only</strong>. The App converts audio recordings into sheet music notation using machine learning algorithms. It is not a licensing platform, a rights clearance service, or a tool for commercial reproduction of copyrighted works.</p>
+      <p>The App is intended to help musicians learn songs by ear, transcribe their own original compositions, study public domain works, and practice reading music notation.</p>
+    </section>
+
+    <!-- 2 -->
+    <section>
+      <h2><span class="clause-num">2</span> User Responsibility</h2>
+      <p>You are solely responsible for all audio content you upload to or process through the App. By submitting audio, you represent and warrant that:</p>
+      <ul>
+        <li>You own the audio or have obtained all necessary rights, licenses, and permissions to process it.</li>
+        <li>Your use of the App with that audio does not violate any applicable law or any third-party rights, including copyright, trademark, privacy, or publicity rights.</li>
+        <li>You will not use the App to reproduce, distribute, or commercially exploit copyrighted material without authorization from the rights holder.</li>
+      </ul>
+    </section>
+
+    <!-- 3 -->
+    <section>
+      <h2><span class="clause-num">3</span> Derivative Work Notice</h2>
+      <p>Sheet music output generated by the App from a copyrighted recording or composition may constitute a derivative work under applicable copyright law. Creating a derivative work of a copyrighted composition without the authorization of the copyright holder may infringe their exclusive rights.</p>
+      <div class="highlight-box">
+        Music-To-Sheet does not grant you any license to create, reproduce, or distribute derivative works of third-party copyrighted material. Obtaining any required permissions is your responsibility.
+      </div>
+    </section>
+
+    <!-- 4 -->
+    <section>
+      <h2><span class="clause-num">4</span> No Distribution License</h2>
+      <p>The App provides transcription output for personal use only. Nothing in these Terms grants you the right to:</p>
+      <ul>
+        <li>Publish, sell, or distribute generated sheet music commercially.</li>
+        <li>Upload generated output to public sheet music platforms or repositories without verifying that you hold the appropriate rights.</li>
+        <li>Use generated output in any product, service, or performance that requires a mechanical, synchronization, or print license you have not obtained.</li>
+      </ul>
+    </section>
+
+    <!-- 5 -->
+    <section>
+      <h2><span class="clause-num">5</span> Ephemeral Processing</h2>
+      <p>Audio files submitted to the App are processed ephemerally. Specifically:</p>
+      <ul>
+        <li>Audio is downloaded to our servers solely for the purpose of pitch detection and transcription.</li>
+        <li>Processing is completed in under 60 seconds for standard files.</li>
+        <li>Audio files are permanently deleted from our servers immediately upon completion of processing.</li>
+        <li>We do not retain, cache, archive, or store copies of your audio for any purpose.</li>
+        <li>Your audio is never used to train, fine-tune, or improve any AI model.</li>
+        <li>Each transcription is created specifically for you as an individual user and is not shared with or reused for any other user.</li>
+      </ul>
+    </section>
+
+    <!-- 6 -->
+    <section>
+      <h2><span class="clause-num">6</span> AI Accuracy Disclaimer</h2>
+      <p>Sheet music generated by the App is produced by AI algorithms and is <strong>interpretive, not authoritative</strong>. Output may contain errors including, but not limited to:</p>
+      <ul>
+        <li>Incorrect pitch detection, especially for chords or percussive sounds.</li>
+        <li>Inaccurate rhythm, timing, or note duration values.</li>
+        <li>Missing or misidentified notes in complex polyphonic passages.</li>
+        <li>Key signature or time signature errors.</li>
+      </ul>
+      <p>Generated output should be reviewed and corrected by a qualified musician before any reliance upon it. Music-To-Sheet makes no warranty that generated sheet music is musically accurate or complete.</p>
+    </section>
+
+    <!-- 7 -->
+    <section>
+      <h2><span class="clause-num">7</span> DMCA Compliance</h2>
+      <p>Music-To-Sheet respects intellectual property rights and complies with the Digital Millennium Copyright Act (DMCA), 17 U.S.C. § 512. We will respond expeditiously to valid notices of claimed copyright infringement. To file a DMCA notice, see our <a href="dmca.html">Copyright Policy</a>.</p>
+      <p>We reserve the right to remove or disable access to any content or output that we believe, in our sole discretion, infringes third-party intellectual property rights.</p>
+    </section>
+
+    <!-- 8 -->
+    <section>
+      <h2><span class="clause-num">8</span> Repeat Infringer Policy</h2>
+      <p>We maintain a three-strike repeat infringer policy:</p>
+      <ul>
+        <li><strong>Strike 1:</strong> Written warning and removal of infringing content.</li>
+        <li><strong>Strike 2:</strong> Temporary suspension of account access (30 days minimum).</li>
+        <li><strong>Strike 3:</strong> Permanent termination of account without refund.</li>
+      </ul>
+      <p>We may accelerate this policy or permanently terminate an account at our sole discretion where infringement is willful, egregious, or commercial in nature.</p>
+    </section>
+
+    <!-- 9 -->
+    <section>
+      <h2><span class="clause-num">9</span> Subscriptions &amp; Billing</h2>
+      <p>Paid subscriptions and in-app purchases are managed entirely by Apple (App Store) or Google (Google Play) in accordance with their respective payment policies. By purchasing a subscription or in-app item, you agree to the applicable store's terms and billing practices.</p>
+      <ul>
+        <li>Subscriptions automatically renew unless cancelled at least 24 hours before the end of the current period.</li>
+        <li>Refund requests are handled by Apple or Google according to their refund policies. Music-To-Sheet has no ability to issue refunds directly.</li>
+        <li>Prices are subject to change with reasonable notice.</li>
+        <li>Downgrading your plan takes effect at the next billing cycle.</li>
+      </ul>
+    </section>
+
+    <!-- 10 -->
+    <section>
+      <h2><span class="clause-num">10</span> Account Deactivation &amp; Data Retention</h2>
+      <p>If your account is deactivated — whether by you or by us — the following applies:</p>
+      <ul>
+        <li>Your account data is retained for 60 days from the date of deactivation to allow for account recovery.</li>
+        <li>After 60 days, your account and all associated data are permanently and irreversibly deleted.</li>
+        <li>If you request deletion of your account through the App, all data is deleted within 30 days.</li>
+        <li>Deletion is permanent. We cannot recover deleted accounts or associated data.</li>
+      </ul>
+    </section>
+
+    <!-- 11 -->
+    <section>
+      <h2><span class="clause-num">11</span> Limitation of Liability</h2>
+      <p>To the maximum extent permitted by applicable law, Music-To-Sheet and its operators shall not be liable for any indirect, incidental, special, consequential, or punitive damages, including without limitation damages for loss of profits, goodwill, data, or other intangible losses, arising out of or in connection with:</p>
+      <ul>
+        <li>Your use of, or inability to use, the App.</li>
+        <li>Any inaccuracies in AI-generated sheet music output.</li>
+        <li>Copyright infringement claims arising from your use of the App with third-party content.</li>
+        <li>Unauthorized access to or alteration of your data.</li>
+      </ul>
+      <p>Our total liability to you for any claim arising under these Terms shall not exceed the total amount paid by you to Music-To-Sheet in the twelve (12) months preceding the claim.</p>
+    </section>
+
+    <!-- 12 -->
+    <section>
+      <h2><span class="clause-num">12</span> Prohibited Uses</h2>
+      <p>You may not use the App to:</p>
+      <ul>
+        <li>Reproduce, distribute, or commercially exploit copyrighted works without authorization.</li>
+        <li>Circumvent, disable, or interfere with security features of the App.</li>
+        <li>Reverse engineer, decompile, or disassemble any portion of the App.</li>
+        <li>Submit audio containing unlawful, harmful, or offensive content.</li>
+        <li>Automate access to the App via bots, scrapers, or other automated means.</li>
+        <li>Resell, sublicense, or provide access to the App to third parties without our written consent.</li>
+        <li>Use the App in any manner that violates applicable local, national, or international law.</li>
+      </ul>
+    </section>
+
+    <!-- 13 -->
+    <section>
+      <h2><span class="clause-num">13</span> Licensing Future-Proofing</h2>
+      <p>The legal landscape around AI-generated music transcriptions is evolving. We reserve the right to update these Terms to reflect changes in copyright law, regulatory guidance, or industry standards relating to AI and music. We will provide reasonable notice of material changes. Continued use of the App after such notice constitutes acceptance of the updated Terms.</p>
+    </section>
+
+    <!-- 14 -->
+    <section>
+      <h2><span class="clause-num">14</span> Governing Jurisdiction</h2>
+      <p>These Terms are governed by and construed in accordance with applicable law. Any disputes arising under or in connection with these Terms shall be subject to the exclusive jurisdiction of the courts of competent jurisdiction. If any provision of these Terms is found to be unenforceable, the remaining provisions shall continue in full force and effect.</p>
+    </section>
+
+    <!-- 15 -->
+    <section>
+      <h2><span class="clause-num">15</span> Modifications</h2>
+      <p>We reserve the right to modify these Terms at any time. When we make changes, we will update the "Last updated" date at the top of this page and, where appropriate, notify you via the App or by email. Your continued use of the App following the posting of revised Terms constitutes your acceptance of those changes.</p>
+      <p>If you have questions about these Terms, contact us at <a href="mailto:support@musictosheet.com">support@musictosheet.com</a>.</p>
+    </section>
+
+  </main>
+
+  <footer>
+    <div class="footer-links">
+      <a href="index.html">Home</a>
+      <a href="terms.html">Terms of Service</a>
+      <a href="privacy.html">Privacy Policy</a>
+      <a href="dmca.html">Copyright Policy</a>
+      <a href="mailto:support@musictosheet.com">support@musictosheet.com</a>
+    </div>
+    <p>&copy; 2025 Music-To-Sheet. All rights reserved.</p>
+  </footer>
+
+</body>
+</html>

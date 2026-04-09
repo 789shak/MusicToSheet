@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Copyright &amp; DMCA Policy — Music-To-Sheet</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #111118;
+      --surface: #1C1C27;
+      --border:  #2D2D3E;
+      --accent:  #0EA5E9;
+      --text:    #FFFFFF;
+      --muted:   #9CA3AF;
+      --dim:     #6B7280;
+      --warn:    #F59E0B;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 40px;
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 17px;
+      color: var(--text);
+      text-decoration: none;
+    }
+    .nav-links { display: flex; gap: 24px; font-size: 14px; }
+    .nav-links a { color: var(--dim); }
+    .nav-links a:hover { color: var(--text); text-decoration: none; }
+
+    main {
+      max-width: 760px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 60px 24px 80px;
+      flex: 1;
+    }
+
+    .page-label {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 12px;
+    }
+
+    h1 { font-size: 36px; font-weight: 800; margin-bottom: 8px; line-height: 1.15; }
+
+    .meta {
+      font-size: 13px;
+      color: var(--dim);
+      margin-bottom: 48px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    section { margin-bottom: 40px; }
+
+    h2 {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    p { font-size: 15px; color: var(--muted); line-height: 1.7; margin-bottom: 12px; }
+    p:last-child { margin-bottom: 0; }
+
+    ul {
+      list-style: none;
+      padding: 0;
+      margin-top: 8px;
+    }
+    ul li {
+      font-size: 15px;
+      color: var(--muted);
+      line-height: 1.65;
+      padding: 6px 0 6px 20px;
+      position: relative;
+    }
+    ul li::before {
+      content: "–";
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+    }
+
+    ol {
+      padding-left: 22px;
+      margin-top: 8px;
+    }
+    ol li {
+      font-size: 15px;
+      color: var(--muted);
+      line-height: 1.65;
+      padding: 5px 0;
+    }
+
+    .contact-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+      margin-top: 16px;
+    }
+    .contact-box p { margin-bottom: 6px; font-size: 14px; }
+    .contact-box strong { color: var(--text); }
+
+    .warn-box {
+      background: rgba(245, 158, 11, 0.07);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      border-left: 3px solid var(--warn);
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin-top: 12px;
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .highlight-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin-top: 12px;
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .strike-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 14px;
+    }
+    .strike-table th {
+      text-align: left;
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 10px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+    .strike-table td {
+      color: var(--muted);
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      vertical-align: top;
+      line-height: 1.55;
+    }
+
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 28px 40px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      font-size: 13px;
+      color: var(--dim);
+      text-align: center;
+    }
+    .footer-links { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
+    .footer-links a { color: var(--dim); }
+    .footer-links a:hover { color: var(--muted); text-decoration: none; }
+
+    @media (max-width: 600px) {
+      nav { padding: 16px 20px; }
+      h1 { font-size: 28px; }
+      footer { padding: 24px 20px; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <a class="nav-logo" href="index.html">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0EA5E9" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+      </svg>
+      Music-To-Sheet
+    </a>
+    <div class="nav-links">
+      <a href="terms.html">Terms</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="dmca.html">Copyright</a>
+    </div>
+  </nav>
+
+  <main>
+    <div class="page-label">Legal</div>
+    <h1>Copyright &amp; DMCA Policy</h1>
+    <p class="meta">Last updated: June 2025 &nbsp;·&nbsp; Pursuant to 17 U.S.C. § 512 (Digital Millennium Copyright Act)</p>
+
+    <p>Music-To-Sheet respects the intellectual property rights of others and expects our users to do the same. This Copyright Policy explains our procedures for handling copyright infringement claims, DMCA takedown notices, and repeat infringer enforcement.</p>
+
+    <!-- DMCA Agent -->
+    <section>
+      <h2>DMCA Designated Agent</h2>
+      <p>Our designated agent for receiving notices of claimed copyright infringement is:</p>
+      <div class="contact-box">
+        <p><strong>DMCA Agent — Music-To-Sheet</strong></p>
+        <p>Email: <a href="mailto:dmca@musictosheet.com">dmca@musictosheet.com</a></p>
+        <p>Response time: We aim to acknowledge all valid notices within 5 business days.</p>
+      </div>
+      <p style="margin-top:14px;">Only copyright infringement notices should be sent to this address. For general support, use <a href="mailto:support@musictosheet.com">support@musictosheet.com</a>.</p>
+    </section>
+
+    <!-- Takedown notices -->
+    <section>
+      <h2>How to File a Takedown Notice</h2>
+      <p>If you believe that content accessible through Music-To-Sheet infringes your copyright, you may submit a DMCA takedown notice. To be valid, your notice must include all of the following elements as required by 17 U.S.C. § 512(c)(3):</p>
+      <ol>
+        <li>A physical or electronic signature of a person authorised to act on behalf of the copyright owner.</li>
+        <li>Identification of the copyrighted work claimed to have been infringed (e.g. song title, composer, recording label, publication date).</li>
+        <li>Identification of the infringing material or output with sufficient specificity for us to locate it (e.g. track name, account identifier, description of the generated sheet music).</li>
+        <li>Your contact information: name, address, telephone number, and email address.</li>
+        <li>A statement that you have a good-faith belief that the use of the material is not authorised by the copyright owner, its agent, or the law.</li>
+        <li>A statement, made under penalty of perjury, that the information in your notice is accurate and that you are the copyright owner or are authorised to act on the copyright owner's behalf.</li>
+      </ol>
+      <div class="warn-box">
+        <strong>Warning:</strong> Knowingly submitting a materially false DMCA notice may expose you to liability for damages under 17 U.S.C. § 512(f), including attorneys' fees.
+      </div>
+    </section>
+
+    <!-- Output takedowns -->
+    <section>
+      <h2>Output Takedown Requests</h2>
+      <p>Copyright holders may also request removal of AI-generated sheet music output that was produced from their protected composition or recording. We treat output takedown requests with the same priority as standard DMCA notices.</p>
+      <p>To file an output takedown request, include in your notice:</p>
+      <ul>
+        <li>The title, artist, and (where known) ISRC or ISWC of the protected work.</li>
+        <li>A description of how the generated output reproduces or derives from the protected work.</li>
+        <li>All other elements listed in the "How to File a Takedown Notice" section above.</li>
+      </ul>
+      <div class="highlight-box">
+        Because audio files are deleted immediately after processing, we may no longer hold the source audio at the time of your request. We will act on valid notices by disabling access to any stored output and, where applicable, restricting the user's ability to re-process the same content.
+      </div>
+    </section>
+
+    <!-- Counter-notice -->
+    <section>
+      <h2>Counter-Notice Process</h2>
+      <p>If you believe that your content was removed or disabled in error, or that you have the right to use the content, you may submit a counter-notice to our DMCA agent. A valid counter-notice must include:</p>
+      <ol>
+        <li>Your physical or electronic signature.</li>
+        <li>Identification of the content that was removed or disabled, and the location where it appeared before removal.</li>
+        <li>A statement under penalty of perjury that you have a good-faith belief that the content was removed or disabled as a result of mistake or misidentification.</li>
+        <li>Your name, address, and telephone number.</li>
+        <li>A statement that you consent to the jurisdiction of the federal district court for your judicial district, and that you will accept service of process from the person who submitted the original takedown notice.</li>
+      </ol>
+      <p>Upon receipt of a valid counter-notice, we will forward it to the original complainant and restore the content within 10–14 business days unless the complainant files an action seeking a court order to restrain the activity.</p>
+    </section>
+
+    <!-- Repeat infringer -->
+    <section>
+      <h2>Repeat Infringer Policy</h2>
+      <p>In accordance with 17 U.S.C. § 512(i), Music-To-Sheet has adopted and implements a policy to terminate, in appropriate circumstances, the accounts of users who are repeat copyright infringers.</p>
+
+      <table class="strike-table">
+        <thead>
+          <tr>
+            <th>Strike</th>
+            <th>Action</th>
+            <th>Duration</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>1st</strong></td>
+            <td>Written warning; infringing content or output disabled</td>
+            <td>Warning on record for 12 months</td>
+          </tr>
+          <tr>
+            <td><strong>2nd</strong></td>
+            <td>Account suspended; access to processing features disabled</td>
+            <td>Minimum 30-day suspension</td>
+          </tr>
+          <tr>
+            <td><strong>3rd</strong></td>
+            <td>Permanent account termination; no refund issued</td>
+            <td>Permanent</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p style="margin-top:16px;">We may accelerate or skip strikes at our sole discretion where infringement is willful, commercial, or involves a large volume of copyrighted works. A single egregious violation may result in immediate permanent termination.</p>
+    </section>
+
+    <!-- Fair use -->
+    <section>
+      <h2>Fair Use</h2>
+      <p>Nothing in this policy is intended to limit or abridge any rights you may have under fair use, fair dealing, or other applicable copyright exceptions. Music-To-Sheet recognises that personal study, commentary, criticism, and educational use may qualify for copyright exceptions in many jurisdictions. If you believe your use qualifies as fair use or an applicable exception, you may include this information in any counter-notice you submit.</p>
+    </section>
+
+    <!-- Contact -->
+    <section>
+      <h2>Contact</h2>
+      <p>For all DMCA notices and counter-notices: <a href="mailto:dmca@musictosheet.com">dmca@musictosheet.com</a></p>
+      <p>For general copyright questions: <a href="mailto:support@musictosheet.com">support@musictosheet.com</a></p>
+    </section>
+
+  </main>
+
+  <footer>
+    <div class="footer-links">
+      <a href="index.html">Home</a>
+      <a href="terms.html">Terms of Service</a>
+      <a href="privacy.html">Privacy Policy</a>
+      <a href="dmca.html">Copyright Policy</a>
+      <a href="mailto:support@musictosheet.com">support@musictosheet.com</a>
+    </div>
+    <p>&copy; 2025 Music-To-Sheet. All rights reserved.</p>
+  </footer>
+
+</body>
+</html>
