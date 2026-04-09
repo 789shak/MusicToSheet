@@ -10,6 +10,14 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { processAudio, processAudioWithStems } from '../lib/api';
+import { useSubscription } from '../hooks/useSubscription';
+import {
+  computeTrackHash,
+  checkRateLimits,
+  checkPerTrackLimits,
+  logConversion,
+  detectAnomalies,
+} from '../lib/contentRiskEngine';
 
 // ─── Stage config ─────────────────────────────────────────────────────────────
 // Stages are driven by the real API call, not a fixed timer.
@@ -142,6 +150,11 @@ export default function ProcessingScreen() {
 
   console.log('[ProcessingScreen] received params', { filePath, fileName, sourceType, linkUrl, instrument, outputFormat, rightsDeclaration });
 
+  const { tier } = useSubscription();
+  // Capture tier in a ref so the one-shot useEffect closure always reads the latest value
+  const tierRef = useRef(tier);
+  useEffect(() => { tierRef.current = tier; }, [tier]);
+
   const [currentStage, setCurrentStage] = useState(0);
   const [slowWarning, setSlowWarning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -190,9 +203,35 @@ export default function ProcessingScreen() {
 
     async function run() {
       try {
-        // Build the audio URL for the API.
-        // For uploaded files, generate a short-lived signed URL (5 min) so the
-        // server can download from private storage. Links pass through directly.
+        // ── 0. Identify user + track ──────────────────────────────────────────
+        const { data: { session } } = await supabase.auth.getSession();
+        const uid = session?.user?.id;
+        const currentTier = tierRef.current;
+
+        const trackHashInput = linkUrl?.trim() || fileName || 'unknown';
+        const trackHash = computeTrackHash(trackHashInput);
+
+        // ── 1. Rate-limit checks (before touching the server) ─────────────────
+        if (uid) {
+          const [rateResult, trackResult] = await Promise.all([
+            checkRateLimits(uid, currentTier),
+            checkPerTrackLimits(uid, trackHash, currentTier),
+          ]);
+
+          if (!rateResult.allowed) {
+            throw new Error(rateResult.message || 'Daily conversion limit reached. Please try again tomorrow.');
+          }
+
+          if (!trackResult.allowed) {
+            throw new Error(
+              `You've used all ${trackResult.maxAttempts} attempt${trackResult.maxAttempts === 1 ? '' : 's'} for this track on your current plan.`
+            );
+          }
+
+          console.log(`[ProcessingScreen] rate check OK — ${rateResult.remaining} conversions remaining today`);
+        }
+
+        // ── 2. Build audio URL ────────────────────────────────────────────────
         let audioUrl = linkUrl ?? '';
         if (sourceType !== 'link' && filePath) {
           const { data: signedData, error: signedError } = await supabase.storage
@@ -206,6 +245,7 @@ export default function ProcessingScreen() {
 
         console.log('[ProcessingScreen] calling processAudioWithStems with audioUrl:', audioUrl);
 
+        // ── 3. Call server ────────────────────────────────────────────────────
         let result: any;
         try {
           result = await processAudioWithStems({
@@ -229,13 +269,11 @@ export default function ProcessingScreen() {
         setCurrentStage(4);
         setSlowWarning(false);
 
-        // Brief pause to let the user see the final stage tick over
         await new Promise((r) => setTimeout(r, 800));
         if (cancelled) return;
 
+        // ── 4. Save conversion history ────────────────────────────────────────
         console.log('[ProcessingScreen] API success, saving to conversion_history');
-        const { data: { session } } = await supabase.auth.getSession();
-        const uid = session?.user?.id;
 
         const trackName =
           sourceType === 'link'      ? 'Pasted Link' :
@@ -245,13 +283,13 @@ export default function ProcessingScreen() {
         const { data: historyRow, error: dbError } = await supabase
           .from('conversion_history')
           .insert({
-            user_id:           uid,
-            track_name:        trackName,
-            source_type:       sourceType ?? 'upload',
-            instrument:        result.instrument ?? instrument ?? '',
-            output_format:     result.format ?? outputFormat ?? '',
-            duration_seconds:  result.duration_seconds ?? 30,
-            output_data:       JSON.stringify(result.notes ?? []),
+            user_id:            uid,
+            track_name:         trackName,
+            source_type:        sourceType ?? 'upload',
+            instrument:         result.instrument ?? instrument ?? '',
+            output_format:      result.format ?? outputFormat ?? '',
+            duration_seconds:   result.duration_seconds ?? 30,
+            output_data:        JSON.stringify(result.notes ?? []),
             rights_declaration: rightsDeclaration ?? '',
           })
           .select('id')
@@ -259,9 +297,25 @@ export default function ProcessingScreen() {
 
         if (cancelled) return;
 
+        // ── 5. Log conversion + maybe run anomaly detection ───────────────────
+        if (uid) {
+          try {
+            const totalCount = await logConversion(
+              uid, trackHash, trackName, instrument ?? '', sourceType ?? 'upload'
+            );
+            // Every 5th conversion, silently run anomaly detection in the background
+            if (totalCount % 5 === 0) {
+              detectAnomalies(uid).catch(() => {});
+            }
+          } catch (logErr) {
+            // Logging failure must never block the user
+            console.log('[ProcessingScreen] logConversion error (non-fatal):', logErr);
+          }
+        }
+
+        // ── 6. Navigate to results ────────────────────────────────────────────
         if (dbError) {
           console.log('[ProcessingScreen] conversion_history insert error:', dbError);
-          // Navigate anyway — don't block the user on a DB error
           router.replace('/results');
           return;
         }
@@ -271,14 +325,14 @@ export default function ProcessingScreen() {
         router.replace({
           pathname: '/results',
           params: {
-            historyId: historyRow.id,
-            notesJson: JSON.stringify(result.notes ?? []),
+            historyId:       historyRow.id,
+            notesJson:       JSON.stringify(result.notes ?? []),
             durationSeconds: String(result.duration_seconds ?? 30),
           },
         });
       } catch (e: any) {
         if (cancelled) return;
-        console.log('[ProcessingScreen] processAudio error:', e);
+        console.log('[ProcessingScreen] error:', e);
         setError(e?.message ?? 'Something went wrong. Please try again.');
       } finally {
         clearTimeout(t1);
