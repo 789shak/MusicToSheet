@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getCustomerInfo } from '../lib/revenuecat';
+import { supabase } from '../lib/supabase';
 
 // ─── Tier Configuration ────────────────────────────────────────────────────────
 const TIER_CONFIG = {
@@ -47,6 +48,13 @@ export function useSubscription() {
 
   useEffect(() => {
     async function checkEntitlements() {
+      // TODO: Remove test user bypass before launch
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.email === 'shakes789@gmail.com') {
+        setCurrentTier('virtuosos');
+        return;
+      }
+
       try {
         const customerInfo = await getCustomerInfo();
         const active = customerInfo.entitlements.active;
