@@ -183,14 +183,10 @@ export default function SubscriptionScreen() {
         <Feature text="No subscription needed" />
         <TouchableOpacity
           style={styles.btnGray}
-          onPress={() => handlePurchase('pay_as_you_go')}
+          onPress={() => console.log('Pay-per-track purchase initiated')}
           activeOpacity={0.85}
-          disabled={!!purchasing}
         >
-          {purchasing === 'pay_as_you_go'
-            ? <ActivityIndicator size="small" color="#D1D5DB" />
-            : <Text style={styles.btnGrayText}>Buy Per Track</Text>
-          }
+          <Text style={styles.btnGrayText}>Buy Per Track</Text>
         </TouchableOpacity>
       </View>
 

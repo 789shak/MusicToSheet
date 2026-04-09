@@ -9,6 +9,7 @@ import {
   Modal,
   FlatList,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
@@ -22,6 +23,16 @@ import { useSubscription } from '../hooks/useSubscription';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type PickedFile = { name: string; uri: string; size: number | null; mimeType: string | null };
+
+// ─── Track hash (djb2 variant) ───────────────────────────────────────────────
+// Produces a stable hex string from a filename+size or URL to identify a track.
+function computeTrackHash(input: string): string {
+  let h = 5381;
+  for (let i = 0; i < input.length; i++) {
+    h = (((h << 5) + h) ^ input.charCodeAt(i)) >>> 0;
+  }
+  return h.toString(16);
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatBytes(bytes: number | null): string {
@@ -137,7 +148,7 @@ const OUTPUT_FORMATS = [
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function UploadScreen() {
   const router = useRouter();
-  const { maxFileSizeMB } = useSubscription();
+  const { maxFileSizeMB, tier } = useSubscription();
 
   const [file, setFile] = useState<PickedFile | null>(null);
   const [link, setLink] = useState('');
@@ -146,6 +157,9 @@ export default function UploadScreen() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState('');
+  const [showPayGate, setShowPayGate] = useState(false);
+  const [payGateHash, setPayGateHash] = useState('');
+  const [purchasing, setPurchasing] = useState(false);
 
   const hasInput = !!file || link.trim().length > 0;
   const canConvert = hasInput && instrument.length > 0 && !uploading;
@@ -185,8 +199,8 @@ export default function UploadScreen() {
     }
   }
 
-  async function handleConvert() {
-    if (!canConvert) return;
+  // Core upload-and-navigate logic (no gate check here).
+  async function performConvert() {
     setUploadError('');
 
     // Link path — no upload needed
@@ -220,7 +234,6 @@ export default function UploadScreen() {
       const ext = file.name.split('.').pop() ?? 'audio';
       const storagePath = `${uid}/${Date.now()}_${file.name}`;
 
-      // Read file as base64 and decode to ArrayBuffer for Supabase upload
       setUploadProgress(10);
       console.log('File URI:', file.uri);
       const base64 = await readAsStringAsync(file.uri, { encoding: 'base64' });
@@ -263,6 +276,74 @@ export default function UploadScreen() {
     } finally {
       setUploading(false);
       setUploadProgress(0);
+    }
+  }
+
+  async function handleConvert() {
+    if (!canConvert) return;
+
+    // Free-tier users must have an unused per-track purchase or a subscription.
+    if (tier === 'free') {
+      const hashInput = link.trim() || `${file?.name}_${file?.size ?? 0}`;
+      const hash = computeTrackHash(hashInput);
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id;
+
+      if (uid) {
+        const { data: existing } = await supabase
+          .from('track_purchases')
+          .select('id')
+          .eq('user_id', uid)
+          .eq('track_hash', hash)
+          .eq('used', false)
+          .limit(1);
+
+        if (!existing || existing.length === 0) {
+          // No unused credit — show the pay gate modal
+          setPayGateHash(hash);
+          setShowPayGate(true);
+          return;
+        }
+
+        // Consume the unused credit before proceeding
+        await supabase
+          .from('track_purchases')
+          .update({ used: true })
+          .eq('user_id', uid)
+          .eq('track_hash', hash)
+          .eq('used', false);
+      }
+    }
+
+    await performConvert();
+  }
+
+  // Called when the user taps "Buy this track ($0.99)" in the pay-gate modal.
+  async function handleBuyTrack() {
+    setPurchasing(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id;
+      if (!uid) throw new Error('Not signed in');
+
+      // TODO: replace with real RevenueCat purchasePackage() call once
+      // Apple / Google developer accounts are connected to RevenueCat.
+      console.log('Pay-per-track purchase initiated');
+
+      // Record the purchase as already-used (we proceed to convert immediately).
+      await supabase.from('track_purchases').insert({
+        user_id:      uid,
+        track_hash:   payGateHash,
+        used:         true,
+      });
+
+      setShowPayGate(false);
+      await performConvert();
+    } catch (e: any) {
+      Alert.alert('Purchase failed', e?.message ?? 'Please try again.');
+    } finally {
+      setPurchasing(false);
     }
   }
 
@@ -418,6 +499,60 @@ export default function UploadScreen() {
 
       {/* Bottom Tab Bar */}
       <BottomTabBar active="upload" />
+
+      {/* ── Pay-gate Modal ── */}
+      <Modal
+        visible={showPayGate}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowPayGate(false)}
+      >
+        <Pressable style={gate.backdrop} onPress={() => !purchasing && setShowPayGate(false)}>
+          <View style={gate.sheet}>
+            <Ionicons name="musical-note" size={32} color="#0EA5E9" style={{ marginBottom: 12 }} />
+            <Text style={gate.title}>Choose how to continue</Text>
+            <Text style={gate.subtitle}>
+              Your Free plan doesn't include this conversion.{'\n'}Pick an option below.
+            </Text>
+
+            {/* Buy per track */}
+            <TouchableOpacity
+              style={gate.btnPrimary}
+              onPress={handleBuyTrack}
+              activeOpacity={0.85}
+              disabled={purchasing}
+            >
+              {purchasing
+                ? <ActivityIndicator size="small" color="#FFFFFF" />
+                : (
+                  <>
+                    <Text style={gate.btnPrimaryText}>Buy this track</Text>
+                    <Text style={gate.btnPrimaryPrice}>$0.99</Text>
+                  </>
+                )
+              }
+            </TouchableOpacity>
+
+            {/* View plans */}
+            <TouchableOpacity
+              style={gate.btnSecondary}
+              onPress={() => { setShowPayGate(false); router.push('/subscription'); }}
+              activeOpacity={0.8}
+              disabled={purchasing}
+            >
+              <Text style={gate.btnSecondaryText}>View subscription plans</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setShowPayGate(false)}
+              disabled={purchasing}
+              style={{ marginTop: 8 }}
+            >
+              <Text style={gate.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -653,5 +788,78 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 16,
     paddingHorizontal: 16,
+  },
+});
+
+// ─── Pay-gate modal styles ─────────────────────────────────────────────────────
+const gate = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: '#1C1C27',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 24,
+    paddingTop: 28,
+    paddingBottom: 44,
+    alignItems: 'center',
+  },
+  title: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  subtitle: {
+    color: '#9CA3AF',
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  btnPrimary: {
+    width: '100%',
+    backgroundColor: '#0EA5E9',
+    borderRadius: 14,
+    paddingVertical: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 12,
+  },
+  btnPrimaryText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  btnPrimaryPrice: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '500',
+    opacity: 0.85,
+  },
+  btnSecondary: {
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#2D2D3E',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  btnSecondaryText: {
+    color: '#D1D5DB',
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  cancelText: {
+    color: '#6B7280',
+    fontSize: 14,
+    paddingVertical: 8,
   },
 });
