@@ -48,12 +48,7 @@ export function useSubscription() {
 
   useEffect(() => {
     async function checkEntitlements() {
-      // TODO: Remove test user bypass before launch
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user?.email === 'shakes789@gmail.com') {
-        setCurrentTier('virtuosos');
-        return;
-      }
+      // REMOVED: test bypass (shakes789@gmail.com → virtuosos)
 
       try {
         const customerInfo = await getCustomerInfo();
