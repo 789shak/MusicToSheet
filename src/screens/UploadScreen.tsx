@@ -10,13 +10,15 @@ import {
   FlatList,
   Alert,
   ActivityIndicator,
+  Animated,
 } from 'react-native';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { readAsStringAsync } from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
+import { Audio } from 'expo-av';
 import { BottomTabBar } from '../components/BottomTabBar';
 import { supabase } from '../lib/supabase';
 import { useSubscription } from '../hooks/useSubscription';
@@ -160,6 +162,99 @@ export default function UploadScreen() {
   const [showPayGate, setShowPayGate] = useState(false);
   const [payGateHash, setPayGateHash] = useState('');
   const [purchasing, setPurchasing] = useState(false);
+
+  // ── Recording state ────────────────────────────────────────────────────────
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const recordingRef = useRef<Audio.Recording | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (recordingRef.current) recordingRef.current.stopAndUnloadAsync().catch(() => {});
+      pulseLoop.current?.stop();
+    };
+  }, []);
+
+  function startPulse() {
+    pulseLoop.current = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.4, duration: 600, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1,   duration: 600, useNativeDriver: true }),
+      ])
+    );
+    pulseLoop.current.start();
+  }
+
+  async function startRecording() {
+    try {
+      const { granted } = await Audio.requestPermissionsAsync();
+      if (!granted) {
+        Alert.alert('Microphone permission required', 'Please enable microphone access in your device settings.');
+        return;
+      }
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+
+      const { recording: rec } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      recordingRef.current = rec;
+      setRecording(rec);
+      setIsRecording(true);
+      setRecordSeconds(0);
+      setFile(null);
+      setLink('');
+
+      timerRef.current = setInterval(() => {
+        setRecordSeconds((s) => {
+          if (s >= 299) { stopRecording(); return s; }
+          return s + 1;
+        });
+      }, 1000);
+
+      startPulse();
+    } catch (e: any) {
+      Alert.alert('Could not start recording', e?.message ?? 'Unknown error');
+    }
+  }
+
+  async function stopRecording() {
+    try {
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+      pulseLoop.current?.stop();
+      pulseAnim.setValue(1);
+
+      const rec = recordingRef.current;
+      if (!rec) return;
+      await rec.stopAndUnloadAsync();
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+
+      const uri = rec.getURI();
+      recordingRef.current = null;
+      setRecording(null);
+      setIsRecording(false);
+
+      if (!uri) { Alert.alert('Recording error', 'No audio was captured.'); return; }
+
+      // Treat the recording as a picked file so the normal upload flow handles it
+      const name = `recording_${Date.now()}.m4a`;
+      setFile({ name, uri, size: null, mimeType: 'audio/m4a' });
+      setRecordSeconds(0);
+    } catch (e: any) {
+      Alert.alert('Could not stop recording', e?.message ?? 'Unknown error');
+    }
+  }
+
+  function formatTimer(s: number) {
+    const m = Math.floor(s / 60).toString().padStart(2, '0');
+    const sec = (s % 60).toString().padStart(2, '0');
+    return `${m}:${sec}`;
+  }
 
   const hasInput = !!file || link.trim().length > 0;
   const canConvert = hasInput && instrument.length > 0 && !uploading;
@@ -408,17 +503,61 @@ export default function UploadScreen() {
           />
 
           {/* Record */}
-          <Text style={[styles.sectionLabel, { marginTop: 16 }]}>Record</Text>
-          <View style={styles.recordRow}>
-            <View style={styles.recordBtn}>
-              <Ionicons name="mic-outline" size={22} color="#6B7280" />
-              <Text style={styles.recordText}>Record</Text>
+          <Text style={[styles.sectionLabel, { marginTop: 16 }]}>Record Vocals</Text>
+
+          {/* Free tier — locked */}
+          {!['advancedPro', 'virtuosos'].includes(tier) && (
+            <View style={styles.recordRow}>
+              <View style={styles.recordBtn}>
+                <Ionicons name="mic-outline" size={22} color="#6B7280" />
+                <Text style={styles.recordText}>Record Vocals</Text>
+              </View>
+              <View style={styles.proLockOverlay}>
+                <MaterialIcons name="lock" size={14} color="#F59E0B" />
+                <Text style={styles.proLockText}>Pro feature</Text>
+              </View>
             </View>
-            <View style={styles.proLockOverlay}>
-              <MaterialIcons name="lock" size={14} color="#F59E0B" />
-              <Text style={styles.proLockText}>Pro feature</Text>
-            </View>
-          </View>
+          )}
+
+          {/* Pro/Virtuosos — recording UI */}
+          {['advancedPro', 'virtuosos'].includes(tier) && (
+            <>
+              {isRecording ? (
+                /* ── Active recording UI ── */
+                <View style={styles.recordingActive}>
+                  {/* Pulsing red dot */}
+                  <Animated.View style={[styles.recDotOuter, { transform: [{ scale: pulseAnim }] }]}>
+                    <View style={styles.recDotInner} />
+                  </Animated.View>
+
+                  {/* Timer */}
+                  <Text style={styles.recTimer}>{formatTimer(recordSeconds)}</Text>
+                  <Text style={styles.recHint}>Max 5:00 · tap Stop when done</Text>
+
+                  {/* Waveform (decorative bars) */}
+                  <View style={styles.waveform}>
+                    {[6,12,18,10,20,14,8,16,12,18,6,14,10,20,8].map((h, i) => (
+                      <View key={i} style={[styles.waveBar, { height: h }]} />
+                    ))}
+                  </View>
+
+                  {/* Stop button */}
+                  <TouchableOpacity style={styles.stopBtn} onPress={stopRecording} activeOpacity={0.8}>
+                    <Ionicons name="stop" size={20} color="#FFFFFF" />
+                    <Text style={styles.stopBtnText}>Stop</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                /* ── Idle: tap to start ── */
+                <TouchableOpacity style={styles.recordBtnActive} onPress={startRecording} activeOpacity={0.8}>
+                  <Ionicons name="mic" size={22} color="#FFFFFF" />
+                  <Text style={styles.recordBtnActiveText}>
+                    {file?.name?.startsWith('recording_') ? `Recorded: ${file.name}` : 'Tap to Record'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </>
+          )}
         </View>
 
         {/* ── OUTPUT BOX ── */}
@@ -722,6 +861,86 @@ const styles = StyleSheet.create({
     color: '#F59E0B',
     fontSize: 12,
     fontWeight: '600',
+  },
+
+  // Pro recording — idle button
+  recordBtnActive: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#DC143C',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  recordBtnActiveText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+    flex: 1,
+  },
+
+  // Pro recording — active UI
+  recordingActive: {
+    backgroundColor: '#1C0A0A',
+    borderWidth: 1,
+    borderColor: '#DC143C40',
+    borderRadius: 12,
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    gap: 10,
+  },
+  recDotOuter: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#DC143C30',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recDotInner: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#DC143C',
+  },
+  recTimer: {
+    color: '#FFFFFF',
+    fontSize: 28,
+    fontWeight: '700',
+    letterSpacing: 2,
+  },
+  recHint: {
+    color: '#6B7280',
+    fontSize: 11,
+  },
+  waveform: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    height: 24,
+    marginVertical: 4,
+  },
+  waveBar: {
+    width: 3,
+    borderRadius: 2,
+    backgroundColor: '#DC143C80',
+  },
+  stopBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#DC143C',
+    borderRadius: 10,
+    paddingHorizontal: 24,
+    paddingVertical: 11,
+    marginTop: 4,
+  },
+  stopBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
   },
 
   // Error box
