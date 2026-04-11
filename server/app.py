@@ -38,18 +38,34 @@ INSTRUMENT_TO_STEM = {
 }
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
+BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "audio/*,*/*;q=0.9",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
 async def download_audio(url: str, dest_path: str) -> int:
-    async with httpx.AsyncClient(follow_redirects=True, timeout=120.0) as client:
+    async with httpx.AsyncClient(
+        follow_redirects=True,
+        max_redirects=10,
+        timeout=120.0,
+        headers=BROWSER_HEADERS,
+    ) as client:
         async with client.stream('GET', url) as response:
+            print(f"[download] Final URL after redirects: {response.url}")
+            print(f"[download] Response status: {response.status_code}")
+            print(f"[download] Response headers: {dict(response.headers)}")
             response.raise_for_status()
-            print(f"[process] Download response status: {response.status_code}")
-            print(f"[process] Content-Type: {response.headers.get('content-type')}")
             total = 0
             with open(dest_path, 'wb') as f:
                 async for chunk in response.aiter_bytes(chunk_size=8192):
                     f.write(chunk)
                     total += len(chunk)
-            print(f"[process] Streamed {total} bytes to {dest_path}")
+            print(f"[download] Streamed {total} bytes to {dest_path}")
             return total
 
 # ─── Endpoints ────────────────────────────────────────────────────────────────

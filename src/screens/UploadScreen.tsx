@@ -501,6 +501,9 @@ export default function UploadScreen() {
             autoCorrect={false}
             keyboardType="url"
           />
+          <Text style={styles.linkHint}>
+            Paste a direct link to an audio file (MP3, WAV, M4A). Streaming service links (YouTube, Spotify) are not supported.
+          </Text>
 
           {/* Record */}
           <Text style={[styles.sectionLabel, { marginTop: 16 }]}>Record Vocals</Text>
@@ -821,6 +824,12 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     color: '#FFFFFF',
     fontSize: 15,
+  },
+  linkHint: {
+    color: '#4B5563',
+    fontSize: 11,
+    marginTop: 6,
+    lineHeight: 16,
   },
 
   // Record vocals
