@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
@@ -107,10 +108,10 @@ export default function LoginScreen() {
       >
         {/* Logo */}
         <View style={styles.logoArea}>
-          {/* TODO: Replace with <Image source={require('../../assets/logo.png')} /> when logo file is ready */}
-          <View style={styles.logoCircle}>
-            <Text style={styles.logoNote}>♫</Text>
-          </View>
+          <Image
+            source={require('../../assets/icon.png')}
+            style={styles.logoImage}
+          />
           <Text style={styles.appName}>Music-To-Sheet</Text>
           <Text style={styles.tagline}>Audio to Sheet Music, Instantly</Text>
         </View>
@@ -231,19 +232,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 40,
   },
-  logoCircle: {
+  logoImage: {
     width: 96,
     height: 96,
-    borderRadius: 48,
-    backgroundColor: '#0EA5E9',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: 22,
     marginBottom: 16,
-  },
-  logoNote: {
-    fontSize: 48,
-    color: '#FFFFFF',
-    lineHeight: 56,
   },
   appName: {
     color: '#FFFFFF',
