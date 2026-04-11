@@ -5,6 +5,9 @@ import {
   TouchableOpacity,
   Animated,
   ActivityIndicator,
+  Modal,
+  ScrollView,
+  Pressable,
 } from 'react-native';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { useState, useRef, useEffect } from 'react';
@@ -17,6 +20,32 @@ import SheetMusicViewer, { buildPdfHtml } from '../components/SheetMusicViewer';
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 const FORMATS = ['Score', 'Part', 'Lead Sheet', 'Tabs', 'Fake Book', 'Staff'];
+
+// ─── Semitone helpers ───────────────────────────────────────────────────────
+const CHROMATIC = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const NOTE_TO_SEMI: Record<string, number> = {
+  C:0,'C#':1,Db:1,D:2,'D#':3,Eb:3,E:4,F:5,'F#':6,Gb:6,G:7,'G#':8,Ab:8,A:9,'A#':10,Bb:10,B:11,
+};
+
+function shiftSemitone(pitch: string, delta: number): string {
+  const m = pitch.match(/^([A-G][#b]?)([0-9])$/);
+  if (!m) return pitch;
+  const base = NOTE_TO_SEMI[m[1]];
+  if (base === undefined) return pitch;
+  const octave = parseInt(m[2], 10);
+  const newMidi = octave * 12 + base + delta;
+  const newOctave = Math.floor(newMidi / 12);
+  const newBase = ((newMidi % 12) + 12) % 12;
+  return CHROMATIC[newBase] + Math.max(0, Math.min(9, newOctave));
+}
+
+function durationLabel(seconds: number): string {
+  if (seconds >= 1.5) return 'Whole';
+  if (seconds >= 0.75) return 'Half';
+  if (seconds >= 0.3) return 'Quarter';
+  if (seconds >= 0.15) return 'Eighth';
+  return '16th';
+}
 
 // ─── Toast ─────────────────────────────────────────────────────────────────
 function useToast() {
@@ -94,6 +123,7 @@ export default function ResultsScreen() {
   const [isSaved, setIsSaved] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [shareLoading, setShareLoading] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
 
   useEffect(() => {
     if (!historyId) return;
@@ -189,6 +219,26 @@ export default function ResultsScreen() {
     }
   }
 
+  async function saveNotes(updated: typeof notes) {
+    setNotes(updated);
+    if (!historyId) return;
+    await supabase
+      .from('conversion_history')
+      .update({ output_data: JSON.stringify(updated) })
+      .eq('id', historyId);
+  }
+
+  function shiftNote(index: number, delta: number) {
+    const updated = notes.map((n, i) =>
+      i === index ? { ...n, pitch: shiftSemitone(n.pitch, delta) } : n
+    );
+    saveNotes(updated);
+  }
+
+  function deleteNote(index: number) {
+    saveNotes(notes.filter((_, i) => i !== index));
+  }
+
   function toggleFavorite() {
     const next = !favorited;
     setFavorited(next);
@@ -250,20 +300,30 @@ export default function ResultsScreen() {
           </View>
         </View>
 
-        {/* ── Format Toggle Bar ── */}
-        <View style={styles.chipRow}>
-          {FORMATS.map((f) => (
-            <TouchableOpacity
-              key={f}
-              style={[styles.formatChip, activeFormat === f && styles.formatChipActive]}
-              onPress={() => setActiveFormat(f)}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.formatChipText, activeFormat === f && styles.formatChipTextActive]}>
-                {f}
-              </Text>
-            </TouchableOpacity>
-          ))}
+        {/* ── Format Toggle Bar + Edit Notes button ── */}
+        <View style={styles.chipRowWrap}>
+          <View style={styles.chipRow}>
+            {FORMATS.map((f) => (
+              <TouchableOpacity
+                key={f}
+                style={[styles.formatChip, activeFormat === f && styles.formatChipActive]}
+                onPress={() => setActiveFormat(f)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.formatChipText, activeFormat === f && styles.formatChipTextActive]}>
+                  {f}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <TouchableOpacity
+            style={styles.editNotesBtn}
+            onPress={() => setEditorOpen(true)}
+            activeOpacity={0.75}
+          >
+            <Feather name="edit-2" size={13} color="#0EA5E9" />
+            <Text style={styles.editNotesBtnText}>Edit</Text>
+          </TouchableOpacity>
         </View>
 
         {/* ── Sheet Music Viewer ── */}
@@ -358,6 +418,80 @@ export default function ResultsScreen() {
 
         <Toast message={toastMessage} opacity={toastOpacity} />
       </View>
+
+      {/* ── Note Editor Modal ── */}
+      <Modal
+        visible={editorOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setEditorOpen(false)}
+      >
+        <View style={editor.overlay}>
+          <View style={editor.sheet}>
+            {/* Header */}
+            <View style={editor.header}>
+              <Text style={editor.title}>Edit Notes</Text>
+              <Text style={editor.count}>{notes.length} note{notes.length !== 1 ? 's' : ''}</Text>
+            </View>
+
+            {/* Note list */}
+            <ScrollView
+              style={editor.scroll}
+              contentContainerStyle={editor.scrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              {notes.length === 0 && (
+                <Text style={editor.empty}>No notes to edit.</Text>
+              )}
+              {notes.map((note, i) => (
+                <View key={i} style={editor.noteRow}>
+                  {/* Index */}
+                  <Text style={editor.noteIndex}>{i + 1}</Text>
+
+                  {/* Pitch + duration */}
+                  <View style={editor.noteInfo}>
+                    <Text style={editor.notePitch}>{note.pitch}</Text>
+                    <Text style={editor.noteDur}>{durationLabel(note.duration ?? 0.5)}</Text>
+                  </View>
+
+                  {/* Shift down */}
+                  <Pressable
+                    style={editor.arrowBtn}
+                    onPress={() => shiftNote(i, -1)}
+                    hitSlop={6}
+                  >
+                    <Feather name="chevron-down" size={18} color="#FFFFFF" />
+                  </Pressable>
+
+                  {/* Shift up */}
+                  <Pressable
+                    style={editor.arrowBtn}
+                    onPress={() => shiftNote(i, 1)}
+                    hitSlop={6}
+                  >
+                    <Feather name="chevron-up" size={18} color="#FFFFFF" />
+                  </Pressable>
+
+                  {/* Delete */}
+                  <Pressable
+                    style={editor.deleteBtn}
+                    onPress={() => deleteNote(i)}
+                    hitSlop={6}
+                  >
+                    <Feather name="x" size={16} color="#EF4444" />
+                  </Pressable>
+                </View>
+              ))}
+            </ScrollView>
+
+            {/* Done */}
+            <Pressable style={editor.doneBtn} onPress={() => setEditorOpen(false)}>
+              <Text style={editor.doneBtnText}>Done</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -408,13 +542,31 @@ const styles = StyleSheet.create({
   formatBadgeText: { color: '#0EA5E9', fontSize: 12, fontWeight: '600' },
 
   // Format bar
+  chipRowWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingRight: 12,
+  },
   chipRow: {
+    flex: 1,
     flexDirection: 'row',
     flexWrap: 'wrap',
     paddingHorizontal: 16,
     paddingVertical: 8,
     gap: 6,
   },
+  editNotesBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#0EA5E940',
+    backgroundColor: '#0EA5E910',
+  },
+  editNotesBtnText: { color: '#0EA5E9', fontSize: 11, fontWeight: '600' },
   formatChip: {
     height: 28,
     borderWidth: 1,
@@ -489,4 +641,83 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     padding: 1,
   },
+});
+
+const editor = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: '#000000CC',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: '#1A1A24',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
+    paddingBottom: 32,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2D2D3E',
+  },
+  title: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  count: { color: '#6B7280', fontSize: 13 },
+  scroll: { flexGrow: 0 },
+  scrollContent: { paddingHorizontal: 16, paddingVertical: 8 },
+  empty: {
+    color: '#6B7280',
+    fontSize: 14,
+    textAlign: 'center',
+    paddingVertical: 24,
+  },
+  noteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2D2D3E',
+    gap: 8,
+  },
+  noteIndex: {
+    width: 24,
+    color: '#6B7280',
+    fontSize: 12,
+    textAlign: 'right',
+  },
+  noteInfo: { flex: 1 },
+  notePitch: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
+  noteDur: { color: '#6B7280', fontSize: 11, marginTop: 1 },
+  arrowBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#2D2D3E',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#EF444415',
+    borderWidth: 1,
+    borderColor: '#EF444430',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  doneBtn: {
+    marginHorizontal: 16,
+    marginTop: 14,
+    backgroundColor: '#0EA5E9',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  doneBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
 });
