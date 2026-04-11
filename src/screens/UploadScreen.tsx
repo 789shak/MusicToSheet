@@ -355,20 +355,6 @@ export default function UploadScreen() {
           <Ionicons name="musical-note" size={20} color="#0EA5E9" />
           <Text style={styles.headerTitle}>Music-To-Sheet</Text>
         </View>
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            style={styles.headerIcon}
-            onPress={() => router.push('/settings')}
-          >
-            <Feather name="settings" size={20} color="#9CA3AF" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.headerIcon}
-            onPress={() => router.push('/profile')}
-          >
-            <Feather name="user" size={20} color="#9CA3AF" />
-          </TouchableOpacity>
-        </View>
       </View>
 
       {/* Scrollable content */}
