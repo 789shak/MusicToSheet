@@ -195,12 +195,6 @@ ${footerHtml}
           } else {
             out += vLine(nx - NH_RX, ny + NH_RY, ny + NH_RY + STEM_LEN, '${noteColor}', 1.5);
           }
-
-          // ── Tap target (transparent hit area, larger than notehead) ─
-          out += '<rect'
-               + ' x="' + (nx - 14) + '" y="' + (ny - 14) + '"'
-               + ' width="28" height="28" fill="transparent"'
-               + ' onclick="noteTap(' + gni + ',\'' + INPUT[gni].pitch + '\')"/>';
         }
 
         // ── Barline after end of each complete measure ─────────────
@@ -222,13 +216,6 @@ ${footerHtml}
       + 'SVG render error:\\n' + e.message + '\\n\\n' + (e.stack || '') + '</pre>';
   }
 })();
-
-// ── Note tap → React Native message ──────────────────────────────────────
-function noteTap(idx, pitch) {
-  if (window.ReactNativeWebView) {
-    window.ReactNativeWebView.postMessage(JSON.stringify({ noteIndex: idx, pitch: pitch }));
-  }
-}
 
 // ── SVG primitive helpers ─────────────────────────────────────────────────
 function rect(x, y, w, h, fill) {
@@ -490,21 +477,9 @@ function timeSigNum(x, y, n) {
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
-export default function SheetMusicViewer({ notes = [], onNotePress }) {
+export default function SheetMusicViewer({ notes = [] }) {
   console.log('[SheetMusicViewer] notes:', notes.length, notes.slice(0, 4));
   const html = buildHtml(notes);
-
-  function handleMessage(event) {
-    if (!onNotePress) return;
-    try {
-      const { noteIndex, pitch } = JSON.parse(event.nativeEvent.data);
-      if (typeof noteIndex === 'number' && pitch) {
-        onNotePress(noteIndex, pitch);
-      }
-    } catch (e) {
-      // Ignore non-note messages
-    }
-  }
 
   return (
     <View style={styles.container}>
@@ -518,7 +493,6 @@ export default function SheetMusicViewer({ notes = [], onNotePress }) {
         javaScriptEnabled
         domStorageEnabled
         backgroundColor="#111118"
-        onMessage={handleMessage}
         onError={(e) =>
           console.log('[SheetMusicViewer] WebView error:', e.nativeEvent)
         }
