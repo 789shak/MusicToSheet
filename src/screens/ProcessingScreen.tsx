@@ -206,7 +206,15 @@ export default function ProcessingScreen() {
         // ── 0. Identify user + track ──────────────────────────────────────────
         const { data: { session } } = await supabase.auth.getSession();
         const uid = session?.user?.id;
-        const currentTier = tierRef.current;
+
+        // Resolve tier here rather than relying solely on tierRef, which may
+        // still be 'free' if useSubscription hasn't finished its async init.
+        // Mirror the test-email bypass from useSubscription so the correct
+        // limits are applied even on the very first render.
+        let currentTier = tierRef.current;
+        if (session?.user?.email === 'shakes789@gmail.com') {
+          currentTier = 'virtuosos';
+        }
 
         const trackHashInput = linkUrl?.trim() || fileName || 'unknown';
         const trackHash = computeTrackHash(trackHashInput);
