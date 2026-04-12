@@ -16,6 +16,8 @@ import {
 } from 'react-native';
 import { useRef, useState, useEffect, useCallback } from 'react';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import { decode } from 'base64-arraybuffer';
 import { useRouter } from 'expo-router';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
@@ -308,16 +310,15 @@ export default function ProfileScreen() {
     setAvatarLoading(true);
     try {
       const asset = result.assets[0];
-      const response = await fetch(asset.uri);
-      const blob = await response.blob();
       const path = `${user.id}/avatar.png`;
+      const base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: 'base64' });
+      console.log('Avatar base64 length:', base64.length);
       const { error } = await supabase.storage
         .from('avatars')
-        .upload(path, blob, { contentType: 'image/png', upsert: true });
-      if (error) { showToast('Upload failed'); return; }
-      const { data } = supabase.storage.from('avatars').getPublicUrl(path);
-      // Add cache-buster so the Image component re-fetches
-      setAvatarUrl(`${data.publicUrl}?t=${Date.now()}`);
+        .upload(path, decode(base64), { contentType: 'image/png', upsert: true });
+      if (error) { console.log('Avatar upload error:', error); showToast('Upload failed'); return; }
+      const { data: signed } = await supabase.storage.from('avatars').createSignedUrl(path, 3600);
+      if (signed?.signedUrl) setAvatarUrl(signed.signedUrl);
       showToast('Profile picture updated');
     } catch (e) {
       showToast('Upload failed');
