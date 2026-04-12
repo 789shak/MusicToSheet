@@ -127,7 +127,7 @@ export default function ResultsScreen() {
   const [playbackState, setPlaybackState] = useState<'idle' | 'playing' | 'paused'>('idle');
   const [currentTime, setCurrentTime] = useState(0);
   const [totalTime, setTotalTime] = useState(0);
-  const viewerRef = useRef<any>(null);
+  const webviewRef = useRef<any>(null);
   const [favorited, setFavorited] = useState(false);
   const heartScale = useRef(new Animated.Value(1)).current;
   const [trackRecord, setTrackRecord] = useState<any>(null);
@@ -160,30 +160,27 @@ export default function ResultsScreen() {
   useEffect(() => {
     setPlaybackState('idle');
     setCurrentTime(0);
-    if (viewerRef.current) viewerRef.current.sendCommand({ type: 'stop' });
+    webviewRef.current?.injectJavaScript(`handlePlaybackCommand({type:'stop'}); true;`);
   }, [transposeOffset, bpm]);
 
   function handlePlay() {
-    if (!viewerRef.current) return;
     if (playbackState === 'paused') {
-      viewerRef.current.sendCommand({ type: 'resume' });
+      webviewRef.current?.injectJavaScript(`handlePlaybackCommand({type:'resume'}); true;`);
       setPlaybackState('playing');
     } else {
-      viewerRef.current.sendCommand({ type: 'play', notes: displayNotes, bpm });
+      webviewRef.current?.injectJavaScript(`handlePlaybackCommand({type:'play'}); true;`);
       setPlaybackState('playing');
       setCurrentTime(0);
     }
   }
 
   function handlePause() {
-    if (!viewerRef.current) return;
-    viewerRef.current.sendCommand({ type: 'pause' });
+    webviewRef.current?.injectJavaScript(`handlePlaybackCommand({type:'pause'}); true;`);
     setPlaybackState('paused');
   }
 
   function handleStop() {
-    if (!viewerRef.current) return;
-    viewerRef.current.sendCommand({ type: 'stop' });
+    webviewRef.current?.injectJavaScript(`handlePlaybackCommand({type:'stop'}); true;`);
     setPlaybackState('idle');
     setCurrentTime(0);
   }
@@ -500,7 +497,7 @@ export default function ResultsScreen() {
 
         {/* ── Sheet Music Viewer ── */}
         <View style={styles.viewerContainer}>
-          <SheetMusicViewer ref={viewerRef} notes={displayNotes} bpm={bpm} onMessage={handleWebViewMessage} />
+          <SheetMusicViewer ref={webviewRef} notes={displayNotes} bpm={bpm} onMessage={handleWebViewMessage} />
         </View>
 
         {/* ── Upgrade Banner ── */}

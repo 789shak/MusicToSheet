@@ -508,9 +508,13 @@ export default function UploadScreen() {
           {/* Record */}
           <Text style={[styles.sectionLabel, { marginTop: 16 }]}>Record Vocals</Text>
 
-          {/* Free tier — locked */}
+          {/* Free tier — locked, tapping navigates to subscription */}
           {!['advancedPro', 'virtuosos'].includes(tier) && (
-            <View style={styles.recordRow}>
+            <TouchableOpacity
+              style={styles.recordRow}
+              onPress={() => router.push('/subscription')}
+              activeOpacity={0.8}
+            >
               <View style={styles.recordBtn}>
                 <Ionicons name="mic-outline" size={22} color="#6B7280" />
                 <Text style={styles.recordText}>Record Vocals</Text>
@@ -519,7 +523,7 @@ export default function UploadScreen() {
                 <MaterialIcons name="lock" size={14} color="#F59E0B" />
                 <Text style={styles.proLockText}>Pro feature</Text>
               </View>
-            </View>
+            </TouchableOpacity>
           )}
 
           {/* Pro/Virtuosos — recording UI */}

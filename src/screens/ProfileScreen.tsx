@@ -12,8 +12,10 @@ import {
   Pressable,
   Animated,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { useRef, useState, useEffect, useCallback } from 'react';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
@@ -230,6 +232,9 @@ export default function ProfileScreen() {
   const [youtube,   setYoutube]   = useState('');
   const [linkedin,  setLinkedin]  = useState('');
 
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [avatarLoading, setAvatarLoading] = useState(false);
+
   // Derived after fullName / email state are populated
   const initials = (fullName || email)[0]?.toUpperCase() ?? '?';
 
@@ -273,6 +278,53 @@ export default function ProfileScreen() {
   }, [user, session, authLoading]);
 
   useEffect(() => { fetchProfile(); }, [fetchProfile]);
+
+  // ── Load avatar from Supabase Storage on mount ───────────────────────────
+  useEffect(() => {
+    if (!user) return;
+    const path = `${user.id}/avatar.png`;
+    supabase.storage
+      .from('avatars')
+      .createSignedUrl(path, 3600)
+      .then(({ data }) => { if (data?.signedUrl) setAvatarUrl(data.signedUrl); });
+  }, [user]);
+
+  // ── Pick image and upload to Supabase Storage ────────────────────────────
+  async function handlePickAvatar() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      showToast('Gallery permission is required');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+
+    if (!user) return;
+    setAvatarLoading(true);
+    try {
+      const asset = result.assets[0];
+      const response = await fetch(asset.uri);
+      const blob = await response.blob();
+      const path = `${user.id}/avatar.png`;
+      const { error } = await supabase.storage
+        .from('avatars')
+        .upload(path, blob, { contentType: 'image/png', upsert: true });
+      if (error) { showToast('Upload failed'); return; }
+      const { data } = supabase.storage.from('avatars').getPublicUrl(path);
+      // Add cache-buster so the Image component re-fetches
+      setAvatarUrl(`${data.publicUrl}?t=${Date.now()}`);
+      showToast('Profile picture updated');
+    } catch (e) {
+      showToast('Upload failed');
+    } finally {
+      setAvatarLoading(false);
+    }
+  }
 
   // ── Save profile — reads user/session from context, NOT from storage ──
   async function handleSave() {
@@ -340,12 +392,20 @@ export default function ProfileScreen() {
       >
         {/* ── Avatar ── */}
         <View style={styles.avatarArea}>
-          <View style={styles.avatarCircle}>
-            <Text style={styles.avatarInitial}>{initials}</Text>
-            <TouchableOpacity style={styles.avatarEdit} onPress={() => console.log('Edit avatar pressed')}>
-              <Feather name="camera" size={13} color="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity onPress={handlePickAvatar} activeOpacity={0.8} disabled={avatarLoading}>
+            <View style={styles.avatarCircle}>
+              {avatarUrl ? (
+                <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+              ) : (
+                <Text style={styles.avatarInitial}>{initials}</Text>
+              )}
+              <View style={styles.avatarEdit}>
+                {avatarLoading
+                  ? <ActivityIndicator size="small" color="#FFFFFF" />
+                  : <Feather name="camera" size={13} color="#FFFFFF" />}
+              </View>
+            </View>
+          </TouchableOpacity>
           <Text style={styles.avatarEmail}>{email}</Text>
         </View>
 
@@ -494,6 +554,7 @@ const styles = StyleSheet.create({
     borderWidth: 2, borderColor: '#0EA5E9',
     alignItems: 'center', justifyContent: 'center',
   },
+  avatarImage: { width: 88, height: 88, borderRadius: 44 },
   avatarInitial: { color: '#0EA5E9', fontSize: 36, fontWeight: '700' },
   avatarEdit: {
     position: 'absolute', bottom: 0, right: 0,

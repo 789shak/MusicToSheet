@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useRef } from 'react';
+import { forwardRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import WebView from 'react-native-webview';
 
@@ -47,6 +47,10 @@ ${headerHtml}
 <svg id="sheet" xmlns="http://www.w3.org/2000/svg"></svg>
 ${footerHtml}
 <script>
+// Global note/BPM store — used by the playback engine
+window.__NOTES = ${notesJson};
+window.__BPM   = ${bpm};
+
 (function () {
   try {
 
@@ -304,7 +308,7 @@ function _stopPb() {
 function handlePlaybackCommand(cmd) {
   if (cmd.type === 'play') {
     _stopPb();
-    var notes = cmd.notes || [], bpm = cmd.bpm || 120;
+    var notes = window.__NOTES || [], bpm = window.__BPM || 120;
     _pbCtx   = new (window.AudioContext || window.webkitAudioContext)();
     _pbStart = _pbCtx.currentTime + 0.05;
     _pbSched = [];
@@ -579,22 +583,12 @@ function timeSigNum(x, y, n) {
 // ─── Component ───────────────────────────────────────────────────────────────
 const SheetMusicViewer = forwardRef(function SheetMusicViewer({ notes = [], bpm = 120, onMessage }, ref) {
   console.log('[SheetMusicViewer] notes:', notes.length, notes.slice(0, 4));
-  const webviewRef = useRef(null);
   const html = buildHtml(notes, { bpm });
-
-  useImperativeHandle(ref, () => ({
-    sendCommand: (cmd) => {
-      if (webviewRef.current) {
-        const js = `if(typeof handlePlaybackCommand==="function"){handlePlaybackCommand(${JSON.stringify(cmd)});} true;`;
-        webviewRef.current.injectJavaScript(js);
-      }
-    },
-  }));
 
   return (
     <View style={styles.container}>
       <WebView
-        ref={webviewRef}
+        ref={ref}
         source={{ html }}
         style={styles.webview}
         originWhitelist={['*']}
