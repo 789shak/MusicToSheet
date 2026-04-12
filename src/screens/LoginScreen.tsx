@@ -239,7 +239,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   appName: {
-    color: '#FFFFFF',
+    color: '#0EA5E9',
     fontSize: 28,
     fontWeight: '700',
     letterSpacing: 0.5,
