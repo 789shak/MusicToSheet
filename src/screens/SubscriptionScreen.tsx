@@ -35,7 +35,8 @@ function BillingToggle({
 
       <Pressable onPress={() => onChange('annual')}>
         <Text style={[toggle.label, cycle === 'annual' && toggle.labelActive]}>
-          Annual <Text style={toggle.saveBadge}>Save up to 8%</Text>
+          Annual{' '}
+          <Text style={[toggle.saveBadge, cycle === 'annual' && toggle.saveBadgeActive]}>Save up to 40%</Text>
         </Text>
       </Pressable>
     </View>
@@ -61,8 +62,13 @@ const toggle = StyleSheet.create({
   },
   saveBadge: {
     color: '#0EA5E9',
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  saveBadgeActive: {
+    color: '#34D399',
+    fontSize: 14,
+    fontWeight: '700',
   },
   track: {
     width: 44,
@@ -223,7 +229,12 @@ export default function SubscriptionScreen() {
             <Text style={styles.priceSub}> /mo</Text>
           </Text>
           {cycle === 'annual' && (
-            <Text style={styles.savingsNote}>Billed annually — Save 40%</Text>
+            <View style={styles.annualInfoRow}>
+              <Text style={styles.billedNote}>billed as $71.88/year</Text>
+              <View style={styles.saveBadgeGreen}>
+                <Text style={styles.saveBadgeGreenText}>Save 40%</Text>
+              </View>
+            </View>
           )}
 
           <View style={styles.divider} />
@@ -258,7 +269,12 @@ export default function SubscriptionScreen() {
             <Text style={styles.priceSubGold}> /mo</Text>
           </Text>
           {cycle === 'annual' && (
-            <Text style={styles.savingsNoteGold}>Billed annually ($119.88/yr) — Save 38%</Text>
+            <View style={styles.annualInfoRow}>
+              <Text style={styles.billedNote}>billed as $119.88/year</Text>
+              <View style={styles.saveBadgeGreen}>
+                <Text style={styles.saveBadgeGreenText}>Save 40%</Text>
+              </View>
+            </View>
           )}
 
           <View style={styles.dividerGold} />
@@ -429,17 +445,29 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     color: '#9CA3AF',
   },
-  savingsNote: {
-    color: '#0EA5E9',
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 4,
+  annualInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
   },
-  savingsNoteGold: {
-    color: '#F59E0B',
+  billedNote: {
+    color: '#9CA3AF',
     fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 4,
+    fontWeight: '400',
+  },
+  saveBadgeGreen: {
+    backgroundColor: '#064E3B',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: '#34D39940',
+  },
+  saveBadgeGreenText: {
+    color: '#34D399',
+    fontSize: 13,
+    fontWeight: '700',
   },
 
   // ── Dividers ──
