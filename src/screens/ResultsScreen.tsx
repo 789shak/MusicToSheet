@@ -383,26 +383,23 @@ export default function ResultsScreen() {
           </View>
         </View>
 
-        {/* ── Format Toggle Bar (single non-wrapping row) ── */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.chipScrollOuter}
-          contentContainerStyle={styles.chipScrollContent}
-        >
-          {FORMATS.map((f) => (
-            <TouchableOpacity
-              key={f}
-              style={[styles.formatChip, activeFormat === f && styles.formatChipActive]}
-              onPress={() => setActiveFormat(f)}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.formatChipText, activeFormat === f && styles.formatChipTextActive]}>
-                {f}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        {/* ── Format Toggle Bar (full-width, evenly distributed) ── */}
+        <View style={styles.chipScrollOuter}>
+          <View style={styles.chipScrollContent}>
+            {FORMATS.map((f) => (
+              <TouchableOpacity
+                key={f}
+                style={[styles.formatChip, activeFormat === f && styles.formatChipActive]}
+                onPress={() => setActiveFormat(f)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.formatChipText, activeFormat === f && styles.formatChipTextActive]}>
+                  {f}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
 
         {/* ── Edit Notes button row (left-aligned, below chips) ── */}
         <View style={styles.editRow}>
@@ -743,17 +740,17 @@ const styles = StyleSheet.create({
   },
   formatBadgeText: { color: '#0EA5E9', fontSize: 12, fontWeight: '600' },
 
-  // Format bar (horizontal scroll, no wrapping)
+  // Format bar (full-width flex row)
   chipScrollOuter: {
     borderBottomWidth: 1,
     borderBottomColor: '#2D2D3E',
   },
   chipScrollContent: {
     flexDirection: 'row',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    gap: 6,
-    alignItems: 'center',
+    paddingHorizontal: 0,
+    paddingVertical: 2,
+    gap: 2,
+    alignItems: 'stretch',
   },
   // Edit row (below chips, left-aligned) — compact
   editRow: {
@@ -776,15 +773,16 @@ const styles = StyleSheet.create({
   },
   editNotesBtnText: { color: '#0EA5E9', fontSize: 11, fontWeight: '600' },
   formatChip: {
-    height: 28,
+    flex: 1,
     borderWidth: 1,
     borderColor: '#2D2D3E',
-    borderRadius: 20,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    borderRadius: 6,
+    paddingHorizontal: 2,
+    paddingVertical: 0,
     backgroundColor: '#1C1C27',
     alignItems: 'center',
     justifyContent: 'center',
+    minHeight: 22,
   },
   formatChipActive: {
     backgroundColor: '#0EA5E9',
