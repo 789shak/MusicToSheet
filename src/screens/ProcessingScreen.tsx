@@ -4,6 +4,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Animated,
+  Image,
 } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -384,12 +385,14 @@ export default function ProcessingScreen() {
 
   return (
     <View style={styles.root}>
-      {/* Pulsing icon */}
+      {/* Pulsing app icon */}
       <View style={styles.iconArea}>
         <Animated.View style={[styles.glowRing, { opacity: glowAnim }]} />
-        <Animated.View style={[styles.iconCircle, { transform: [{ scale: pulseAnim }] }]}>
-          <Ionicons name="musical-notes" size={48} color="#FFFFFF" />
-        </Animated.View>
+        <Animated.Image
+          source={require('../../assets/icon.png')}
+          style={[styles.appIcon, { transform: [{ scale: pulseAnim }] }]}
+          resizeMode="cover"
+        />
       </View>
 
       {/* Title */}
@@ -458,13 +461,10 @@ const styles = StyleSheet.create({
     borderRadius: 55,
     backgroundColor: '#0EA5E9',
   },
-  iconCircle: {
+  appIcon: {
     width: 84,
     height: 84,
-    borderRadius: 42,
-    backgroundColor: '#0EA5E9',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: 20,
   },
 
   // Title

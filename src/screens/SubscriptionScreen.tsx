@@ -254,13 +254,11 @@ export default function SubscriptionScreen() {
           <Text style={styles.planNameGold}>Virtuosos</Text>
 
           <Text style={styles.priceGold}>
-            {cycle === 'monthly' ? '$12.99' : '$143.99'}
-            <Text style={styles.priceSubGold}>
-              {cycle === 'monthly' ? ' /mo' : ' /yr'}
-            </Text>
+            {cycle === 'monthly' ? '$15.99' : '$9.99'}
+            <Text style={styles.priceSubGold}> /mo</Text>
           </Text>
           {cycle === 'annual' && (
-            <Text style={styles.savingsNoteGold}>Save 8% vs monthly</Text>
+            <Text style={styles.savingsNoteGold}>Billed annually ($119.88/yr) — Save 38%</Text>
           )}
 
           <View style={styles.dividerGold} />

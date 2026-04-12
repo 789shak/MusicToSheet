@@ -59,7 +59,7 @@ export function OnboardingModal() {
             <Ionicons name="musical-notes" size={36} color="#FFFFFF" />
           </View>
 
-          {/* Title */}
+          {/* Title — turquoise #0EA5E9 */}
           <Text style={styles.title}>Welcome to Music-To-Sheet</Text>
 
           {/* Features */}
@@ -130,14 +130,14 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
 
-  // Title
+  // Title — explicitly turquoise
   title: {
     color: '#0EA5E9',
     fontSize: 20,
     fontWeight: '700',
     textAlign: 'center',
     marginBottom: 22,
-    lineHeight: 26,
+    lineHeight: 28,
   },
 
   // Features

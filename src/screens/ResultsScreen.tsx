@@ -755,11 +755,11 @@ const styles = StyleSheet.create({
     gap: 6,
     alignItems: 'center',
   },
-  // Edit row (below chips, left-aligned)
+  // Edit row (below chips, left-aligned) — compact
   editRow: {
     flexDirection: 'row',
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 2,
     borderBottomWidth: 1,
     borderBottomColor: '#2D2D3E',
   },
@@ -768,7 +768,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 3,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: '#0EA5E940',
