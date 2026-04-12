@@ -26,6 +26,7 @@ function buildHtml(notes, cfg) {
   const pageWidth  = cfg.pageWidth  || null;
   const headerHtml = cfg.headerHtml || '';
   const footerHtml = cfg.footerHtml || '';
+  const bpm        = cfg.bpm || 120;
   const notesJson  = JSON.stringify(notes);
   const wExpr      = pageWidth ? String(pageWidth) : 'Math.floor(window.innerWidth)';
 
@@ -54,6 +55,7 @@ ${footerHtml}
     // ── Music constants ──────────────────────────────────────────────────
     var DEGREE = { C:0, D:1, E:2, F:3, G:4, A:5, B:6 };
     var BEATS  = 4;   // quarter notes per measure (4/4 time)
+    var BPM    = ${bpm};
 
     // ── Layout constants ─────────────────────────────────────────────────
     var W         = ${wExpr};
@@ -133,11 +135,13 @@ ${footerHtml}
            + ' font-size="70" font-family="Times New Roman, Times, serif"'
            + ' fill="${noteColor}">&#x1D11E;</text>';
 
-      // ── Time signature (row 0 only) ────────────────────────────────
+      // ── Time signature + tempo mark (row 0 only) ──────────────────
       if (isFirst) {
         var tx = CLEF_W + 2;
         out += timeSigNum(tx, stT + LINE_GAP + 7,     '4');
         out += timeSigNum(tx, stT + 3 * LINE_GAP + 7, '4');
+        out += '<text x="' + (CLEF_W + TIME_W + 14) + '" y="' + (stT - 5) + '"'
+             + ' font-size="11" font-family="sans-serif" fill="${noteColor}">\u2669 = ' + BPM + '</text>';
       }
 
       // ── Notes ─────────────────────────────────────────────────────
@@ -253,6 +257,7 @@ export function buildPdfHtml(notes, meta) {
     meta.date ||
     new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
   );
+  const bpm       = meta.bpm || 120;
   const watermark = meta.watermark ? 'true' : 'false';
   const notesJson = JSON.stringify(notes);
 
@@ -281,6 +286,7 @@ export function buildPdfHtml(notes, meta) {
     var DEGREE    = { C:0, D:1, E:2, F:3, G:4, A:5, B:6 };
     var BEATS     = 4;
     var WATERMARK = ${watermark};   // true = free tier, stamp diagonal watermark on each page
+    var BPM       = ${bpm};
     var W             = 500;   // content width in px (fits A4 with 45mm left / 20mm right margins)
     var LINE_GAP      = 12;
     var STEP          = LINE_GAP / 2;
@@ -326,7 +332,7 @@ export function buildPdfHtml(notes, meta) {
     var HEADER_HTML =
       '<div class="header">'
       + '<div class="header-title">${trackName}</div>'
-      + '<div class="header-meta">${instrument} &middot; ${format} &middot; ${date}</div>'
+      + '<div class="header-meta">${instrument} &middot; ${format} &middot; ${date} &middot; \u2669 = ${bpm}</div>'
       + '</div>';
 
     var FOOTER_HTML =
@@ -365,11 +371,13 @@ export function buildPdfHtml(notes, meta) {
                + ' font-size="70" font-family="Times New Roman, Times, serif"'
                + ' fill="#000000">&#x1D11E;</text>';
 
-        // Time signature (first row only)
+        // Time signature + tempo mark (first row only)
         if (isFirstRow) {
           var tx = CLEF_W + 2;
           svgOut += timeSigNum(tx, stT + LINE_GAP + 7,     '4');
           svgOut += timeSigNum(tx, stT + 3 * LINE_GAP + 7, '4');
+          svgOut += '<text x="' + (CLEF_W + TIME_W + 14) + '" y="' + (stT - 5) + '"'
+                 + ' font-size="11" font-family="sans-serif" fill="#333333">\u2669 = ' + BPM + '</text>';
         }
 
         // Notes
@@ -477,9 +485,9 @@ function timeSigNum(x, y, n) {
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
-export default function SheetMusicViewer({ notes = [] }) {
+export default function SheetMusicViewer({ notes = [], bpm = 120 }) {
   console.log('[SheetMusicViewer] notes:', notes.length, notes.slice(0, 4));
-  const html = buildHtml(notes);
+  const html = buildHtml(notes, { bpm });
 
   return (
     <View style={styles.container}>

@@ -10,7 +10,7 @@ import {
   Pressable,
 } from 'react-native';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -117,6 +117,8 @@ export default function ResultsScreen() {
   const isPro = canDownloadPdf;
 
   const [activeFormat, setActiveFormat] = useState('Score');
+  const [transposeOffset, setTransposeOffset] = useState(0);
+  const [bpm, setBpm] = useState(120);
   const [favorited, setFavorited] = useState(false);
   const heartScale = useRef(new Animated.Value(1)).current;
   const [trackRecord, setTrackRecord] = useState<any>(null);
@@ -124,6 +126,26 @@ export default function ResultsScreen() {
   const [pdfLoading, setPdfLoading] = useState(false);
   const [shareLoading, setShareLoading] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
+
+  // Transposed view — original notes are never mutated
+  const displayNotes = useMemo(
+    () => transposeOffset === 0
+      ? notes
+      : notes.map(n => ({ ...n, pitch: shiftSemitone(n.pitch, transposeOffset) })),
+    [notes, transposeOffset]
+  );
+
+  // Persist transpose & BPM changes to Supabase (skip first render)
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return; }
+    if (!historyId) return;
+    supabase
+      .from('conversion_history')
+      .update({ transpose_semitones: transposeOffset, bpm })
+      .eq('id', historyId)
+      .then(() => {});
+  }, [transposeOffset, bpm]);
 
   useEffect(() => {
     if (!historyId) return;
@@ -139,6 +161,8 @@ export default function ResultsScreen() {
         } else {
           console.log('[ResultsScreen] fetched record:', data);
           setTrackRecord(data);
+          if (data?.transpose_semitones != null) setTransposeOffset(data.transpose_semitones);
+          if (data?.bpm != null) setBpm(data.bpm);
           // Populate notes from saved output_data when not passed via params
           if (!notesJson && data?.output_data) {
             try {
@@ -156,6 +180,7 @@ export default function ResultsScreen() {
       trackName:  trackRecord?.track_name  ?? 'Sample Track',
       instrument: trackRecord?.instrument  ?? 'Unknown',
       format:     activeFormat,
+      bpm,
       date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
       watermark:  !isPro,
     };
@@ -164,7 +189,7 @@ export default function ResultsScreen() {
   async function handleShare() {
     setShareLoading(true);
     try {
-      const html = buildPdfHtml(notes, pdfMeta());
+      const html = buildPdfHtml(displayNotes, pdfMeta());
       const { uri } = await Print.printToFileAsync({ html });
       console.log('[ResultsScreen] share PDF uri:', uri);
       await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Share sheet music' });
@@ -182,7 +207,7 @@ export default function ResultsScreen() {
     }
     setPdfLoading(true);
     try {
-      const html = buildPdfHtml(notes, pdfMeta());
+      const html = buildPdfHtml(displayNotes, pdfMeta());
       const { uri } = await Print.printToFileAsync({ html });
       console.log('[ResultsScreen] PDF saved to:', uri);
       await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Save or share sheet music' });
@@ -326,9 +351,64 @@ export default function ResultsScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* ── Transpose & BPM Controls ── */}
+        <View style={styles.controlsRow}>
+          {/* Transpose */}
+          <View style={styles.controlGroup}>
+            <Text style={styles.controlLabel}>Transpose</Text>
+            <View style={styles.controlStepper}>
+              <TouchableOpacity
+                style={styles.stepperBtn}
+                onPress={() => setTransposeOffset(v => Math.max(-12, v - 1))}
+                hitSlop={6}
+              >
+                <Text style={styles.stepperBtnText}>−</Text>
+              </TouchableOpacity>
+              <Text style={styles.stepperValue}>
+                {transposeOffset === 0 ? '0' : transposeOffset > 0 ? `+${transposeOffset}` : `${transposeOffset}`}
+              </Text>
+              <TouchableOpacity
+                style={styles.stepperBtn}
+                onPress={() => setTransposeOffset(v => Math.min(12, v + 1))}
+                hitSlop={6}
+              >
+                <Text style={styles.stepperBtnText}>+</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.controlHint}>
+              {transposeOffset === 0 ? 'Original Key' : `${transposeOffset > 0 ? '+' : ''}${transposeOffset} semitones`}
+            </Text>
+          </View>
+
+          <View style={styles.controlDivider} />
+
+          {/* BPM */}
+          <View style={styles.controlGroup}>
+            <Text style={styles.controlLabel}>BPM</Text>
+            <View style={styles.controlStepper}>
+              <TouchableOpacity
+                style={styles.stepperBtn}
+                onPress={() => setBpm(v => Math.max(40, v - 5))}
+                hitSlop={6}
+              >
+                <Text style={styles.stepperBtnText}>−</Text>
+              </TouchableOpacity>
+              <Text style={styles.stepperValue}>{bpm}</Text>
+              <TouchableOpacity
+                style={styles.stepperBtn}
+                onPress={() => setBpm(v => Math.min(240, v + 5))}
+                hitSlop={6}
+              >
+                <Text style={styles.stepperBtnText}>+</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.controlHint}>{'\u2669'} = {bpm}</Text>
+          </View>
+        </View>
+
         {/* ── Sheet Music Viewer ── */}
         <View style={styles.viewerContainer}>
-          <SheetMusicViewer notes={notes} />
+          <SheetMusicViewer notes={displayNotes} bpm={bpm} />
         </View>
 
         {/* ── Upgrade Banner ── */}
@@ -584,6 +664,67 @@ const styles = StyleSheet.create({
   },
   formatChipText: { color: '#6B7280', fontSize: 10, fontWeight: '500' },
   formatChipTextActive: { color: '#FFFFFF', fontWeight: '700' },
+
+  // Transpose & BPM controls
+  controlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#16161F',
+    borderBottomWidth: 1,
+    borderBottomColor: '#2D2D3E',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  controlGroup: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+  },
+  controlLabel: {
+    color: '#6B7280',
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  controlStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  stepperBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#0EA5E920',
+    borderWidth: 1,
+    borderColor: '#0EA5E940',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperBtnText: {
+    color: '#0EA5E9',
+    fontSize: 16,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  stepperValue: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+    minWidth: 32,
+    textAlign: 'center',
+  },
+  controlHint: {
+    color: '#6B7280',
+    fontSize: 10,
+  },
+  controlDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: '#2D2D3E',
+    marginHorizontal: 8,
+  },
 
   // Viewer
   viewerContainer: {

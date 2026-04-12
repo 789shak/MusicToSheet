@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { getCustomerInfo } from '../lib/revenuecat';
 import { supabase } from '../lib/supabase';
+import { useAuth } from './useAuth';
 
 // ─── Tier Configuration ────────────────────────────────────────────────────────
 const TIER_CONFIG = {
@@ -45,10 +46,15 @@ const TIER_CONFIG = {
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 export function useSubscription() {
   const [currentTier, setCurrentTier] = useState('free');
+  const { session } = useAuth();
 
   useEffect(() => {
     async function checkEntitlements() {
-      // REMOVED: test bypass (shakes789@gmail.com → virtuosos)
+      // TODO: Remove before final production build
+      if (session?.user?.email === 'shakes789@gmail.com') {
+        setCurrentTier('virtuosos');
+        return;
+      }
 
       try {
         const customerInfo = await getCustomerInfo();
