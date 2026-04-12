@@ -39,6 +39,11 @@ function shiftSemitone(pitch: string, delta: number): string {
   return CHROMATIC[newBase] + Math.max(0, Math.min(9, newOctave));
 }
 
+function formatTime(seconds: number): string {
+  const s = Math.floor(seconds);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
 function durationLabel(seconds: number): string {
   if (seconds >= 1.5) return 'Whole';
   if (seconds >= 0.75) return 'Half';
@@ -119,6 +124,10 @@ export default function ResultsScreen() {
   const [activeFormat, setActiveFormat] = useState('Score');
   const [transposeOffset, setTransposeOffset] = useState(0);
   const [bpm, setBpm] = useState(120);
+  const [playbackState, setPlaybackState] = useState<'idle' | 'playing' | 'paused'>('idle');
+  const [currentTime, setCurrentTime] = useState(0);
+  const [totalTime, setTotalTime] = useState(0);
+  const viewerRef = useRef<any>(null);
   const [favorited, setFavorited] = useState(false);
   const heartScale = useRef(new Animated.Value(1)).current;
   const [trackRecord, setTrackRecord] = useState<any>(null);
@@ -146,6 +155,58 @@ export default function ResultsScreen() {
       .eq('id', historyId)
       .then(() => {});
   }, [transposeOffset, bpm]);
+
+  // Stop playback when transpose or BPM changes
+  useEffect(() => {
+    setPlaybackState('idle');
+    setCurrentTime(0);
+    if (viewerRef.current) viewerRef.current.sendCommand({ type: 'stop' });
+  }, [transposeOffset, bpm]);
+
+  function handlePlay() {
+    if (!viewerRef.current) return;
+    if (playbackState === 'paused') {
+      viewerRef.current.sendCommand({ type: 'resume' });
+      setPlaybackState('playing');
+    } else {
+      viewerRef.current.sendCommand({ type: 'play', notes: displayNotes, bpm });
+      setPlaybackState('playing');
+      setCurrentTime(0);
+    }
+  }
+
+  function handlePause() {
+    if (!viewerRef.current) return;
+    viewerRef.current.sendCommand({ type: 'pause' });
+    setPlaybackState('paused');
+  }
+
+  function handleStop() {
+    if (!viewerRef.current) return;
+    viewerRef.current.sendCommand({ type: 'stop' });
+    setPlaybackState('idle');
+    setCurrentTime(0);
+  }
+
+  function handleWebViewMessage(event: any) {
+    try {
+      const msg = JSON.parse(event.nativeEvent.data);
+      if (msg.type === 'progress') {
+        setCurrentTime(msg.currentTime ?? 0);
+        if (msg.totalTime) setTotalTime(msg.totalTime);
+      } else if (msg.type === 'totalTime') {
+        setTotalTime(msg.totalTime ?? 0);
+      } else if (msg.type === 'ended') {
+        setPlaybackState('idle');
+        setCurrentTime(0);
+      } else if (msg.type === 'paused') {
+        setPlaybackState('paused');
+      } else if (msg.type === 'stopped') {
+        setPlaybackState('idle');
+        setCurrentTime(0);
+      }
+    } catch (e) {}
+  }
 
   useEffect(() => {
     if (!historyId) return;
@@ -406,9 +467,40 @@ export default function ResultsScreen() {
           </View>
         </View>
 
+        {/* ── Playback Controls ── */}
+        <View style={styles.playbackRow}>
+          <TouchableOpacity style={styles.stopBtn} onPress={handleStop} activeOpacity={0.7}>
+            <Ionicons name="stop" size={16} color="#9CA3AF" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.playPauseBtn}
+            onPress={playbackState === 'playing' ? handlePause : handlePlay}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name={playbackState === 'playing' ? 'pause' : 'play'}
+              size={20}
+              color="#FFFFFF"
+            />
+          </TouchableOpacity>
+          <View style={styles.progressArea}>
+            <View style={styles.progressTrack}>
+              <View
+                style={[
+                  styles.progressFill,
+                  { width: `${totalTime > 0 ? Math.min((currentTime / totalTime) * 100, 100) : 0}%` },
+                ]}
+              />
+            </View>
+            <Text style={styles.progressTime}>
+              {formatTime(currentTime)} / {formatTime(totalTime)}
+            </Text>
+          </View>
+        </View>
+
         {/* ── Sheet Music Viewer ── */}
         <View style={styles.viewerContainer}>
-          <SheetMusicViewer notes={displayNotes} bpm={bpm} />
+          <SheetMusicViewer ref={viewerRef} notes={displayNotes} bpm={bpm} onMessage={handleWebViewMessage} />
         </View>
 
         {/* ── Upgrade Banner ── */}
@@ -724,6 +816,54 @@ const styles = StyleSheet.create({
     height: 40,
     backgroundColor: '#2D2D3E',
     marginHorizontal: 8,
+  },
+
+  // Playback row
+  playbackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#16161F',
+    borderBottomWidth: 1,
+    borderBottomColor: '#2D2D3E',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 10,
+  },
+  stopBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#2D2D3E',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playPauseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#0EA5E9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progressArea: {
+    flex: 1,
+    gap: 4,
+  },
+  progressTrack: {
+    height: 4,
+    backgroundColor: '#2D2D3E',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#0EA5E9',
+    borderRadius: 2,
+  },
+  progressTime: {
+    color: '#6B7280',
+    fontSize: 10,
+    fontWeight: '500',
   },
 
   // Viewer

@@ -1,3 +1,4 @@
+import { forwardRef, useImperativeHandle, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import WebView from 'react-native-webview';
 
@@ -188,6 +189,7 @@ ${footerHtml}
 
           // ── Notehead: 10px wide × 8px tall, tilted −15° ───────────
           out += '<ellipse'
+               + ' id="note-' + gni + '"'
                + ' cx="' + nx + '" cy="' + ny + '"'
                + ' rx="' + NH_RX + '" ry="' + NH_RY + '" fill="${noteColor}"'
                + ' transform="rotate(-15,' + nx + ',' + ny + ')"/>';
@@ -237,6 +239,96 @@ function seg(x1, y1, x2, y2, stroke, sw) {
 function timeSigNum(x, y, n) {
   return '<text x="'+x+'" y="'+y+'" font-size="17" font-family="sans-serif"'
        + ' font-weight="bold" fill="${noteColor}">'+n+'</text>';
+}
+
+// ── Web Audio Playback Engine ────────────────────────────────────────────────
+var _pbCtx   = null;
+var _pbTimer = null;
+var _pbSched = [];
+var _pbTotal = 0;
+var _pbStart = 0;
+var _prevHi  = -1;
+var _NS = {C:0,'C#':1,Db:1,D:2,'D#':3,Eb:3,E:4,F:5,'F#':6,Gb:6,G:7,'G#':8,Ab:8,A:9,'A#':10,Bb:10,B:11};
+
+function _freq(pitch) {
+  var m = String(pitch).match(/^([A-G][#b]?)([0-9])$/);
+  if (!m) return 0;
+  var s = _NS[m[1]];
+  if (s === undefined) return 0;
+  return 440 * Math.pow(2, ((parseInt(m[2]) + 1) * 12 + s - 69) / 12);
+}
+
+function _tone(ctx, freq, t0, dur) {
+  if (freq <= 0) return;
+  var osc = ctx.createOscillator(), g = ctx.createGain();
+  osc.connect(g); g.connect(ctx.destination);
+  osc.type = 'sine'; osc.frequency.value = freq;
+  var att = Math.min(0.015, dur * 0.1), rel = Math.min(0.06, dur * 0.25);
+  g.gain.setValueAtTime(0, t0);
+  g.gain.linearRampToValueAtTime(0.3, t0 + att);
+  g.gain.setValueAtTime(0.3, t0 + dur - rel);
+  g.gain.linearRampToValueAtTime(0, t0 + dur);
+  osc.start(t0); osc.stop(t0 + dur + 0.01);
+}
+
+function _hiNote(idx) {
+  if (_prevHi >= 0) { var p = document.getElementById('note-' + _prevHi); if (p) p.setAttribute('fill', '${noteColor}'); }
+  var el = document.getElementById('note-' + idx); if (el) el.setAttribute('fill', '#0EA5E9');
+  _prevHi = idx;
+}
+
+function _clearHi() {
+  if (_prevHi >= 0) { var el = document.getElementById('note-' + _prevHi); if (el) el.setAttribute('fill', '${noteColor}'); _prevHi = -1; }
+}
+
+function _post(obj) { try { window.ReactNativeWebView.postMessage(JSON.stringify(obj)); } catch(e){} }
+
+function _tick() {
+  if (!_pbCtx || _pbCtx.state !== 'running') return;
+  var ct = _pbCtx.currentTime, elapsed = ct - _pbStart;
+  for (var i = 0; i < _pbSched.length; i++) {
+    var s = _pbSched[i];
+    if (ct >= s.t0 && ct < s.t1) { if (s.idx !== _prevHi) _hiNote(s.idx); break; }
+  }
+  _post({ type: 'progress', currentTime: Math.min(elapsed, _pbTotal), totalTime: _pbTotal });
+  if (elapsed < _pbTotal + 0.3) { _pbTimer = setTimeout(_tick, 80); }
+  else { _clearHi(); _pbTimer = null; _post({ type: 'ended' }); }
+}
+
+function _stopPb() {
+  if (_pbTimer) { clearTimeout(_pbTimer); _pbTimer = null; }
+  if (_pbCtx) { try { _pbCtx.close(); } catch(e){} _pbCtx = null; }
+  _clearHi(); _pbSched = [];
+}
+
+function handlePlaybackCommand(cmd) {
+  if (cmd.type === 'play') {
+    _stopPb();
+    var notes = cmd.notes || [], bpm = cmd.bpm || 120;
+    _pbCtx   = new (window.AudioContext || window.webkitAudioContext)();
+    _pbStart = _pbCtx.currentTime + 0.05;
+    _pbSched = [];
+    var t = _pbStart;
+    for (var i = 0; i < notes.length; i++) {
+      var n = notes[i], dur = Math.max(0.05, (n.duration || 0.5) * (120 / bpm));
+      _tone(_pbCtx, _freq(n.pitch), t, dur * 0.88);
+      _pbSched.push({ idx: i, t0: t, t1: t + dur });
+      t += dur;
+    }
+    _pbTotal = t - _pbStart;
+    _post({ type: 'totalTime', totalTime: _pbTotal });
+    _pbTimer = setTimeout(_tick, 80);
+  } else if (cmd.type === 'pause') {
+    if (_pbCtx && _pbCtx.state === 'running') {
+      _pbCtx.suspend();
+      if (_pbTimer) { clearTimeout(_pbTimer); _pbTimer = null; }
+      _post({ type: 'paused' });
+    }
+  } else if (cmd.type === 'resume') {
+    if (_pbCtx && _pbCtx.state === 'suspended') { _pbCtx.resume(); _tick(); _post({ type: 'resumed' }); }
+  } else if (cmd.type === 'stop') {
+    _stopPb(); _post({ type: 'stopped' });
+  }
 }
 </script>
 </body>
@@ -485,13 +577,24 @@ function timeSigNum(x, y, n) {
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
-export default function SheetMusicViewer({ notes = [], bpm = 120 }) {
+const SheetMusicViewer = forwardRef(function SheetMusicViewer({ notes = [], bpm = 120, onMessage }, ref) {
   console.log('[SheetMusicViewer] notes:', notes.length, notes.slice(0, 4));
+  const webviewRef = useRef(null);
   const html = buildHtml(notes, { bpm });
+
+  useImperativeHandle(ref, () => ({
+    sendCommand: (cmd) => {
+      if (webviewRef.current) {
+        const js = `if(typeof handlePlaybackCommand==="function"){handlePlaybackCommand(${JSON.stringify(cmd)});} true;`;
+        webviewRef.current.injectJavaScript(js);
+      }
+    },
+  }));
 
   return (
     <View style={styles.container}>
       <WebView
+        ref={webviewRef}
         source={{ html }}
         style={styles.webview}
         originWhitelist={['*']}
@@ -500,14 +603,19 @@ export default function SheetMusicViewer({ notes = [], bpm = 120 }) {
         scalesPageToFit={false}
         javaScriptEnabled
         domStorageEnabled
+        mediaPlaybackRequiresUserAction={false}
+        allowsInlineMediaPlayback
         backgroundColor="#111118"
+        onMessage={onMessage}
         onError={(e) =>
           console.log('[SheetMusicViewer] WebView error:', e.nativeEvent)
         }
       />
     </View>
   );
-}
+});
+
+export default SheetMusicViewer;
 
 const styles = StyleSheet.create({
   container: {
