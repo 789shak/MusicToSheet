@@ -410,7 +410,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#1C1C27',
   },
-  headerTitle: { color: '#FFFFFF', fontSize: 26, fontWeight: '700' },
+  headerTitle: { color: '#0EA5E9', fontSize: 26, fontWeight: '700' },
 
   // Inner tabs
   tabRow: {

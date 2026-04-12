@@ -96,8 +96,8 @@ function RootLayoutInner() {
         <Stack.Screen name="rights-declaration" options={{ title: 'Rights Declaration' }} />
         <Stack.Screen name="processing" options={{ title: 'Processing', headerShown: false }} />
         <Stack.Screen name="results" options={{ title: 'Results' }} />
-        <Stack.Screen name="history" options={{ title: 'History' }} />
-        <Stack.Screen name="public-domain-library" options={{ title: 'Public Domain Library' }} />
+        <Stack.Screen name="history" options={{ headerShown: false }} />
+        <Stack.Screen name="public-domain-library" options={{ headerShown: false }} />
         <Stack.Screen name="settings" options={{ title: 'Settings' }} />
         <Stack.Screen name="profile" options={{ title: 'Profile' }} />
         <Stack.Screen name="delete-account" options={{ title: 'Delete Account' }} />
