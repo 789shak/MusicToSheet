@@ -158,7 +158,11 @@ export default function UploadScreen() {
   const [outputFormat, setOutputFormat] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadComplete, setUploadComplete] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const progressAnim = useRef(new Animated.Value(0)).current;
+  const fakeAnimRef = useRef<Animated.CompositeAnimation | null>(null);
+  const progressListenerId = useRef<string>('');
   const [showPayGate, setShowPayGate] = useState(false);
   const [payGateHash, setPayGateHash] = useState('');
   const [purchasing, setPurchasing] = useState(false);
@@ -320,6 +324,8 @@ export default function UploadScreen() {
 
     try {
       setUploading(true);
+      setUploadComplete(false);
+      progressAnim.setValue(0);
       setUploadProgress(0);
 
       const { data: { session } } = await supabase.auth.getSession();
@@ -329,11 +335,21 @@ export default function UploadScreen() {
       const ext = file.name.split('.').pop() ?? 'audio';
       const storagePath = `${uid}/${Date.now()}_${file.name}`;
 
+      // ── Fake fast progress: 10 → 30 → 99 ──
+      progressAnim.setValue(10);
       setUploadProgress(10);
+      progressListenerId.current = progressAnim.addListener(({ value }) => {
+        setUploadProgress(Math.round(value));
+      });
+      fakeAnimRef.current = Animated.sequence([
+        Animated.timing(progressAnim, { toValue: 30, duration: 300, useNativeDriver: false }),
+        Animated.timing(progressAnim, { toValue: 99, duration: 700, useNativeDriver: false }),
+      ]);
+      fakeAnimRef.current.start();
+
       console.log('File URI:', file.uri);
       const base64 = await readAsStringAsync(file.uri, { encoding: 'base64' });
       console.log('Base64 length:', base64.length);
-      setUploadProgress(30);
 
       const { data, error } = await supabase.storage
         .from('audio-uploads')
@@ -342,8 +358,10 @@ export default function UploadScreen() {
           upsert: true,
         });
 
-      console.log('Upload result:', data, error);
-      setUploadProgress(100);
+      // ── Stop fake animation ──
+      fakeAnimRef.current?.stop();
+      fakeAnimRef.current = null;
+      progressAnim.removeListener(progressListenerId.current);
 
       if (error) {
         console.log('Storage upload error:', error);
@@ -351,9 +369,13 @@ export default function UploadScreen() {
         return;
       }
 
-      console.log('[UploadScreen] uploaded successfully. Path:', data.path);
-      console.log('[UploadScreen] navigating to rights-declaration via upload', { filePath: data.path, fileName: file.name, instrument, outputFormat });
+      // ── Animate to 100% and show "Upload Complete!" ──
+      Animated.timing(progressAnim, { toValue: 100, duration: 200, useNativeDriver: false }).start();
+      setUploadProgress(100);
+      setUploadComplete(true);
+      await new Promise((r) => setTimeout(r, 800));
 
+      console.log('[UploadScreen] uploaded successfully. Path:', data.path);
       router.push({
         pathname: '/rights-declaration',
         params: {
@@ -366,11 +388,16 @@ export default function UploadScreen() {
         },
       });
     } catch (e: any) {
+      fakeAnimRef.current?.stop();
+      fakeAnimRef.current = null;
+      progressAnim.removeListener(progressListenerId.current);
       console.log('Upload exception:', e);
       setUploadError(e?.message ?? 'Upload failed. Please try again.');
     } finally {
       setUploading(false);
       setUploadProgress(0);
+      setUploadComplete(false);
+      progressAnim.setValue(0);
     }
   }
 
@@ -602,13 +629,33 @@ export default function UploadScreen() {
 
         {/* Action Button */}
         <TouchableOpacity
-          style={[styles.convertBtn, !canConvert && styles.convertBtnDisabled]}
+          style={[
+            styles.convertBtn,
+            !canConvert && !uploading && styles.convertBtnDisabled,
+            uploading && styles.convertBtnUploading,
+          ]}
           onPress={handleConvert}
-          disabled={!canConvert}
+          disabled={!canConvert || uploading}
           activeOpacity={0.85}
         >
           {uploading ? (
-            <Text style={styles.convertBtnText}>Uploading… {uploadProgress}%</Text>
+            <>
+              {/* Turquoise fill that grows left → right */}
+              <Animated.View
+                style={[
+                  styles.uploadProgressFill,
+                  {
+                    width: progressAnim.interpolate({
+                      inputRange: [0, 100],
+                      outputRange: ['0%', '100%'],
+                    }),
+                  },
+                ]}
+              />
+              <Text style={[styles.convertBtnText, { zIndex: 1 }]}>
+                {uploadComplete ? 'Upload Complete!' : `Uploading… ${uploadProgress}%`}
+              </Text>
+            </>
           ) : (
             <>
               <Ionicons
@@ -989,6 +1036,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#1C1C27',
     borderWidth: 1,
     borderColor: '#2D2D3E',
+  },
+  convertBtnUploading: {
+    backgroundColor: '#111118',
+    borderWidth: 1,
+    borderColor: '#0EA5E9',
+    overflow: 'hidden',
+  },
+  uploadProgressFill: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: '#0EA5E9',
   },
   convertBtnText: {
     color: '#FFFFFF',

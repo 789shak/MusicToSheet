@@ -388,11 +388,14 @@ export default function ProcessingScreen() {
       {/* Pulsing app icon */}
       <View style={styles.iconArea}>
         <Animated.View style={[styles.glowRing, { opacity: glowAnim }]} />
-        <Animated.Image
-          source={require('../../assets/icon.png')}
-          style={[styles.appIcon, { transform: [{ scale: pulseAnim }] }]}
-          resizeMode="cover"
-        />
+        <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+          <Image
+            source={require('../../assets/icon.png')}
+            style={styles.appIcon}
+            resizeMode="cover"
+            onError={(e) => console.log('[ProcessingScreen] icon load error:', e.nativeEvent.error)}
+          />
+        </Animated.View>
       </View>
 
       {/* Title */}
@@ -420,8 +423,8 @@ export default function ProcessingScreen() {
       {/* Cold-start warning */}
       {slowWarning && (
         <View style={styles.slowWrap}>
-          <Ionicons name="moon-outline" size={13} color="#F59E0B" style={{ marginRight: 6 }} />
-          <Text style={styles.slowText}>Server is warming up, this may take up to 30 seconds on first use…</Text>
+          <Ionicons name="information-circle-outline" size={13} color="#FFFFFF" style={{ marginRight: 6 }} />
+          <Text style={styles.slowText}>Your file is being processed, this may take up to 30-60 seconds</Text>
         </View>
       )}
 
@@ -451,20 +454,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 36,
-    width: 110,
-    height: 110,
+    width: 140,
+    height: 140,
   },
   glowRing: {
     position: 'absolute',
-    width: 110,
-    height: 110,
-    borderRadius: 55,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
     backgroundColor: '#0EA5E9',
   },
   appIcon: {
-    width: 84,
-    height: 84,
-    borderRadius: 20,
+    width: 120,
+    height: 120,
+    borderRadius: 24,
   },
 
   // Title
@@ -501,7 +504,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   slowText: {
-    color: '#F59E0B',
+    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '500',
   },
