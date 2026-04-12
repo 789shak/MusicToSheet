@@ -200,11 +200,12 @@ export default function SubscriptionScreen() {
         </View>
         <Text style={styles.price}>Free</Text>
         <View style={styles.divider} />
-        <Feature text="30 sec max output" />
-        <Feature text="2 attempts per track" />
+        <Feature text="60 sec max output" />
+        <Feature text="5 sheets per month" />
         <Feature text="No recording" muted />
         <Feature text="No download" muted />
-        <Feature text="Watermarked sharing only" muted />
+        <Feature text="No transpose or BPM control" muted />
+        <Feature text="No note editing" muted />
       </View>
 
       {/* ── Card 3: Advanced Pro ── */}
@@ -218,21 +219,20 @@ export default function SubscriptionScreen() {
           </View>
 
           <Text style={styles.price}>
-            {cycle === 'monthly' ? '$8.99' : '$99.99'}
-            <Text style={styles.priceSub}>
-              {cycle === 'monthly' ? ' /mo' : ' /yr'}
-            </Text>
+            {cycle === 'monthly' ? '$9.99' : '$5.99'}
+            <Text style={styles.priceSub}> /mo</Text>
           </Text>
           {cycle === 'annual' && (
-            <Text style={styles.savingsNote}>Save 7% vs monthly</Text>
+            <Text style={styles.savingsNote}>Billed annually — Save 40%</Text>
           )}
 
           <View style={styles.divider} />
-          <Feature text="120 sec max output" />
-          <Feature text="6 attempts per track" />
+          <Feature text="20 min max output" />
+          <Feature text="75 sheets per month" />
           <Feature text="2× priority processing" />
           <Feature text="Download PDF/JPG (clean)" />
-          <Feature text="Record vocals" />
+          <Feature text="Transpose, BPM & note editing" />
+          <Feature text="Record vocals (up to 20 min)" />
 
           <TouchableOpacity
             style={styles.btnTurquoise}
@@ -264,11 +264,12 @@ export default function SubscriptionScreen() {
           )}
 
           <View style={styles.dividerGold} />
-          <Feature text="300 sec max output" />
-          <Feature text="Unlimited attempts" />
+          <Feature text="Full-length output" />
+          <Feature text="100 sheets per month" />
           <Feature text="5× priority processing" />
           <Feature text="Download PDF/JPG (clean)" />
-          <Feature text="Record vocals" />
+          <Feature text="Transpose, BPM & note editing" />
+          <Feature text="Unlimited recording" />
 
           <TouchableOpacity
             style={styles.btnGold}

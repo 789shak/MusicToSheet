@@ -115,7 +115,7 @@ export default function ResultsScreen() {
   );
   const { show: showToast, message: toastMessage, opacity: toastOpacity } = useToast();
 
-  const { tier } = useSubscription();
+  const { tier, canTranspose, canBPM, canEdit } = useSubscription();
   // Tiers that can download clean PDFs: advancedPro, virtuosos, payAsYouGo
   const canDownloadPdf = tier !== 'free';
   // Tiers that get a watermark-free share PDF (same set)
@@ -383,29 +383,44 @@ export default function ResultsScreen() {
           </View>
         </View>
 
-        {/* ── Format Toggle Bar + Edit Notes button ── */}
-        <View style={styles.chipRowWrap}>
-          <View style={styles.chipRow}>
-            {FORMATS.map((f) => (
-              <TouchableOpacity
-                key={f}
-                style={[styles.formatChip, activeFormat === f && styles.formatChipActive]}
-                onPress={() => setActiveFormat(f)}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.formatChipText, activeFormat === f && styles.formatChipTextActive]}>
-                  {f}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+        {/* ── Format Toggle Bar (single non-wrapping row) ── */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.chipScrollOuter}
+          contentContainerStyle={styles.chipScrollContent}
+        >
+          {FORMATS.map((f) => (
+            <TouchableOpacity
+              key={f}
+              style={[styles.formatChip, activeFormat === f && styles.formatChipActive]}
+              onPress={() => setActiveFormat(f)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.formatChipText, activeFormat === f && styles.formatChipTextActive]}>
+                {f}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        {/* ── Edit Notes button row (left-aligned, below chips) ── */}
+        <View style={styles.editRow}>
           <TouchableOpacity
             style={styles.editNotesBtn}
-            onPress={() => setEditorOpen(true)}
+            onPress={() => {
+              if (!canEdit) {
+                showToast('Upgrade to edit notes');
+                router.push('/subscription');
+                return;
+              }
+              setEditorOpen(true);
+            }}
             activeOpacity={0.75}
           >
-            <Feather name="edit-2" size={13} color="#0EA5E9" />
-            <Text style={styles.editNotesBtnText}>Edit</Text>
+            <Feather name="edit-2" size={13} color={canEdit ? '#0EA5E9' : '#6B7280'} />
+            <Text style={[styles.editNotesBtnText, !canEdit && { color: '#6B7280' }]}>Edit Notes</Text>
+            {!canEdit && <MaterialIcons name="lock" size={11} color="#F59E0B" style={{ marginLeft: 2 }} />}
           </TouchableOpacity>
         </View>
 
@@ -436,6 +451,15 @@ export default function ResultsScreen() {
             <Text style={styles.controlHint}>
               {transposeOffset === 0 ? 'Original Key' : `${transposeOffset > 0 ? '+' : ''}${transposeOffset} semitones`}
             </Text>
+            {!canTranspose && (
+              <TouchableOpacity
+                style={styles.controlLockOverlay}
+                onPress={() => { showToast('Upgrade to unlock Transpose'); router.push('/subscription'); }}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="lock" size={16} color="#F59E0B" />
+              </TouchableOpacity>
+            )}
           </View>
 
           <View style={styles.controlDivider} />
@@ -461,6 +485,15 @@ export default function ResultsScreen() {
               </TouchableOpacity>
             </View>
             <Text style={styles.controlHint}>{'\u2669'} = {bpm}</Text>
+            {!canBPM && (
+              <TouchableOpacity
+                style={styles.controlLockOverlay}
+                onPress={() => { showToast('Upgrade to unlock BPM control'); router.push('/subscription'); }}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="lock" size={16} color="#F59E0B" />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
@@ -710,19 +743,25 @@ const styles = StyleSheet.create({
   },
   formatBadgeText: { color: '#0EA5E9', fontSize: 12, fontWeight: '600' },
 
-  // Format bar
-  chipRowWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingRight: 12,
+  // Format bar (horizontal scroll, no wrapping)
+  chipScrollOuter: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#2D2D3E',
   },
-  chipRow: {
-    flex: 1,
+  chipScrollContent: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 8,
     gap: 6,
+    alignItems: 'center',
+  },
+  // Edit row (below chips, left-aligned)
+  editRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2D2D3E',
   },
   editNotesBtn: {
     flexDirection: 'row',
@@ -768,6 +807,18 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     gap: 4,
+    position: 'relative',
+  },
+  controlLockOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(17, 17, 24, 0.85)',
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   controlLabel: {
     color: '#6B7280',

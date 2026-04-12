@@ -493,7 +493,7 @@ export default function UploadScreen() {
           <Text style={[styles.sectionLabel, { marginTop: 16 }]}>Paste Link</Text>
           <TextInput
             style={styles.input}
-            placeholder="Paste audio link here"
+            placeholder="Paste audio link here (Direct Link Only)"
             placeholderTextColor="#6B7280"
             value={link}
             onChangeText={setLink}

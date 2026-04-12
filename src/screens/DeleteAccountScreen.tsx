@@ -265,7 +265,7 @@ export default function DeleteAccountScreen() {
           style={styles.cancelWrap}
           onPress={() => router.back()}
         >
-          <Text style={styles.cancelText}>Cancel — keep my account</Text>
+          <Text style={styles.cancelText}>Cancel — I will keep my Account</Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -384,15 +384,18 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
 
-  // Cancel link
+  // Cancel button
   cancelWrap: {
     alignItems: 'center',
-    paddingVertical: 20,
+    justifyContent: 'center',
+    backgroundColor: '#34D399',
+    borderRadius: 14,
+    paddingVertical: 15,
     marginTop: 8,
   },
   cancelText: {
-    color: '#0EA5E9',
-    fontSize: 14,
-    fontWeight: '500',
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });
