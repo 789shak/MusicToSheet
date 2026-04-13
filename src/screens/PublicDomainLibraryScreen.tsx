@@ -293,8 +293,9 @@ const styles = StyleSheet.create({
   // Filter bar
   filterBar: {
     paddingHorizontal: 20,
-    paddingVertical: 12,
-    gap: 8,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   chip: {
     borderWidth: 1,
@@ -304,7 +305,8 @@ const styles = StyleSheet.create({
     height: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'transparent',
+    backgroundColor: '#111118',
+    marginRight: 8,
   },
   chipActive: {
     backgroundColor: '#0EA5E9',
