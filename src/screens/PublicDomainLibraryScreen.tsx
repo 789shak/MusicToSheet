@@ -302,12 +302,11 @@ const styles = StyleSheet.create({
     borderColor: '#0EA5E9',
     borderRadius: 16,
     paddingHorizontal: 14,
-    paddingVertical: 6,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#111118',
     marginRight: 8,
-    marginBottom: 0,
   },
   chipActive: {
     backgroundColor: '#0EA5E9',
