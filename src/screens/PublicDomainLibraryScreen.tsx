@@ -206,35 +206,35 @@ export default function PublicDomainLibraryScreen() {
         )}
       </View>
 
-      {/* Filter chips */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterBar}
-        style={{ overflow: 'visible' }}
-      >
-        {FILTERS.map((f) => (
-          <TouchableOpacity
-            key={f}
-            style={[styles.chip, activeFilter === f && styles.chipActive]}
-            onPress={() => setActiveFilter(f)}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.chipText, activeFilter === f && styles.chipTextActive]}>
-              {f}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      {/* Filter chips — fixed height so layout never shifts */}
+      <View style={styles.filterBarWrap}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterBar}
+          style={{ overflow: 'visible' }}
+        >
+          {FILTERS.map((f) => (
+            <TouchableOpacity
+              key={f}
+              style={[styles.chip, activeFilter === f && styles.chipActive]}
+              onPress={() => setActiveFilter(f)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.chipText, activeFilter === f && styles.chipTextActive]}>
+                {f}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
 
-      {/* Composition list */}
+      {/* Composition list — flex:1 fills all remaining space */}
       <FlatList
+        style={styles.list}
         data={visible}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={[
-          styles.listContent,
-          visible.length === 0 && { flex: 1 },
-        ]}
+        contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.emptyWrap}>
@@ -291,7 +291,11 @@ const styles = StyleSheet.create({
   searchIcon: { marginRight: 8 },
   searchInput: { flex: 1, color: '#FFFFFF', fontSize: 14 },
 
-  // Filter bar
+  // Filter bar — fixed height wrapper prevents layout shift
+  filterBarWrap: {
+    height: 56,
+    justifyContent: 'center',
+  },
   filterBar: {
     paddingHorizontal: 20,
     paddingVertical: 12,
@@ -317,6 +321,7 @@ const styles = StyleSheet.create({
   chipTextActive: { color: '#FFFFFF', fontWeight: '600', lineHeight: 16 },
 
   // List
+  list: { flex: 1 },
   listContent: {
     paddingHorizontal: 20,
     paddingTop: 12,
