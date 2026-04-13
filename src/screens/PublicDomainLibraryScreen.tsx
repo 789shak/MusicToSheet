@@ -211,6 +211,7 @@ export default function PublicDomainLibraryScreen() {
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.filterBar}
+        style={{ overflow: 'visible' }}
       >
         {FILTERS.map((f) => (
           <TouchableOpacity
@@ -293,7 +294,7 @@ const styles = StyleSheet.create({
   // Filter bar
   filterBar: {
     paddingHorizontal: 20,
-    paddingVertical: 10,
+    paddingVertical: 12,
     flexDirection: 'row',
     alignItems: 'center',
   },
