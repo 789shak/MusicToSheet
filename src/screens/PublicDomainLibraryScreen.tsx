@@ -298,19 +298,19 @@ const styles = StyleSheet.create({
   },
   chip: {
     borderWidth: 1,
-    borderColor: '#2D2D3E',
-    borderRadius: 20,
+    borderColor: '#0EA5E9',
+    borderRadius: 16,
     paddingHorizontal: 14,
     height: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1C1C27',
+    backgroundColor: 'transparent',
   },
   chipActive: {
     backgroundColor: '#0EA5E9',
     borderColor: '#0EA5E9',
   },
-  chipText: { color: '#6B7280', fontSize: 13, fontWeight: '600', lineHeight: 16 },
+  chipText: { color: '#0EA5E9', fontSize: 13, fontWeight: '600', lineHeight: 16 },
   chipTextActive: { color: '#FFFFFF', fontWeight: '600', lineHeight: 16 },
 
   // List
