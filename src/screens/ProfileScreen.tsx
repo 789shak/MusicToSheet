@@ -20,6 +20,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { useRouter } from 'expo-router';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
 
@@ -213,6 +214,7 @@ function SocialField({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ProfileScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   // useAuth context is populated by onAuthStateChange — does NOT depend on storage
   const { user, session, loading: authLoading } = useAuth();
   const { show: showToast, message: toastMsg, opacity: toastOpacity } = useToast();
@@ -372,7 +374,7 @@ export default function ProfileScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={8}>
           <Feather name="arrow-left" size={22} color="#FFFFFF" />
         </TouchableOpacity>

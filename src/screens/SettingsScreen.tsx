@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Feather, Ionicons, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../hooks/useAuth';
 
 // ─── Row ──────────────────────────────────────────────────────────────────────
@@ -104,6 +105,7 @@ const section = StyleSheet.create({
 export default function SettingsScreen() {
   const router = useRouter();
   const { signOut } = useAuth();
+  const insets = useSafeAreaInsets();
 
   function handleLogOut() {
     Alert.alert(
@@ -130,7 +132,7 @@ export default function SettingsScreen() {
   return (
     <View style={styles.root}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={8}>
           <Feather name="arrow-left" size={22} color="#FFFFFF" />
         </TouchableOpacity>
@@ -227,8 +229,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 56,
-    paddingBottom: 16,
+    paddingTop: 28,
+    paddingBottom: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#1C1C27',
   },

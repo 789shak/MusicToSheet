@@ -6,7 +6,7 @@ type TabKey = 'upload' | 'history' | 'library' | 'settings' | 'profile';
 
 const TABS: { key: TabKey; label: string; icon: keyof typeof Ionicons.glyphMap; iconActive: keyof typeof Ionicons.glyphMap; route: string; push?: boolean }[] = [
   { key: 'upload',   label: 'Upload',   icon: 'cloud-upload-outline', iconActive: 'cloud-upload',    route: '/upload' },
-  { key: 'history',  label: 'History',  icon: 'time-outline',          iconActive: 'time',            route: '/history' },
+  { key: 'history',  label: 'My Music', icon: 'time-outline',          iconActive: 'time',            route: '/history' },
   { key: 'library',  label: 'Library',  icon: 'library-outline',       iconActive: 'library',         route: '/public-domain-library' },
   { key: 'settings', label: 'Settings', icon: 'settings-outline',      iconActive: 'settings',        route: '/settings', push: true },
   { key: 'profile',  label: 'Profile',  icon: 'person-outline',        iconActive: 'person',          route: '/profile',  push: true },
