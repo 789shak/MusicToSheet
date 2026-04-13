@@ -186,7 +186,17 @@ export default function PublicDomainLibraryScreen() {
         <Text style={styles.headerTitle}>Public Domain Library</Text>
       </View>
 
-      {/* Search bar */}
+      {/* Coming Soon placeholder */}
+      <View style={styles.comingSoonWrap}>
+        <Ionicons name="musical-notes" size={64} color="#0EA5E9" style={{ marginBottom: 20 }} />
+        <Text style={styles.comingSoonTitle}>Coming Soon</Text>
+        <Text style={styles.comingSoonSub}>
+          Free classical music library from composers like Bach, Beethoven, Mozart and more.
+        </Text>
+      </View>
+
+      {/* TODO: Re-enable Public Domain Library with real audio files post-launch */}
+      {/*
       <View style={styles.searchWrap}>
         <Ionicons name="search-outline" size={16} color="#6B7280" style={styles.searchIcon} />
         <TextInput
@@ -206,7 +216,6 @@ export default function PublicDomainLibraryScreen() {
         )}
       </View>
 
-      {/* Filter chips — fixed height so layout never shifts */}
       <View style={styles.filterBarWrap}>
         <ScrollView
           horizontal
@@ -229,7 +238,6 @@ export default function PublicDomainLibraryScreen() {
         </ScrollView>
       </View>
 
-      {/* Composition list — flex:1 fills all remaining space */}
       <FlatList
         style={styles.list}
         data={visible}
@@ -254,6 +262,7 @@ export default function PublicDomainLibraryScreen() {
           <CompositionCard item={item} onTranscribe={() => handleTranscribe(item)} />
         )}
       />
+      */}
 
       <BottomTabBar active="library" />
     </View>
@@ -273,6 +282,26 @@ const styles = StyleSheet.create({
     borderBottomColor: '#1C1C27',
   },
   headerTitle: { color: '#FFFFFF', fontSize: 24, fontWeight: '700' },
+
+  // Coming Soon
+  comingSoonWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 40,
+  },
+  comingSoonTitle: {
+    color: '#FFFFFF',
+    fontSize: 28,
+    fontWeight: '700',
+    marginBottom: 12,
+  },
+  comingSoonSub: {
+    color: '#6B7280',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
 
   // Search
   searchWrap: {
