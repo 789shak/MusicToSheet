@@ -184,6 +184,20 @@ def generate_musicxml(midi_data, uid: str) -> str | None:
         for part in score.parts:
             part.insert(0, ks)
 
+        # Strip explicit accidentals that are already covered by the key signature.
+        # MIDI files encode every sharp/flat explicitly; without this, music21
+        # renders redundant accidentals on every note even when a key sig is present.
+        key_obj = music21.key.Key(key.tonic.name, key.mode)
+        key_pitches = [p.name for p in key_obj.pitches]
+        for note in score.recurse().notes:
+            if hasattr(note, 'pitch'):
+                if note.pitch.name in key_pitches and note.pitch.accidental:
+                    note.pitch.accidental.displayStatus = False
+            elif hasattr(note, 'pitches'):  # chord
+                for p in note.pitches:
+                    if p.name in key_pitches and p.accidental:
+                        p.accidental.displayStatus = False
+
         # Apply notation rules (respects the key signature when rendering accidentals)
         score.makeNotation(inPlace=True)
 
