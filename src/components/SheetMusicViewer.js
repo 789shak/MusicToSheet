@@ -12,9 +12,10 @@ function htmlEsc(s) {
 }
 
 // ─── OSMD (OpenSheetMusicDisplay) renderer ────────────────────────────────────
-// Primary renderer when musicxml is available. Loads OSMD from CDN and renders
-// the MusicXML string as professional sheet music. Falls back to a message if
-// the CDN is unavailable (e.g. offline or WebView sandbox blocks it).
+// Primary renderer when musicxml is available. Renders at 1200px then scales
+// the viewport down to fit the phone screen — same technique as zoomed-out
+// desktop sites on mobile. The WebView is horizontally + vertically scrollable
+// so the user can pan and pinch-zoom.
 function buildOsmdHtml(musicxml, notes, bpm) {
   // JSON.stringify safely escapes the XML string for embedding in JS
   const xmlJson   = JSON.stringify(musicxml);
@@ -24,25 +25,43 @@ function buildOsmdHtml(musicxml, notes, bpm) {
 <html>
 <head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes"/>
+  <!-- Render at 1200px logical width, scaled to fit screen width (~0.33 on a 390px phone) -->
+  <meta name="viewport" content="width=1200, initial-scale=0.33, user-scalable=yes"/>
   <script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.6/build/opensheetmusicdisplay.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { background: #111118; min-height: 500px; }
+    html { background: #111118; }
+    body {
+      background: #111118;
+      padding: 16px;
+      min-width: 1200px;   /* forces layout at full width — viewport scales it */
+      min-height: 600px;
+    }
     #status {
-      color: #AAAAAA; font-size: 12px; font-family: sans-serif;
-      padding: 12px 16px; min-height: 20px;
+      color: #AAAAAA; font-size: 14px; font-family: sans-serif;
+      padding: 12px 0; min-height: 24px;
     }
     #osmd-container {
       background: #FFFFFF;
-      padding: 20px;
+      padding: 24px;
       border-radius: 8px;
-      margin: 0 16px 16px 16px;
+      width: 100%;         /* fills the 1200px body */
+      min-height: 500px;
     }
     #osmd-fallback {
       display: none;
-      color: #AAAAAA; font-family: sans-serif; font-size: 13px;
-      padding: 20px; text-align: center;
+      background: #1A1A24;
+      border: 1px solid #2A2A3A;
+      border-radius: 8px;
+      padding: 32px 24px;
+      text-align: center;
+    }
+    #osmd-fallback p {
+      color: #AAAAAA; font-family: sans-serif; font-size: 14px;
+      line-height: 1.6; margin-bottom: 8px;
+    }
+    #osmd-fallback .hint {
+      color: #0EA5E9; font-size: 13px; font-weight: 600;
     }
   </style>
 </head>
@@ -50,8 +69,8 @@ function buildOsmdHtml(musicxml, notes, bpm) {
   <div id="status">Loading sheet music\u2026</div>
   <div id="osmd-container"></div>
   <div id="osmd-fallback">
-    Sheet music renderer unavailable in this environment.<br/>
-    Audio playback is still available above.
+    <p>Sheet music preview unavailable in this view.</p>
+    <p class="hint">Tap \u201CDownload PDF\u201D to view the full sheet music.</p>
   </div>
 
 <script>
@@ -62,7 +81,7 @@ window.__BPM   = ${bpm};
 // ── OSMD initialisation ──────────────────────────────────────────────────────
 var _fallbackTimer = setTimeout(function () {
   showFallback('Loading timed out');
-}, 15000);
+}, 18000);
 
 function setStatus(msg) {
   var el = document.getElementById('status');
@@ -84,14 +103,24 @@ function initOsmd() {
       return;
     }
 
+    var container = document.getElementById('osmd-container');
+    // Explicit pixel width so OSMD doesn't measure a collapsed container
+    container.style.width = '1160px';
+
     var osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay('osmd-container', {
-      backend:        'svg',
-      drawTitle:      true,
-      drawComposer:   false,
-      drawCredits:    false,
-      autoResize:     true,
+      backend:           'svg',
+      drawTitle:         false,
+      drawComposer:      false,
+      drawCredits:       false,
+      autoResize:        false,   /* we control width ourselves */
+      followCursor:      false,
       drawingParameters: 'compact',
     });
+
+    // Wider measures = fewer notes crammed per line
+    try {
+      osmd.EngravingRules.MinimumDistanceBetweenSystems = 5;
+    } catch (_) {}
 
     var xmlData = ${xmlJson};
     setStatus('Rendering notation\u2026');
@@ -101,6 +130,15 @@ function initOsmd() {
         osmd.render();
         clearTimeout(_fallbackTimer);
         setStatus('');
+
+        // Expand body height to match the rendered SVG so nothing clips
+        try {
+          var svgEl = container.querySelector('svg');
+          if (svgEl) {
+            var h = parseInt(svgEl.getAttribute('height') || '0', 10);
+            if (h > 0) document.body.style.minHeight = (h + 80) + 'px';
+          }
+        } catch (_) {}
       })
       .catch(function (e) {
         showFallback('Render error: ' + e.message);
@@ -747,6 +785,10 @@ const SheetMusicViewer = forwardRef(function SheetMusicViewer(
     ? buildOsmdHtml(musicxml, notes, bpm)
     : buildHtml(notes, { bpm });
 
+  // OSMD renders at 1200px then the viewport meta scales it down.
+  // Allow pinch-zoom and both-axis scroll so users can inspect notation.
+  const isOsmd = !!musicxml;
+
   return (
     <View style={styles.container}>
       <WebView
@@ -756,7 +798,8 @@ const SheetMusicViewer = forwardRef(function SheetMusicViewer(
         originWhitelist={['*']}
         scrollEnabled
         showsVerticalScrollIndicator={false}
-        scalesPageToFit={false}
+        showsHorizontalScrollIndicator={false}
+        scalesPageToFit={false}          /* we control scale via viewport meta */
         javaScriptEnabled
         domStorageEnabled
         mediaPlaybackRequiresUserAction={false}
