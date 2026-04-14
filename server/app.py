@@ -137,26 +137,141 @@ def detect_notes_with_basic_pitch(wav_path: str) -> tuple:
     return notes, midi_data
 
 
+# ─── MusicXML helpers ────────────────────────────────────────────────────────
+def _apply_bass_clef(score, m21clef_mod) -> None:
+    """
+    Replace the clef in the first measure of every part with BassClef.
+    Operates in-place on the score.
+    """
+    for part in score.parts:
+        measures = list(part.getElementsByClass('Measure'))
+        if measures:
+            first_m = measures[0]
+            for c in list(first_m.getElementsByClass(m21clef_mod.Clef)):
+                first_m.remove(c)
+            first_m.insert(0, m21clef_mod.BassClef())
+        else:
+            part.insert(0, m21clef_mod.BassClef())
+
+
+def _grand_staff(score, m21_mod) -> 'music21.stream.Score':
+    """
+    Split a single-part score into a piano grand staff:
+      - Notes with MIDI pitch >= 60 (middle C) → treble clef (right hand)
+      - Notes with MIDI pitch <  60             → bass clef  (left hand)
+    Returns a new Score with two PartStaff objects.
+    """
+    import copy
+    from music21 import stream, clef as m21clef, note as m21note, chord as m21chord
+
+    original_part = score.parts[0] if score.parts else None
+    if original_part is None:
+        return score
+
+    treble = stream.PartStaff()
+    treble.partName = 'Piano'
+    bass   = stream.PartStaff()
+    bass.partName   = 'Piano'
+
+    for i, measure in enumerate(original_part.getElementsByClass('Measure')):
+        t_m = stream.Measure(number=measure.number)
+        b_m = stream.Measure(number=measure.number)
+
+        if i == 0:
+            t_m.insert(0, m21clef.TrebleClef())
+            b_m.insert(0, m21clef.BassClef())
+
+        for el in measure.notesAndRests:
+            el_c = copy.deepcopy(el)
+            if isinstance(el, m21note.Note) and el.pitch.midi < 60:
+                b_m.append(el_c)
+            else:
+                t_m.append(el_c)
+
+        treble.append(t_m)
+        bass.append(b_m)
+
+    new_score = stream.Score()
+    new_score.append(treble)
+    new_score.append(bass)
+    return new_score
+
+
 # ─── MusicXML generation ──────────────────────────────────────────────────────
-def generate_musicxml(midi_data, uid: str) -> str | None:
+def generate_musicxml(midi_data, uid: str, instrument: str = 'Unknown') -> str | None:
     """
     Convert a PrettyMIDI object → MusicXML string via music21.
-    Returns None if conversion fails (non-fatal — caller falls back gracefully).
+
+    Automatically selects the correct clef / transposition based on the
+    detected pitch range and the instrument type:
+
+      • Bass guitar       → transpose up 1 octave (bass is a transposing instrument)
+      • Guitar            → transpose up 1 octave if notes are below C3
+      • Piano with low notes → grand staff (treble + bass split at middle C)
+      • Other instruments with notes below C3 → transpose up into treble range
+
+    Returns None on failure (non-fatal; caller renders without MusicXML).
     """
+    import math
+
     midi_path     = f"/tmp/{uid}_midi.mid"
     musicxml_path = f"/tmp/{uid}_score.musicxml"
     try:
-        # Write PrettyMIDI → MIDI file
         midi_data.write(midi_path)
         print("[musicxml] MIDI written, parsing with music21...")
 
-        import music21  # lazy import — avoids heavy startup cost on cold boot
-        score = music21.converter.parse(midi_path)
+        import music21                         # lazy import — slow on cold boot
+        from music21 import clef as m21clef
 
-        # Quantize to nearest 16th note (snaps to rhythmic grid)
+        score = music21.converter.parse(midi_path)
         score.quantize(inPlace=True)
 
-        # Key analysis (informational — embeds in MusicXML metadata)
+        # ── Pitch range analysis ───────────────────────────────────────────
+        all_pitches = [
+            n.pitch.midi
+            for n in score.recurse().notes
+            if hasattr(n, 'pitch')
+        ]
+        if all_pitches:
+            avg_pitch = sum(all_pitches) / len(all_pitches)
+            min_pitch = min(all_pitches)
+            max_pitch = max(all_pitches)
+        else:
+            avg_pitch = min_pitch = max_pitch = 60
+
+        print(f"[musicxml] Pitch range: min={min_pitch} avg={avg_pitch:.1f} max={max_pitch} | instr={instrument}")
+
+        instr = instrument.lower()
+
+        # ── Clef / transposition selection ────────────────────────────────
+        if 'bass' in instr:
+            # Bass guitar sounds an octave lower than written — notate up 8va
+            score = score.transpose(12)
+            print("[musicxml] Bass: transposed +1 octave for standard bass notation")
+
+        elif 'guitar' in instr and min_pitch < 48:
+            # Guitar can also dip very low; push into readable treble range
+            octaves_up = math.ceil((48 - min_pitch) / 12)
+            score = score.transpose(octaves_up * 12)
+            print(f"[musicxml] Guitar: transposed +{octaves_up} oct (min_pitch was {min_pitch})")
+
+        elif 'piano' in instr and min_pitch < 60:
+            # Piano with notes below middle C → split into treble + bass grand staff
+            score = _grand_staff(score, music21)
+            print("[musicxml] Piano: grand staff (treble + bass split at middle C)")
+
+        elif min_pitch < 48:
+            # Any other instrument with notes below C3 → shift up into treble clef
+            octaves_up = math.ceil((48 - min_pitch) / 12)
+            score = score.transpose(octaves_up * 12)
+            print(f"[musicxml] Transposed +{octaves_up} oct — notes were below C3")
+
+        elif avg_pitch < 55 and instr not in ('piano', 'guitar', 'violin', 'flute', 'trumpet', 'saxophone'):
+            # Consistently low average for a melodic instrument → bass clef
+            _apply_bass_clef(score, m21clef)
+            print("[musicxml] Bass clef applied (avg pitch below G3)")
+
+        # ── Key analysis ──────────────────────────────────────────────────
         key = score.analyze('key')
         print(f"[musicxml] Detected key: {key}")
 
@@ -237,7 +352,7 @@ async def process_audio(body: ProcessRequest):
 
         # Step 5: Generate MusicXML from the MIDI data
         print("[process] Step 5: Generating MusicXML...")
-        musicxml = await asyncio.to_thread(generate_musicxml, midi_data, uid)
+        musicxml = await asyncio.to_thread(generate_musicxml, midi_data, uid, body.instrument)
         if musicxml:
             print(f"[process] MusicXML ready ({len(musicxml):,} chars)")
         else:
@@ -366,7 +481,7 @@ async def process_with_stems(body: ProcessRequest):
 
         # Step 9: Generate MusicXML from the MIDI data
         print("[stems] Step 9: Generating MusicXML...")
-        musicxml = await asyncio.to_thread(generate_musicxml, midi_data, uid)
+        musicxml = await asyncio.to_thread(generate_musicxml, midi_data, uid, body.instrument)
         if musicxml:
             print(f"[stems] MusicXML ready ({len(musicxml):,} chars)")
         else:
