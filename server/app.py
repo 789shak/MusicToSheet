@@ -71,10 +71,12 @@ async def download_audio(url: str, dest_path: str) -> int:
 
 
 # ─── Basic Pitch note detection ───────────────────────────────────────────────
-def detect_notes_with_basic_pitch(wav_path: str) -> list:
+def detect_notes_with_basic_pitch(wav_path: str) -> tuple:
     """
     Run Spotify Basic Pitch on a WAV file.
-    Returns a list of note dicts: pitch, start, duration, velocity, confidence.
+    Returns (notes, midi_data) where:
+      notes     – list of note dicts: pitch, start, duration, velocity, confidence
+      midi_data – PrettyMIDI object (used downstream for MusicXML generation)
     """
     print("[basic_pitch] Running Basic Pitch inference...")
     model_output, midi_data, note_events = predict(wav_path)
@@ -132,7 +134,51 @@ def detect_notes_with_basic_pitch(wav_path: str) -> list:
             continue
 
     print(f"[basic_pitch] {len(notes)} notes after processing.")
-    return notes
+    return notes, midi_data
+
+
+# ─── MusicXML generation ──────────────────────────────────────────────────────
+def generate_musicxml(midi_data, uid: str) -> str | None:
+    """
+    Convert a PrettyMIDI object → MusicXML string via music21.
+    Returns None if conversion fails (non-fatal — caller falls back gracefully).
+    """
+    midi_path     = f"/tmp/{uid}_midi.mid"
+    musicxml_path = f"/tmp/{uid}_score.musicxml"
+    try:
+        # Write PrettyMIDI → MIDI file
+        midi_data.write(midi_path)
+        print("[musicxml] MIDI written, parsing with music21...")
+
+        import music21  # lazy import — avoids heavy startup cost on cold boot
+        score = music21.converter.parse(midi_path)
+
+        # Quantize to nearest 16th note (snaps to rhythmic grid)
+        score.quantize(inPlace=True)
+
+        # Key analysis (informational — embeds in MusicXML metadata)
+        key = score.analyze('key')
+        print(f"[musicxml] Detected key: {key}")
+
+        score.write('musicxml', fp=musicxml_path)
+
+        with open(musicxml_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        print(f"[musicxml] MusicXML generated — {len(content):,} chars")
+        return content
+
+    except Exception as e:
+        print(f"[musicxml] Generation failed (non-fatal): {e}\n{traceback.format_exc()}")
+        return None
+
+    finally:
+        for f in [midi_path, musicxml_path]:
+            if os.path.exists(f):
+                try:
+                    os.remove(f)
+                except Exception:
+                    pass
 
 
 # ─── Endpoints ────────────────────────────────────────────────────────────────
@@ -186,8 +232,16 @@ async def process_audio(body: ProcessRequest):
 
         # Step 4: Run Basic Pitch inference
         print("[process] Step 4: Running Basic Pitch inference...")
-        notes = await asyncio.to_thread(detect_notes_with_basic_pitch, wav_path)
+        notes, midi_data = await asyncio.to_thread(detect_notes_with_basic_pitch, wav_path)
         print(f"[process] Basic Pitch detected {len(notes)} notes")
+
+        # Step 5: Generate MusicXML from the MIDI data
+        print("[process] Step 5: Generating MusicXML...")
+        musicxml = await asyncio.to_thread(generate_musicxml, midi_data, uid)
+        if musicxml:
+            print(f"[process] MusicXML ready ({len(musicxml):,} chars)")
+        else:
+            print("[process] MusicXML generation skipped/failed — returning notes only")
 
         track_name = os.path.splitext(original_name)[0] or "Untitled"
         gc.collect()
@@ -199,6 +253,7 @@ async def process_audio(body: ProcessRequest):
             "format":           body.output_format,
             "duration_seconds": round(duration_seconds),
             "notes":            notes,
+            "musicxml":         musicxml,
             "confidence":       0.90,
         }
 
@@ -306,13 +361,21 @@ async def process_with_stems(body: ProcessRequest):
 
         # Step 8: Run Basic Pitch inference
         print("[stems] Step 8: Running Basic Pitch inference...")
-        notes = await asyncio.to_thread(detect_notes_with_basic_pitch, wav_path)
+        notes, midi_data = await asyncio.to_thread(detect_notes_with_basic_pitch, wav_path)
         print(f"[stems] Basic Pitch detected {len(notes)} notes.")
+
+        # Step 9: Generate MusicXML from the MIDI data
+        print("[stems] Step 9: Generating MusicXML...")
+        musicxml = await asyncio.to_thread(generate_musicxml, midi_data, uid)
+        if musicxml:
+            print(f"[stems] MusicXML ready ({len(musicxml):,} chars)")
+        else:
+            print("[stems] MusicXML generation skipped/failed — returning notes only")
 
         track_name = os.path.splitext(original_name)[0] or "Untitled"
         gc.collect()
 
-        # Step 9: Return notes + detected stems
+        # Step 10: Return notes + MusicXML + detected stems
         return {
             "status":           "success",
             "track_name":       track_name,
@@ -320,6 +383,7 @@ async def process_with_stems(body: ProcessRequest):
             "format":           body.output_format,
             "duration_seconds": round(duration_seconds),
             "notes":            notes,
+            "musicxml":         musicxml,
             "confidence":       0.90,
             "stems_detected":   detected_stems,
             "stem_used":        selected_stem,

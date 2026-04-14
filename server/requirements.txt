@@ -8,3 +8,4 @@ pretty_midi
 soundfile
 replicate
 basic-pitch
+music21

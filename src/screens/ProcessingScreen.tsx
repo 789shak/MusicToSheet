@@ -332,6 +332,7 @@ export default function ProcessingScreen() {
             historyId:       historyRow.id,
             notesJson:       JSON.stringify(result.notes ?? []),
             durationSeconds: String(result.duration_seconds ?? 30),
+            musicxml:        result.musicxml ?? '',
           },
         });
       } catch (e: any) {

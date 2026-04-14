@@ -103,10 +103,11 @@ const toast = StyleSheet.create({
 // ─── Main Screen ────────────────────────────────────────────────────────────
 export default function ResultsScreen() {
   const router = useRouter();
-  const { historyId, notesJson, durationSeconds } = useLocalSearchParams<{
+  const { historyId, notesJson, durationSeconds, musicxml } = useLocalSearchParams<{
     historyId?: string;
     notesJson?: string;
     durationSeconds?: string;
+    musicxml?: string;
   }>();
 
   // notes may arrive via params (fresh processing) or be loaded from output_data (history replay)
@@ -527,7 +528,7 @@ export default function ResultsScreen() {
 
         {/* ── Sheet Music Viewer ── */}
         <View style={styles.viewerContainer}>
-          <SheetMusicViewer ref={webviewRef} notes={displayNotes} bpm={bpm} onMessage={handleWebViewMessage} />
+          <SheetMusicViewer ref={webviewRef} notes={displayNotes} musicxml={musicxml || null} bpm={bpm} onMessage={handleWebViewMessage} />
         </View>
 
         {/* ── Upgrade Banner ── */}

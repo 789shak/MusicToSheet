@@ -11,7 +11,194 @@ function htmlEsc(s) {
     .replace(/"/g, '&quot;');
 }
 
-// ─── Core SVG sheet-music builder ────────────────────────────────────────────
+// ─── OSMD (OpenSheetMusicDisplay) renderer ────────────────────────────────────
+// Primary renderer when musicxml is available. Loads OSMD from CDN and renders
+// the MusicXML string as professional sheet music. Falls back to a message if
+// the CDN is unavailable (e.g. offline or WebView sandbox blocks it).
+function buildOsmdHtml(musicxml, notes, bpm) {
+  // JSON.stringify safely escapes the XML string for embedding in JS
+  const xmlJson   = JSON.stringify(musicxml);
+  const notesJson = JSON.stringify(notes);
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes"/>
+  <script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.6/build/opensheetmusicdisplay.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { background: #111118; min-height: 500px; }
+    #status {
+      color: #AAAAAA; font-size: 12px; font-family: sans-serif;
+      padding: 12px 16px; min-height: 20px;
+    }
+    #osmd-container {
+      background: #FFFFFF;
+      padding: 20px;
+      border-radius: 8px;
+      margin: 0 16px 16px 16px;
+    }
+    #osmd-fallback {
+      display: none;
+      color: #AAAAAA; font-family: sans-serif; font-size: 13px;
+      padding: 20px; text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div id="status">Loading sheet music\u2026</div>
+  <div id="osmd-container"></div>
+  <div id="osmd-fallback">
+    Sheet music renderer unavailable in this environment.<br/>
+    Audio playback is still available above.
+  </div>
+
+<script>
+// Notes + BPM available for the audio playback engine
+window.__NOTES = ${notesJson};
+window.__BPM   = ${bpm};
+
+// ── OSMD initialisation ──────────────────────────────────────────────────────
+var _fallbackTimer = setTimeout(function () {
+  showFallback('Loading timed out');
+}, 15000);
+
+function setStatus(msg) {
+  var el = document.getElementById('status');
+  if (el) el.textContent = msg;
+}
+
+function showFallback(reason) {
+  clearTimeout(_fallbackTimer);
+  setStatus('');
+  document.getElementById('osmd-container').style.display = 'none';
+  document.getElementById('osmd-fallback').style.display  = 'block';
+  console.warn('[OSMD]', reason);
+}
+
+function initOsmd() {
+  try {
+    if (typeof opensheetmusicdisplay === 'undefined') {
+      showFallback('OSMD library failed to load from CDN');
+      return;
+    }
+
+    var osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay('osmd-container', {
+      backend:        'svg',
+      drawTitle:      true,
+      drawComposer:   false,
+      drawCredits:    false,
+      autoResize:     true,
+      drawingParameters: 'compact',
+    });
+
+    var xmlData = ${xmlJson};
+    setStatus('Rendering notation\u2026');
+
+    osmd.load(xmlData)
+      .then(function () {
+        osmd.render();
+        clearTimeout(_fallbackTimer);
+        setStatus('');
+      })
+      .catch(function (e) {
+        showFallback('Render error: ' + e.message);
+      });
+
+  } catch (e) {
+    showFallback('OSMD error: ' + e.message);
+  }
+}
+
+// Fire after all scripts (including OSMD CDN) have loaded
+if (document.readyState === 'complete') {
+  initOsmd();
+} else {
+  window.addEventListener('load', initOsmd);
+}
+
+// ── Web Audio Playback Engine ────────────────────────────────────────────────
+var _pbCtx   = null;
+var _pbTimer = null;
+var _pbSched = [];
+var _pbTotal = 0;
+var _pbStart = 0;
+var _NS = {C:0,'C#':1,Db:1,D:2,'D#':3,Eb:3,E:4,F:5,'F#':6,Gb:6,G:7,'G#':8,Ab:8,A:9,'A#':10,Bb:10,B:11};
+
+function _freq(pitch) {
+  var m = String(pitch).match(/^([A-G][#b]?)([0-9])$/);
+  if (!m) return 0;
+  var s = _NS[m[1]];
+  if (s === undefined) return 0;
+  return 440 * Math.pow(2, ((parseInt(m[2]) + 1) * 12 + s - 69) / 12);
+}
+
+function _tone(ctx, freq, t0, dur) {
+  if (freq <= 0) return;
+  var osc = ctx.createOscillator(), g = ctx.createGain();
+  osc.connect(g); g.connect(ctx.destination);
+  osc.type = 'sine'; osc.frequency.value = freq;
+  var att = Math.min(0.015, dur * 0.1), rel = Math.min(0.06, dur * 0.25);
+  g.gain.setValueAtTime(0, t0);
+  g.gain.linearRampToValueAtTime(0.3, t0 + att);
+  g.gain.setValueAtTime(0.3, t0 + dur - rel);
+  g.gain.linearRampToValueAtTime(0, t0 + dur);
+  osc.start(t0); osc.stop(t0 + dur + 0.01);
+}
+
+function _post(obj) { try { window.ReactNativeWebView.postMessage(JSON.stringify(obj)); } catch(e){} }
+
+function _tick() {
+  if (!_pbCtx || _pbCtx.state !== 'running') return;
+  var ct      = _pbCtx.currentTime;
+  var elapsed = ct - _pbStart;
+  _post({ type: 'progress', currentTime: Math.min(elapsed, _pbTotal), totalTime: _pbTotal });
+  if (elapsed < _pbTotal + 0.3) { _pbTimer = setTimeout(_tick, 80); }
+  else { _pbTimer = null; _post({ type: 'ended' }); }
+}
+
+function _stopPb() {
+  if (_pbTimer) { clearTimeout(_pbTimer); _pbTimer = null; }
+  if (_pbCtx)   { try { _pbCtx.close(); } catch(e){} _pbCtx = null; }
+  _pbSched = [];
+}
+
+function handlePlaybackCommand(cmd) {
+  if (cmd.type === 'play') {
+    _stopPb();
+    var notes = window.__NOTES || [], bpm = window.__BPM || 120;
+    _pbCtx   = new (window.AudioContext || window.webkitAudioContext)();
+    _pbStart = _pbCtx.currentTime + 0.05;
+    _pbSched = [];
+    var t = _pbStart;
+    for (var i = 0; i < notes.length; i++) {
+      var n = notes[i], dur = Math.max(0.05, (n.duration || 0.5) * (120 / bpm));
+      _tone(_pbCtx, _freq(n.pitch), t, dur * 0.88);
+      _pbSched.push({ idx: i, t0: t, t1: t + dur });
+      t += dur;
+    }
+    _pbTotal = t - _pbStart;
+    _post({ type: 'totalTime', totalTime: _pbTotal });
+    _pbTimer = setTimeout(_tick, 80);
+  } else if (cmd.type === 'pause') {
+    if (_pbCtx && _pbCtx.state === 'running') {
+      _pbCtx.suspend();
+      if (_pbTimer) { clearTimeout(_pbTimer); _pbTimer = null; }
+      _post({ type: 'paused' });
+    }
+  } else if (cmd.type === 'resume') {
+    if (_pbCtx && _pbCtx.state === 'suspended') { _pbCtx.resume(); _tick(); _post({ type: 'resumed' }); }
+  } else if (cmd.type === 'stop') {
+    _stopPb(); _post({ type: 'stopped' });
+  }
+}
+</script>
+</body>
+</html>`;
+}
+
+// ─── Custom SVG sheet-music builder (fallback when no musicxml) ───────────────
 // cfg options:
 //   pageWidth  – fixed px width (null → use window.innerWidth)
 //   bgColor    – background fill  (default '#111118')
@@ -67,26 +254,23 @@ window.__BPM   = ${bpm};
     var LINE_GAP  = 12;             // px between adjacent staff lines
     var STEP      = LINE_GAP / 2;   // px per diatonic step (half a space = 6px)
     var STAFF_H   = 4 * LINE_GAP;   // 48px (top line to bottom line)
-    var ROW_H     = 140;            // total px per staff row — gap between staves = ROW_H − STAFF_H = 92px
+    var ROW_H     = 140;            // total px per staff row
     var ST_OFF    = 48;             // y from row top to first (top) staff line
 
-    // Notehead dimensions — 10px wide × 8px tall
-    var NH_RX     = 5;  // notehead half-width  (total: 10px)
-    var NH_RY     = 4;  // notehead half-height (total:  8px)
+    // Notehead dimensions
+    var NH_RX     = 5;
+    var NH_RY     = 4;
 
-    var CLEF_W    = 52;             // px reserved for treble clef
-    var TIME_W    = 24;             // px reserved for time sig (row 0 only)
-    var PER_ROW   = 8;              // notes per row; must be a multiple of BEATS
+    var CLEF_W    = 52;
+    var TIME_W    = 24;
+    var PER_ROW   = 8;
 
-    // Note slot width (computed from row 0 which is the tightest)
     var NX0_FIRST = CLEF_W + TIME_W + 8;
     var NX0_REST  = CLEF_W + 8;
     var NW_FIRST  = (W - NX0_FIRST - 6) / PER_ROW;
     var NW_REST   = (W - NX0_REST  - 6) / PER_ROW;
 
     // ── Parse pitch string → { steps, acc } ─────────────────────────────
-    //   steps = diatonic steps above C4 (middle C)
-    //   E.g.  C4→0  D4→1  E4→2  G4→4  C5→7  F5→10
     function parsePitch(p) {
       var m = (p || '').match(/^([A-G])([#b]?)([0-9])$/);
       if (!m || DEGREE[m[1]] === undefined) return null;
@@ -123,8 +307,8 @@ window.__BPM   = ${bpm};
     rows.forEach(function (row, ri) {
       var isFirst = ri === 0;
       var ry  = ri * ROW_H;
-      var stT = ry + ST_OFF;       // y of top staff line   (F5)
-      var stB = stT + STAFF_H;     // y of bottom staff line (E4)
+      var stT = ry + ST_OFF;
+      var stB = stT + STAFF_H;
       var nx0 = isFirst ? NX0_FIRST : NX0_REST;
       var nw  = isFirst ? NW_FIRST  : NW_REST;
 
@@ -152,53 +336,42 @@ window.__BPM   = ${bpm};
       // ── Notes ─────────────────────────────────────────────────────
       row.forEach(function (note, ni) {
         var nx  = Math.round(nx0 + ni * nw + nw / 2);
-        var gni = ri * PER_ROW + ni;         // global note index
+        var gni = ri * PER_ROW + ni;
 
         if (!note) {
-          // ── Quarter rest (simplified zigzag) ─────────────────────
+          // ── Quarter rest ──────────────────────────────────────────
           var mid = stT + STAFF_H / 2 + 2;
           out += seg(nx - 3, mid - 9,  nx + 5, mid - 3, '${noteColor}', 1.5);
           out += seg(nx + 5, mid - 3,  nx - 3, mid + 4, '${noteColor}', 1.5);
           out += seg(nx - 3, mid + 4,  nx + 3, mid + 11,'${noteColor}', 1.5);
         } else {
           // ── Pitched note ──────────────────────────────────────────
-          var sae = note.steps - 2;          // diatonic steps above E4
-
-          // Transpose for display — keep note within ~2 ledger lines
+          var sae = note.steps - 2;
           while (sae < -4) sae += 7;
           while (sae > 12) sae -= 7;
-
           var ny  = stB - sae * STEP;
 
-          // ── Ledger lines below staff ──────────────────────────────
           if (sae <= -2) {
             var loLedger = (sae % 2 === 0) ? sae : sae + 1;
             for (var ls = -2; ls >= loLedger; ls -= 2)
               out += hLine(nx - 11, nx + 11, stB - ls * STEP, '${staffColor}', 1);
           }
-
-          // ── Ledger lines above staff ──────────────────────────────
           if (sae >= 10) {
             var hiLedger = (sae % 2 === 0) ? sae : sae - 1;
             for (var hs = 10; hs <= hiLedger; hs += 2)
               out += hLine(nx - 11, nx + 11, stB - hs * STEP, '${staffColor}', 1);
           }
-
-          // ── Accidental ────────────────────────────────────────────
           if (note.acc) {
             var ch = note.acc === '#' ? '&#x266F;' : '&#x266D;';
             out += '<text x="' + (nx - 16) + '" y="' + (ny + 5) + '"'
                  + ' font-size="14" font-family="serif" fill="${noteColor}">' + ch + '</text>';
           }
-
-          // ── Notehead: 10px wide × 8px tall, tilted −15° ───────────
           out += '<ellipse'
                + ' id="note-' + gni + '"'
                + ' cx="' + nx + '" cy="' + ny + '"'
                + ' rx="' + NH_RX + '" ry="' + NH_RY + '" fill="${noteColor}"'
                + ' transform="rotate(-15,' + nx + ',' + ny + ')"/>';
 
-          // ── Stem ──────────────────────────────────────────────────
           var STEM_LEN = 30;
           if (sae < 4) {
             out += vLine(nx + NH_RX, ny - NH_RY, ny - NH_RY - STEM_LEN, '${noteColor}', 1.5);
@@ -207,7 +380,6 @@ window.__BPM   = ${bpm};
           }
         }
 
-        // ── Barline after end of each complete measure ─────────────
         if ((gni + 1) % BEATS === 0 && ni < row.length - 1) {
           var bx = Math.round(nx + nw / 2 + 1);
           out += vLine(bx, stT, stB, '${staffColor}', 1.5);
@@ -340,10 +512,6 @@ function handlePlaybackCommand(cmd) {
 }
 
 // ─── PDF HTML builder (exported for use in ResultsScreen) ────────────────────
-// Generates paginated PDF HTML: 6 staff rows per page, header on page 1 only,
-// footer on every page, @page margins 20mm left 45mm.
-// meta: { trackName, instrument, format, date, watermark }
-//   watermark: true → diagonal "preview" text stamped across every page (free tier)
 export function buildPdfHtml(notes, meta) {
   meta = meta || {};
   const trackName  = htmlEsc(meta.trackName  || 'Untitled');
@@ -381,13 +549,13 @@ export function buildPdfHtml(notes, meta) {
 
     var DEGREE    = { C:0, D:1, E:2, F:3, G:4, A:5, B:6 };
     var BEATS     = 4;
-    var WATERMARK = ${watermark};   // true = free tier, stamp diagonal watermark on each page
+    var WATERMARK = ${watermark};
     var BPM       = ${bpm};
-    var W             = 500;   // content width in px (fits A4 with 45mm left / 20mm right margins)
+    var W             = 500;
     var LINE_GAP      = 12;
     var STEP          = LINE_GAP / 2;
-    var STAFF_H       = 4 * LINE_GAP;   // 48px
-    var ROW_H         = 110;  // 6 rows × 110px = 660px + 24px padding = 684px < 971px printable height
+    var STAFF_H       = 4 * LINE_GAP;
+    var ROW_H         = 110;
     var ST_OFF        = 48;
     var NH_RX         = 5;
     var NH_RY         = 4;
@@ -416,7 +584,6 @@ export function buildPdfHtml(notes, meta) {
 
     var parsed = INPUT.map(function (n) { return parsePitch(n.pitch); });
 
-    // Split parsed notes into staff rows, then into pages of ROWS_PER_PAGE
     var allRows = [];
     for (var i = 0; i < parsed.length; i += PER_ROW)
       allRows.push(parsed.slice(i, i + PER_ROW));
@@ -442,32 +609,25 @@ export function buildPdfHtml(notes, meta) {
 
     pages.forEach(function (pageRows, pi) {
       var isLastPage = pi === pages.length - 1;
-      // SVG height exactly fits the rows on this page (last page may have fewer)
       var svgH = pageRows.length * ROW_H + 24;
       var svgOut = rect(0, 0, W, svgH, '#FFFFFF');
 
       pageRows.forEach(function (row, ri) {
-        var globalRi  = pi * ROWS_PER_PAGE + ri;  // row index across all pages
+        var globalRi  = pi * ROWS_PER_PAGE + ri;
         var isFirstRow = globalRi === 0;
-        var ry  = ri * ROW_H;                      // local y within this page's SVG
+        var ry  = ri * ROW_H;
         var stT = ry + ST_OFF;
         var stB = stT + STAFF_H;
         var nx0 = isFirstRow ? NX0_FIRST : NX0_REST;
         var nw  = isFirstRow ? NW_FIRST  : NW_REST;
 
-        // Staff lines
         for (var l = 0; l < 5; l++)
           svgOut += hLine(4, W - 4, stT + l * LINE_GAP, '#333333', 1);
-
-        // Left barline
         svgOut += vLine(4, stT, stB, '#333333', 1.5);
-
-        // Treble clef
         svgOut += '<text x="5" y="' + (stB + 16) + '"'
                + ' font-size="70" font-family="Times New Roman, Times, serif"'
                + ' fill="#000000">&#x1D11E;</text>';
 
-        // Time signature + tempo mark (first row only)
         if (isFirstRow) {
           var tx = CLEF_W + 2;
           svgOut += timeSigNum(tx, stT + LINE_GAP + 7,     '4');
@@ -476,7 +636,6 @@ export function buildPdfHtml(notes, meta) {
                  + ' font-size="11" font-family="sans-serif" fill="#333333">\u2669 = ' + BPM + '</text>';
         }
 
-        // Notes
         row.forEach(function (note, ni) {
           var nx  = Math.round(nx0 + ni * nw + nw / 2);
           var gni = globalRi * PER_ROW + ni;
@@ -524,12 +683,9 @@ export function buildPdfHtml(notes, meta) {
           }
         });
 
-        // Right barline
         svgOut += vLine(W - 4, stT, stB, '#333333', 1.5);
       });
 
-      // ── Watermark overlay (free tier only) ────────────────────────────
-      // Diagonal text stamped at three evenly-spaced positions across the page.
       if (WATERMARK) {
         var wmText = 'Music-To-Sheet Preview \u2014 Upgrade for full version';
         var wmCx   = W / 2;
@@ -581,9 +737,15 @@ function timeSigNum(x, y, n) {
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
-const SheetMusicViewer = forwardRef(function SheetMusicViewer({ notes = [], bpm = 120, onMessage }, ref) {
-  console.log('[SheetMusicViewer] notes:', notes.length, notes.slice(0, 4));
-  const html = buildHtml(notes, { bpm });
+const SheetMusicViewer = forwardRef(function SheetMusicViewer(
+  { notes = [], musicxml = null, bpm = 120, onMessage },
+  ref
+) {
+  // Use OSMD (professional renderer) when MusicXML is available;
+  // fall back to the custom SVG renderer otherwise.
+  const html = musicxml
+    ? buildOsmdHtml(musicxml, notes, bpm)
+    : buildHtml(notes, { bpm });
 
   return (
     <View style={styles.container}>
