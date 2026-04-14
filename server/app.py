@@ -168,14 +168,24 @@ def generate_musicxml(midi_data, uid: str) -> str | None:
         print("[musicxml] MIDI written, parsing with music21...")
 
         import music21  # lazy import — avoids heavy startup cost on cold boot
+        from music21 import key as m21key
         score = music21.converter.parse(midi_path)
 
-        # Quantize to nearest 16th note (snaps to rhythmic grid)
-        score.quantize(inPlace=True)
+        # Quantize to rhythmic grid (produces quarter, eighth, half notes, etc.)
+        score.quantize([0.25, 0.5, 1.0, 2.0], inPlace=True)
 
-        # Key analysis (informational — embeds in MusicXML metadata)
+        # Key analysis — detect and embed key signature
         key = score.analyze('key')
         print(f"[musicxml] Detected key: {key}")
+
+        # Insert key signature at the start of every part so music21 groups
+        # sharps/flats into a key signature instead of marking each note
+        ks = m21key.KeySignature(key.sharps)
+        for part in score.parts:
+            part.insert(0, ks)
+
+        # Apply notation rules (respects the key signature when rendering accidentals)
+        score.makeNotation(inPlace=True)
 
         score.write('musicxml', fp=musicxml_path)
 
