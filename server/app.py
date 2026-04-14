@@ -80,16 +80,56 @@ def detect_notes_with_basic_pitch(wav_path: str) -> list:
     model_output, midi_data, note_events = predict(wav_path)
     print(f"[basic_pitch] Inference complete. {len(note_events)} raw note events.")
 
+    if note_events and len(note_events) > 0:
+        print(f"[basic_pitch] First note_event type: {type(note_events[0])}")
+        print(f"[basic_pitch] First note_event: {note_events[0]}")
+
+    def _scalar(v):
+        """Extract a plain float/int from a value that may be a list or array."""
+        if isinstance(v, (list, tuple)):
+            return v[0]
+        if hasattr(v, '__len__') and not isinstance(v, str):
+            return float(v.flat[0]) if hasattr(v, 'flat') else v[0]
+        return v
+
     notes = []
-    for start, end, pitch_midi, velocity, confidence in note_events:
-        note_name = pretty_midi.note_number_to_name(int(pitch_midi))
-        notes.append({
-            "pitch":      note_name,
-            "start":      round(float(start), 3),
-            "duration":   round(float(end) - float(start), 3),
-            "velocity":   round(float(velocity), 2),
-            "confidence": round(float(confidence), 2),
-        })
+    for event in note_events:
+        try:
+            if isinstance(event, (list, tuple)):
+                if len(event) >= 5:
+                    start, end, pitch_midi, velocity, confidence = event[0], event[1], event[2], event[3], event[4]
+                elif len(event) >= 4:
+                    start, end, pitch_midi, velocity = event[0], event[1], event[2], event[3]
+                    confidence = 0.8
+                else:
+                    continue
+            elif hasattr(event, 'start'):
+                start      = float(event.start)
+                end        = float(event.end)
+                pitch_midi = int(event.pitch)
+                velocity   = float(event.velocity)   if hasattr(event, 'velocity')   else 0.8
+                confidence = float(event.confidence) if hasattr(event, 'confidence') else 0.8
+            else:
+                print(f"[basic_pitch] Unknown event format: {event}")
+                continue
+
+            start      = float(_scalar(start))
+            end        = float(_scalar(end))
+            pitch_midi = int(_scalar(pitch_midi))
+            velocity   = float(_scalar(velocity))
+            confidence = float(_scalar(confidence))
+
+            note_name = pretty_midi.note_number_to_name(pitch_midi)
+            notes.append({
+                "pitch":      note_name,
+                "start":      round(start, 3),
+                "duration":   round(end - start, 3),
+                "velocity":   round(velocity, 2),
+                "confidence": round(confidence, 2),
+            })
+        except Exception as e:
+            print(f"[basic_pitch] Skipping note event due to error: {e}")
+            continue
 
     print(f"[basic_pitch] {len(notes)} notes after processing.")
     return notes
