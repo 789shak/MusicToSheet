@@ -7,5 +7,3 @@ librosa
 pretty_midi
 soundfile
 replicate
-basic-pitch
-tensorflow

@@ -69,55 +69,90 @@ async def download_audio(url: str, dest_path: str) -> int:
             return total
 
 
-# ─── Basic Pitch note detection ───────────────────────────────────────────────
-def detect_notes_with_basic_pitch(wav_path: str, uid: str) -> tuple[list, str | None]:
+# ─── librosa pyin note detection ──────────────────────────────────────────────
+def detect_notes_with_librosa(y: np.ndarray, sr: int) -> list:
     """
-    Run Spotify Basic Pitch on a WAV file.
-    Returns (notes, midi_path) where midi_path may be None if MIDI write fails.
-    notes is a list of dicts: pitch, start, duration, velocity, confidence.
+    Run librosa pyin pitch detection on a mono audio array.
+    Returns a list of note dicts: pitch, start, duration, velocity, confidence.
     """
-    from basic_pitch.inference import predict
-    from basic_pitch import ICASSP_2022_MODEL_PATH
+    print("[pyin] Running pyin pitch detection...")
+    f0, voiced_flag, voiced_prob = librosa.pyin(
+        y,
+        fmin=librosa.note_to_hz('C2'),
+        fmax=librosa.note_to_hz('C7'),
+        sr=sr,
+        frame_length=2048,
+        hop_length=512,
+    )
+    print(f"[pyin] pyin complete. {np.sum(voiced_flag)} voiced frames out of {len(voiced_flag)}.")
 
-    midi_path = None
-    try:
-        print("[basic_pitch] Running Basic Pitch inference...")
-        model_output, midi_data, note_events = predict(wav_path)
-        print(f"[basic_pitch] Inference complete. {len(note_events)} raw note events.")
-    except MemoryError as e:
-        print(f"[basic_pitch] OOM error during predict: {e}")
-        raise RuntimeError("Basic Pitch ran out of memory (OOM). Consider upgrading server RAM.") from e
-    except Exception as e:
-        print(f"[basic_pitch] Inference error: {e}\n{traceback.format_exc()}")
-        raise
+    hop_length = 512
+    times = librosa.frames_to_time(np.arange(len(f0)), sr=sr, hop_length=hop_length)
 
-    # Convert note_events → our note format
-    # note_events: list of (start_time, end_time, pitch_midi, velocity, confidence)
     notes = []
-    for start, end, pitch_midi, velocity, confidence in note_events:
-        note_name = pretty_midi.note_number_to_name(int(pitch_midi))
-        duration = round(float(end) - float(start), 3)
-        if duration > 0.03:  # discard sub-30ms blips
+    current_note = None
+
+    for i, (freq, voiced, prob) in enumerate(zip(f0, voiced_flag, voiced_prob)):
+        if voiced and freq is not None and not np.isnan(freq):
+            midi_note = int(round(librosa.hz_to_midi(freq)))
+            midi_note = max(0, min(127, midi_note))
+            note_name = pretty_midi.note_number_to_name(midi_note)
+
+            if current_note is None:
+                current_note = {
+                    "pitch":      note_name,
+                    "start":      float(times[i]),
+                    "end":        float(times[i]),
+                    "velocity":   0.8,
+                    "confidence": float(prob),
+                }
+            elif current_note["pitch"] == note_name:
+                current_note["end"] = float(times[i])
+                current_note["confidence"] = max(current_note["confidence"], float(prob))
+            else:
+                duration = current_note["end"] - current_note["start"] + (hop_length / sr)
+                if duration > 0.05:
+                    notes.append({
+                        "pitch":      current_note["pitch"],
+                        "start":      round(current_note["start"], 3),
+                        "duration":   round(duration, 3),
+                        "velocity":   current_note["velocity"],
+                        "confidence": round(current_note["confidence"], 2),
+                    })
+                current_note = {
+                    "pitch":      note_name,
+                    "start":      float(times[i]),
+                    "end":        float(times[i]),
+                    "velocity":   0.8,
+                    "confidence": float(prob),
+                }
+        else:
+            if current_note is not None:
+                duration = current_note["end"] - current_note["start"] + (hop_length / sr)
+                if duration > 0.05:
+                    notes.append({
+                        "pitch":      current_note["pitch"],
+                        "start":      round(current_note["start"], 3),
+                        "duration":   round(duration, 3),
+                        "velocity":   current_note["velocity"],
+                        "confidence": round(current_note["confidence"], 2),
+                    })
+                current_note = None
+
+    # Flush last note
+    if current_note is not None:
+        duration = current_note["end"] - current_note["start"] + (hop_length / sr)
+        if duration > 0.05:
             notes.append({
-                "pitch":      note_name,
-                "start":      round(float(start), 3),
-                "duration":   duration,
-                "velocity":   round(float(velocity), 2),
-                "confidence": round(float(confidence), 2),
+                "pitch":      current_note["pitch"],
+                "start":      round(current_note["start"], 3),
+                "duration":   round(duration, 3),
+                "velocity":   current_note["velocity"],
+                "confidence": round(current_note["confidence"], 2),
             })
 
-    print(f"[basic_pitch] {len(notes)} notes after filtering.")
-
-    # Write MIDI for future export
-    try:
-        midi_path = f"/tmp/{uid}_output.mid"
-        midi_data.write(midi_path)
-        print(f"[basic_pitch] MIDI written to {midi_path}")
-    except Exception as e:
-        print(f"[basic_pitch] MIDI write failed (non-fatal): {e}")
-        midi_path = None
-
-    return notes, midi_path
+    print(f"[pyin] {len(notes)} notes after filtering.")
+    return notes
 
 
 # ─── Endpoints ────────────────────────────────────────────────────────────────
@@ -130,7 +165,6 @@ def root():
 async def process_audio(body: ProcessRequest):
     tmp_path = None
     wav_path = None
-    midi_path = None
     try:
         # Step 1: Download audio
         print("[process] Step 1: Downloading audio...")
@@ -162,19 +196,17 @@ async def process_audio(body: ProcessRequest):
             raise Exception(f"ffmpeg failed with code {result.returncode}: {result.stderr}")
         print(f"[process] Converted to WAV: {wav_path}")
 
-        # Step 3: Load WAV with librosa (duration check only — no pyin)
-        print("[process] Step 3: Loading with librosa for duration check...")
+        # Step 3: Load WAV with librosa
+        print("[process] Step 3: Loading WAV with librosa...")
         y, sr = librosa.load(wav_path, sr=22050, mono=True, duration=60.0)
         duration_seconds = float(librosa.get_duration(y=y, sr=sr))
         print(f"[process] Audio duration: {duration_seconds:.2f}s")
-        del y  # free memory before Basic Pitch runs
 
-        # Step 4: Run Basic Pitch inference
-        print("[process] Step 4: Running Basic Pitch inference...")
-        notes, midi_path = await asyncio.to_thread(
-            detect_notes_with_basic_pitch, wav_path, uid
-        )
-        print(f"[process] Basic Pitch detected {len(notes)} notes")
+        # Step 4: Run pyin pitch detection
+        print("[process] Step 4: Running pyin pitch detection...")
+        notes = await asyncio.to_thread(detect_notes_with_librosa, y, sr)
+        del y
+        print(f"[process] pyin detected {len(notes)} notes")
 
         track_name = os.path.splitext(original_name)[0] or "Untitled"
         gc.collect()
@@ -186,7 +218,7 @@ async def process_audio(body: ProcessRequest):
             "format":           body.output_format,
             "duration_seconds": round(duration_seconds),
             "notes":            notes,
-            "confidence":       0.90,
+            "confidence":       0.85,
         }
 
     except HTTPException:
@@ -197,7 +229,7 @@ async def process_audio(body: ProcessRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
     finally:
-        for f in [tmp_path, wav_path, midi_path]:
+        for f in [tmp_path, wav_path]:
             if f and os.path.exists(f):
                 os.remove(f)
                 print(f"[process] Deleted temp file: {f}")
@@ -210,7 +242,6 @@ async def process_with_stems(body: ProcessRequest):
     wav_path = None
     stem_path = None
     stem_wav_path = None
-    midi_path = None
     try:
         # Step 1: Download original audio
         print("[stems] Step 1: Downloading audio...")
@@ -264,7 +295,6 @@ async def process_with_stems(body: ProcessRequest):
             # Full Score or unmapped instrument → use original audio
             print("[stems] Using original audio (no stem)")
             audio_for_detection = tmp_path
-            ext_for_wav = ext
         else:
             # Step 5: Download the selected stem
             stem_ext = ".wav"
@@ -273,7 +303,6 @@ async def process_with_stems(body: ProcessRequest):
             stem_size = await download_audio(stem_urls[selected_stem], stem_path)
             print(f"[stems] Stem downloaded: {stem_size} bytes")
             audio_for_detection = stem_path
-            ext_for_wav = stem_ext
 
         # Step 6: Convert to WAV with ffmpeg
         wav_path = f"/tmp/{uid}_out.wav"
@@ -287,26 +316,19 @@ async def process_with_stems(body: ProcessRequest):
             raise Exception(f"ffmpeg failed: {result.stderr}")
         print(f"[stems] Converted to WAV: {wav_path}")
 
-        # Step 7: Run Basic Pitch inference on the selected stem/audio
-        print("[stems] Step 7: Running Basic Pitch inference...")
-        notes, midi_path = await asyncio.to_thread(
-            detect_notes_with_basic_pitch, wav_path, uid
-        )
-        print(f"[stems] Basic Pitch detected {len(notes)} notes.")
+        # Step 7: Load WAV and run pyin pitch detection
+        print("[stems] Step 7: Loading WAV and running pyin pitch detection...")
+        y, sr = librosa.load(wav_path, sr=22050, mono=True, duration=60.0)
+        duration_seconds = float(librosa.get_duration(y=y, sr=sr))
+
+        notes = await asyncio.to_thread(detect_notes_with_librosa, y, sr)
+        del y
+        print(f"[stems] pyin detected {len(notes)} notes.")
 
         track_name = os.path.splitext(original_name)[0] or "Untitled"
-
-        # Step 8: Get duration from WAV via librosa (lightweight — no pyin)
-        try:
-            y, sr = librosa.load(wav_path, sr=22050, mono=True, duration=60.0)
-            duration_seconds = float(librosa.get_duration(y=y, sr=sr))
-            del y
-        except Exception:
-            duration_seconds = 60.0
-
         gc.collect()
 
-        # Step 9: Return notes + detected stems
+        # Step 8: Return notes + detected stems
         return {
             "status":           "success",
             "track_name":       track_name,
@@ -314,7 +336,7 @@ async def process_with_stems(body: ProcessRequest):
             "format":           body.output_format,
             "duration_seconds": round(duration_seconds),
             "notes":            notes,
-            "confidence":       0.90,
+            "confidence":       0.85,
             "stems_detected":   detected_stems,
             "stem_used":        selected_stem,
         }
@@ -327,7 +349,7 @@ async def process_with_stems(body: ProcessRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
     finally:
-        for f in [tmp_path, wav_path, stem_path, stem_wav_path, midi_path]:
+        for f in [tmp_path, wav_path, stem_path, stem_wav_path]:
             if f and os.path.exists(f):
                 os.remove(f)
                 print(f"[stems] Deleted temp file: {f}")
