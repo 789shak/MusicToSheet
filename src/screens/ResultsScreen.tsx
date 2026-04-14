@@ -16,7 +16,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { supabase } from '../lib/supabase';
 import { useSubscription } from '../hooks/useSubscription';
-import SheetMusicViewer, { buildPdfHtml } from '../components/SheetMusicViewer';
+import SheetMusicViewer, { buildPdfHtml, buildScreenHtml } from '../components/SheetMusicViewer';
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 const FORMATS = ['Score', 'Part', 'Lead Sheet', 'Tabs', 'Fake Book', 'Staff'];
@@ -143,6 +143,19 @@ export default function ResultsScreen() {
       ? notes
       : notes.map(n => ({ ...n, pitch: shiftSemitone(n.pitch, transposeOffset) })),
     [notes, transposeOffset]
+  );
+
+  // Pre-built screen HTML — identical to PDF export, scaled to fit phone width.
+  // Recomputed whenever notes, transpose, BPM, format, or track metadata changes.
+  const previewHtml = useMemo(
+    () => buildScreenHtml(displayNotes, {
+      trackName:  trackRecord?.track_name ?? 'Sample Track',
+      instrument: trackRecord?.instrument ?? 'Unknown',
+      format:     activeFormat,
+      bpm,
+      watermark:  !isPro,
+    }),
+    [displayNotes, trackRecord, activeFormat, bpm, isPro]
   );
 
   // Persist transpose & BPM changes to Supabase (skip first render)
@@ -528,7 +541,7 @@ export default function ResultsScreen() {
 
         {/* ── Sheet Music Viewer ── */}
         <View style={styles.viewerContainer}>
-          <SheetMusicViewer ref={webviewRef} notes={displayNotes} musicxml={musicxml || null} bpm={bpm} onMessage={handleWebViewMessage} />
+          <SheetMusicViewer ref={webviewRef} previewHtml={previewHtml} notes={displayNotes} bpm={bpm} onMessage={handleWebViewMessage} />
         </View>
 
         {/* ── Upgrade Banner ── */}

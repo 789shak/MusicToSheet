@@ -774,20 +774,60 @@ function timeSigNum(x, y, n) {
 </html>`;
 }
 
+// ─── Screen preview HTML ──────────────────────────────────────────────────────
+// Takes the exact same HTML as the PDF export (proven to look correct) and
+// adapts it for in-app display by:
+//   1. Injecting a viewport meta so the 500px SVG scales to fit the phone screen
+//   2. Appending the Web Audio playback engine (not present in PDF HTML)
+// @page and page-break-after CSS are print-only and are ignored by the WebView.
+export function buildScreenHtml(notes, meta) {
+  meta = meta || {};
+  const bpm       = meta.bpm || 120;
+  const notesJson = JSON.stringify(notes);
+
+  // Base: the proven PDF rendering (W=500 SVG, proper staves, barlines, etc.)
+  let html = buildPdfHtml(notes, meta);
+
+  // 1. Viewport: 540px logical width × 0.72 ≈ 389px — fits a 390px phone exactly.
+  //    user-scalable=yes enables pinch-zoom.
+  html = html.replace(
+    '<meta charset="utf-8"/>',
+    '<meta charset="utf-8"/>\n<meta name="viewport" content="width=540, initial-scale=0.72, user-scalable=yes"/>'
+  );
+
+  // 2. Playback engine — lets the play button in ResultsScreen drive Web Audio.
+  //    Note highlighting is omitted (PDF SVG has no note-N IDs); audio still works.
+  const playbackBlock = `<script>
+window.__NOTES = ${notesJson};
+window.__BPM   = ${bpm};
+var _pbCtx=null,_pbTimer=null,_pbSched=[],_pbTotal=0,_pbStart=0;
+var _NS={C:0,'C#':1,Db:1,D:2,'D#':3,Eb:3,E:4,F:5,'F#':6,Gb:6,G:7,'G#':8,Ab:8,A:9,'A#':10,Bb:10,B:11};
+function _freq(p){var m=String(p).match(/^([A-G][#b]?)([0-9])$/);if(!m)return 0;var s=_NS[m[1]];if(s===undefined)return 0;return 440*Math.pow(2,((parseInt(m[2])+1)*12+s-69)/12);}
+function _tone(ctx,freq,t0,dur){if(freq<=0)return;var osc=ctx.createOscillator(),g=ctx.createGain();osc.connect(g);g.connect(ctx.destination);osc.type='sine';osc.frequency.value=freq;var att=Math.min(0.015,dur*0.1),rel=Math.min(0.06,dur*0.25);g.gain.setValueAtTime(0,t0);g.gain.linearRampToValueAtTime(0.3,t0+att);g.gain.setValueAtTime(0.3,t0+dur-rel);g.gain.linearRampToValueAtTime(0,t0+dur);osc.start(t0);osc.stop(t0+dur+0.01);}
+function _post(o){try{window.ReactNativeWebView.postMessage(JSON.stringify(o));}catch(e){}}
+function _tick(){if(!_pbCtx||_pbCtx.state!=='running')return;var ct=_pbCtx.currentTime,el=ct-_pbStart;_post({type:'progress',currentTime:Math.min(el,_pbTotal),totalTime:_pbTotal});if(el<_pbTotal+0.3){_pbTimer=setTimeout(_tick,80);}else{_pbTimer=null;_post({type:'ended'});}}
+function _stopPb(){if(_pbTimer){clearTimeout(_pbTimer);_pbTimer=null;}if(_pbCtx){try{_pbCtx.close();}catch(e){}_pbCtx=null;}_pbSched=[];}
+function handlePlaybackCommand(cmd){if(cmd.type==='play'){_stopPb();var ns=window.__NOTES||[],bpm=window.__BPM||120;_pbCtx=new(window.AudioContext||window.webkitAudioContext)();_pbStart=_pbCtx.currentTime+0.05;var t=_pbStart;for(var i=0;i<ns.length;i++){var n=ns[i],dur=Math.max(0.05,(n.duration||0.5)*(120/bpm));_tone(_pbCtx,_freq(n.pitch),t,dur*0.88);_pbSched.push({idx:i,t0:t,t1:t+dur});t+=dur;}_pbTotal=t-_pbStart;_post({type:'totalTime',totalTime:_pbTotal});_pbTimer=setTimeout(_tick,80);}else if(cmd.type==='pause'){if(_pbCtx&&_pbCtx.state==='running'){_pbCtx.suspend();if(_pbTimer){clearTimeout(_pbTimer);_pbTimer=null;}_post({type:'paused'});}}else if(cmd.type==='resume'){if(_pbCtx&&_pbCtx.state==='suspended'){_pbCtx.resume();_tick();_post({type:'resumed'});}}else if(cmd.type==='stop'){_stopPb();_post({type:'stopped'});}}
+</script>`;
+
+  html = html.replace('</body>', playbackBlock + '\n</body>');
+  return html;
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
+// Priority: previewHtml (pre-built PDF-style HTML) > musicxml (OSMD) > notes (SVG)
 const SheetMusicViewer = forwardRef(function SheetMusicViewer(
-  { notes = [], musicxml = null, bpm = 120, onMessage },
+  { notes = [], previewHtml = null, musicxml = null, bpm = 120, onMessage },
   ref
 ) {
-  // Use OSMD (professional renderer) when MusicXML is available;
-  // fall back to the custom SVG renderer otherwise.
-  const html = musicxml
-    ? buildOsmdHtml(musicxml, notes, bpm)
-    : buildHtml(notes, { bpm });
-
-  // OSMD renders at 1200px then the viewport meta scales it down.
-  // Allow pinch-zoom and both-axis scroll so users can inspect notation.
-  const isOsmd = !!musicxml;
+  let html;
+  if (previewHtml) {
+    html = previewHtml;          // PDF-identical screen render (white bg, proper staves)
+  } else if (musicxml) {
+    html = buildOsmdHtml(musicxml, notes, bpm);  // OSMD fallback
+  } else {
+    html = buildHtml(notes, { bpm });            // custom SVG fallback
+  }
 
   return (
     <View style={styles.container}>
@@ -799,12 +839,12 @@ const SheetMusicViewer = forwardRef(function SheetMusicViewer(
         scrollEnabled
         showsVerticalScrollIndicator={false}
         showsHorizontalScrollIndicator={false}
-        scalesPageToFit={false}          /* we control scale via viewport meta */
+        scalesPageToFit={false}   /* viewport meta controls scale */
         javaScriptEnabled
         domStorageEnabled
         mediaPlaybackRequiresUserAction={false}
         allowsInlineMediaPlayback
-        backgroundColor="#111118"
+        backgroundColor="#FFFFFF"
         onMessage={onMessage}
         onError={(e) =>
           console.log('[SheetMusicViewer] WebView error:', e.nativeEvent)
