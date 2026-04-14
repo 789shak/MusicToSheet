@@ -143,9 +143,9 @@ def generate_musicxml(midi_data, uid: str) -> str | None:
     Convert a PrettyMIDI object → MusicXML string via music21.
 
     Before writing the MIDI file, all note pitches are clamped to the
-    comfortable treble clef range (C3–C6, MIDI 48–84) by shifting
-    out-of-range notes up or down by octaves. This prevents notes from
-    overflowing the staff in the rendered sheet music.
+    treble clef staff range (G3–A5, MIDI 55–81) by shifting
+    out-of-range notes up or down by octaves. This keeps notes within
+    the staff with at most 1–2 ledger lines.
 
     Returns None on failure (non-fatal; caller renders without MusicXML).
     """
@@ -158,11 +158,11 @@ def generate_musicxml(midi_data, uid: str) -> str | None:
         # This mirrors what the user would hear but keeps notation readable.
         for instrument in midi_data.instruments:
             for note in instrument.notes:
-                while note.pitch < 48:
+                while note.pitch < 55:
                     note.pitch += 12
-                while note.pitch > 84:
+                while note.pitch > 81:
                     note.pitch -= 12
-        print("[musicxml] Note pitches clamped to MIDI 48–84 (C3–C6)")
+        print("[musicxml] Note pitches clamped to MIDI 55–81 (G3–A5)")
 
         midi_data.write(midi_path)
         print("[musicxml] MIDI written, parsing with music21...")
