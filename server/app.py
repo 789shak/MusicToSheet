@@ -9,6 +9,7 @@ import httpx
 import librosa
 import pretty_midi
 import replicate
+from basic_pitch.inference import predict
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
@@ -69,89 +70,28 @@ async def download_audio(url: str, dest_path: str) -> int:
             return total
 
 
-# ─── librosa pyin note detection ──────────────────────────────────────────────
-def detect_notes_with_librosa(y: np.ndarray, sr: int) -> list:
+# ─── Basic Pitch note detection ───────────────────────────────────────────────
+def detect_notes_with_basic_pitch(wav_path: str) -> list:
     """
-    Run librosa pyin pitch detection on a mono audio array.
+    Run Spotify Basic Pitch on a WAV file.
     Returns a list of note dicts: pitch, start, duration, velocity, confidence.
     """
-    print("[pyin] Running pyin pitch detection...")
-    f0, voiced_flag, voiced_prob = librosa.pyin(
-        y,
-        fmin=librosa.note_to_hz('C2'),
-        fmax=librosa.note_to_hz('C7'),
-        sr=sr,
-        frame_length=2048,
-        hop_length=512,
-    )
-    print(f"[pyin] pyin complete. {np.sum(voiced_flag)} voiced frames out of {len(voiced_flag)}.")
-
-    hop_length = 512
-    times = librosa.frames_to_time(np.arange(len(f0)), sr=sr, hop_length=hop_length)
+    print("[basic_pitch] Running Basic Pitch inference...")
+    model_output, midi_data, note_events = predict(wav_path)
+    print(f"[basic_pitch] Inference complete. {len(note_events)} raw note events.")
 
     notes = []
-    current_note = None
+    for start, end, pitch_midi, velocity, confidence in note_events:
+        note_name = pretty_midi.note_number_to_name(int(pitch_midi))
+        notes.append({
+            "pitch":      note_name,
+            "start":      round(float(start), 3),
+            "duration":   round(float(end) - float(start), 3),
+            "velocity":   round(float(velocity), 2),
+            "confidence": round(float(confidence), 2),
+        })
 
-    for i, (freq, voiced, prob) in enumerate(zip(f0, voiced_flag, voiced_prob)):
-        if voiced and freq is not None and not np.isnan(freq):
-            midi_note = int(round(librosa.hz_to_midi(freq)))
-            midi_note = max(0, min(127, midi_note))
-            note_name = pretty_midi.note_number_to_name(midi_note)
-
-            if current_note is None:
-                current_note = {
-                    "pitch":      note_name,
-                    "start":      float(times[i]),
-                    "end":        float(times[i]),
-                    "velocity":   0.8,
-                    "confidence": float(prob),
-                }
-            elif current_note["pitch"] == note_name:
-                current_note["end"] = float(times[i])
-                current_note["confidence"] = max(current_note["confidence"], float(prob))
-            else:
-                duration = current_note["end"] - current_note["start"] + (hop_length / sr)
-                if duration > 0.05:
-                    notes.append({
-                        "pitch":      current_note["pitch"],
-                        "start":      round(current_note["start"], 3),
-                        "duration":   round(duration, 3),
-                        "velocity":   current_note["velocity"],
-                        "confidence": round(current_note["confidence"], 2),
-                    })
-                current_note = {
-                    "pitch":      note_name,
-                    "start":      float(times[i]),
-                    "end":        float(times[i]),
-                    "velocity":   0.8,
-                    "confidence": float(prob),
-                }
-        else:
-            if current_note is not None:
-                duration = current_note["end"] - current_note["start"] + (hop_length / sr)
-                if duration > 0.05:
-                    notes.append({
-                        "pitch":      current_note["pitch"],
-                        "start":      round(current_note["start"], 3),
-                        "duration":   round(duration, 3),
-                        "velocity":   current_note["velocity"],
-                        "confidence": round(current_note["confidence"], 2),
-                    })
-                current_note = None
-
-    # Flush last note
-    if current_note is not None:
-        duration = current_note["end"] - current_note["start"] + (hop_length / sr)
-        if duration > 0.05:
-            notes.append({
-                "pitch":      current_note["pitch"],
-                "start":      round(current_note["start"], 3),
-                "duration":   round(duration, 3),
-                "velocity":   current_note["velocity"],
-                "confidence": round(current_note["confidence"], 2),
-            })
-
-    print(f"[pyin] {len(notes)} notes after filtering.")
+    print(f"[basic_pitch] {len(notes)} notes after processing.")
     return notes
 
 
@@ -196,17 +136,18 @@ async def process_audio(body: ProcessRequest):
             raise Exception(f"ffmpeg failed with code {result.returncode}: {result.stderr}")
         print(f"[process] Converted to WAV: {wav_path}")
 
-        # Step 3: Load WAV with librosa
+        # Step 3: Load WAV with librosa for duration
         print("[process] Step 3: Loading WAV with librosa...")
         y, sr = librosa.load(wav_path, sr=22050, mono=True, duration=60.0)
         duration_seconds = float(librosa.get_duration(y=y, sr=sr))
         print(f"[process] Audio duration: {duration_seconds:.2f}s")
-
-        # Step 4: Run pyin pitch detection
-        print("[process] Step 4: Running pyin pitch detection...")
-        notes = await asyncio.to_thread(detect_notes_with_librosa, y, sr)
         del y
-        print(f"[process] pyin detected {len(notes)} notes")
+        gc.collect()
+
+        # Step 4: Run Basic Pitch inference
+        print("[process] Step 4: Running Basic Pitch inference...")
+        notes = await asyncio.to_thread(detect_notes_with_basic_pitch, wav_path)
+        print(f"[process] Basic Pitch detected {len(notes)} notes")
 
         track_name = os.path.splitext(original_name)[0] or "Untitled"
         gc.collect()
@@ -218,7 +159,7 @@ async def process_audio(body: ProcessRequest):
             "format":           body.output_format,
             "duration_seconds": round(duration_seconds),
             "notes":            notes,
-            "confidence":       0.85,
+            "confidence":       0.90,
         }
 
     except HTTPException:
@@ -316,19 +257,22 @@ async def process_with_stems(body: ProcessRequest):
             raise Exception(f"ffmpeg failed: {result.stderr}")
         print(f"[stems] Converted to WAV: {wav_path}")
 
-        # Step 7: Load WAV and run pyin pitch detection
-        print("[stems] Step 7: Loading WAV and running pyin pitch detection...")
+        # Step 7: Load WAV with librosa for duration
+        print("[stems] Step 7: Loading WAV with librosa...")
         y, sr = librosa.load(wav_path, sr=22050, mono=True, duration=60.0)
         duration_seconds = float(librosa.get_duration(y=y, sr=sr))
-
-        notes = await asyncio.to_thread(detect_notes_with_librosa, y, sr)
         del y
-        print(f"[stems] pyin detected {len(notes)} notes.")
+        gc.collect()
+
+        # Step 8: Run Basic Pitch inference
+        print("[stems] Step 8: Running Basic Pitch inference...")
+        notes = await asyncio.to_thread(detect_notes_with_basic_pitch, wav_path)
+        print(f"[stems] Basic Pitch detected {len(notes)} notes.")
 
         track_name = os.path.splitext(original_name)[0] or "Untitled"
         gc.collect()
 
-        # Step 8: Return notes + detected stems
+        # Step 9: Return notes + detected stems
         return {
             "status":           "success",
             "track_name":       track_name,
@@ -336,7 +280,7 @@ async def process_with_stems(body: ProcessRequest):
             "format":           body.output_format,
             "duration_seconds": round(duration_seconds),
             "notes":            notes,
-            "confidence":       0.85,
+            "confidence":       0.90,
             "stems_detected":   detected_stems,
             "stem_used":        selected_stem,
         }
