@@ -206,7 +206,26 @@ def generate_musicxml(
         detected_key = score.analyze('key')
         print(f"[musicxml] Detected key: {detected_key}")
 
+        # Step 3b: Transpose to C major / A minor — zero accidentals, cleaner output
+        try:
+            if detected_key.mode == 'major':
+                semitones_down = detected_key.tonic.midi % 12  # distance from C
+                if semitones_down > 6:
+                    semitones_down = semitones_down - 12        # transpose up instead
+                score = score.transpose(-semitones_down)
+                print(f"[musicxml] Transposed from {detected_key} to C major ({-semitones_down} semitones)")
+            else:
+                # minor key — transpose to A minor
+                semitones_down = (detected_key.tonic.midi % 12) - 9  # distance from A
+                if semitones_down > 6:
+                    semitones_down = semitones_down - 12
+                score = score.transpose(-semitones_down)
+                print(f"[musicxml] Transposed from {detected_key} to A minor ({-semitones_down} semitones)")
+        except Exception as e:
+            print(f"[musicxml] Transpose failed (non-fatal): {e}")
+
         # Step 4: Build the reconstructed score with proper notation headers
+        # Key signature is C major (0 sharps/flats) — accidentals eliminated by transpose above
         ts = meter.TimeSignature('4/4')
         mm = tempo.MetronomeMark(number=bpm)
 
@@ -234,7 +253,7 @@ def generate_musicxml(
             new_part = stream.Part()
             new_part.insert(0, inst_class())
             new_part.insert(0, clef.TrebleClef())
-            new_part.insert(0, key.KeySignature(detected_key.sharps))
+            new_part.insert(0, key.KeySignature(0))  # C major — no sharps or flats
             new_part.insert(0, ts)
             if part_idx == 0:
                 new_part.insert(0, mm)
@@ -261,25 +280,7 @@ def generate_musicxml(
             else:                 # whole
                 n.duration.quarterLength = 4.0
 
-        # Step 6: Force correct key signature and recalculate accidental display
-        for part in new_score.parts:
-            # Remove any existing key signatures written by the earlier part-build loop
-            for ks in part.recurse().getElementsByClass('KeySignature'):
-                part.remove(ks, recurse=True)
-            # Re-insert the detected key at the very start of each part
-            part.insert(0, key.KeySignature(detected_key.sharps))
-
-        # If measures already exist (e.g. from music21 intermediate state),
-        # force music21 to recalculate which accidentals the key sig covers.
-        for part in new_score.parts:
-            for measure in part.getElementsByClass('Measure'):
-                measure.makeAccidentals(
-                    inPlace=True,
-                    overrideStatus=True,
-                    cautionaryNotImmediateRepeat=False,
-                )
-
-        # Step 7: Apply full notation (beams, stems, rests, ties)
+        # Step 6: Apply full notation (beams, stems, rests, ties)
         new_score.makeNotation(inPlace=True)
         durations_after = [n.duration.quarterLength for n in new_score.recurse().notes[:10]]
         print(f"[musicxml] Quantized durations (first 10): {durations_after}")
