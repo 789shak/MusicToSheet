@@ -330,10 +330,13 @@ export default function UploadScreen() {
 
       const { data: { session } } = await supabase.auth.getSession();
       const uid = session?.user?.id;
-      if (!uid) throw new Error('Not signed in');
 
       const ext = file.name.split('.').pop() ?? 'audio';
-      const storagePath = `${uid}/${Date.now()}_${file.name}`;
+      // Authenticated users get their own namespaced folder; guests use a shared
+      // guest prefix so bucket policies can apply different retention rules.
+      const storagePath = uid
+        ? `${uid}/${Date.now()}_${file.name}`
+        : `guest/${Date.now()}_${file.name}`;
 
       // ── Fake fast progress: 10 → 30 → 99 ──
       progressAnim.setValue(10);
@@ -404,8 +407,12 @@ export default function UploadScreen() {
   async function handleConvert() {
     if (!canConvert) return;
 
-    // Free-tier users must have an unused per-track purchase or a subscription.
-    if (tier === 'free') {
+    // Free and guest tiers get watermarked results at no charge — proceed directly.
+    // The watermark is applied in ResultsScreen based on the subscription tier.
+    // Pay-gate is only relevant when a paid per-track purchase is needed (i.e. the
+    // user is on the free tier but explicitly wants a clean (unwatermarked) result
+    // — that flow is surfaced in ResultsScreen via the download button).
+    if (tier !== 'free' && tier !== 'freeGuest') {
       const hashInput = link.trim() || `${file?.name}_${file?.size ?? 0}`;
       const hash = computeTrackHash(hashInput);
 
@@ -422,13 +429,11 @@ export default function UploadScreen() {
           .limit(1);
 
         if (!existing || existing.length === 0) {
-          // No unused credit — show the pay gate modal
           setPayGateHash(hash);
           setShowPayGate(true);
           return;
         }
 
-        // Consume the unused credit before proceeding
         await supabase
           .from('track_purchases')
           .update({ used: true })
@@ -441,7 +446,7 @@ export default function UploadScreen() {
     await performConvert();
   }
 
-  // Called when the user taps "Buy this track ($0.99)" in the pay-gate modal.
+  // Called when the user taps "Buy this track ($1.99)" in the pay-gate modal.
   async function handleBuyTrack() {
     setPurchasing(true);
     try {
@@ -706,7 +711,7 @@ export default function UploadScreen() {
                 : (
                   <>
                     <Text style={gate.btnPrimaryText}>Buy this track</Text>
-                    <Text style={gate.btnPrimaryPrice}>$0.99</Text>
+                    <Text style={gate.btnPrimaryPrice}>$1.99</Text>
                   </>
                 )
               }

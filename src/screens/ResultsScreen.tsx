@@ -119,7 +119,7 @@ export default function ResultsScreen() {
 
   const { tier, canTranspose, canBPM, canEdit } = useSubscription();
   // Tiers that can download clean PDFs: advancedPro, virtuosos, payAsYouGo
-  const canDownloadPdf = tier !== 'free';
+  const canDownloadPdf = tier !== 'free' && tier !== 'freeGuest';
   // Tiers that get a watermark-free share PDF (same set)
   const isPro = canDownloadPdf;
 

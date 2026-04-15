@@ -12,6 +12,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { getOfferings, purchasePackage, restorePurchases } from '../lib/revenuecat';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type BillingCycle = 'monthly' | 'annual';
 
@@ -36,7 +37,7 @@ function BillingToggle({
       <Pressable onPress={() => onChange('annual')}>
         <Text style={[toggle.label, cycle === 'annual' && toggle.labelActive]}>
           Annual{' '}
-          <Text style={[toggle.saveBadge, cycle === 'annual' && toggle.saveBadgeActive]}>Save up to 40%</Text>
+          <Text style={[toggle.saveBadge, cycle === 'annual' && toggle.saveBadgeActive]}>Save 50%</Text>
         </Text>
       </Pressable>
     </View>
@@ -118,7 +119,8 @@ const feat = StyleSheet.create({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function SubscriptionScreen() {
   const router = useRouter();
-  const [cycle, setCycle] = useState<BillingCycle>('monthly');
+  const insets = useSafeAreaInsets();
+  const [cycle, setCycle] = useState<BillingCycle>('annual');
   const [offerings, setOfferings] = useState<any>(null);
   const [purchasing, setPurchasing] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
@@ -170,7 +172,7 @@ export default function SubscriptionScreen() {
   return (
     <ScrollView
       style={styles.root}
-      contentContainerStyle={styles.scroll}
+      contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 16 }]}
       showsVerticalScrollIndicator={false}
     >
       <Text style={styles.header}>Choose Your Plan</Text>
@@ -178,25 +180,7 @@ export default function SubscriptionScreen() {
 
       <BillingToggle cycle={cycle} onChange={setCycle} />
 
-      {/* ── Card 1: Pay As You Go ── */}
-      <View style={[styles.card, styles.cardGray]}>
-        <Text style={styles.planName}>Pay As You Go</Text>
-        <Text style={styles.price}>$0.99 <Text style={styles.priceSub}>/ track</Text></Text>
-        <View style={styles.divider} />
-        <Feature text="Up to 300 seconds output" />
-        <Feature text="3 attempts per track" />
-        <Feature text="Download with watermark" />
-        <Feature text="No subscription needed" />
-        <TouchableOpacity
-          style={styles.btnGray}
-          onPress={() => console.log('Pay-per-track purchase initiated')}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.btnGrayText}>Buy Per Track</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* ── Card 2: Free Forever ── */}
+      {/* ── Card 1: Free Forever ── */}
       <View style={[styles.card, styles.cardDark]}>
         <View style={styles.badgeRow}>
           <Text style={styles.planName}>Free Forever</Text>
@@ -204,14 +188,33 @@ export default function SubscriptionScreen() {
             <Text style={styles.badgeCurrentText}>Current Plan</Text>
           </View>
         </View>
-        <Text style={styles.price}>Free</Text>
+        <Text style={styles.price}>$0 <Text style={styles.priceSub}>/ forever</Text></Text>
         <View style={styles.divider} />
-        <Feature text="60 sec max output" />
-        <Feature text="5 sheets per month" />
+        <Feature text="No sign-up: up to 60 sec audio, watermarked" />
+        <Feature text="Sign up free: up to 180 sec audio, watermarked" />
+        <Feature text="5 sheets per month (signed in)" />
         <Feature text="No recording" muted />
-        <Feature text="No download" muted />
-        <Feature text="No transpose or BPM control" muted />
-        <Feature text="No note editing" muted />
+        <Feature text="No clean download" muted />
+        <Feature text="No transpose, BPM, or note editing" muted />
+      </View>
+
+      {/* ── Card 2: Pay As You Go ── */}
+      <View style={[styles.card, styles.cardGray]}>
+        <Text style={styles.planName}>Pay As You Go</Text>
+        <Text style={styles.price}>$1.99 <Text style={styles.priceSub}>/ track</Text></Text>
+        <View style={styles.divider} />
+        <Feature text="Up to 300 seconds output" />
+        <Feature text="3 attempts per track" />
+        <Feature text="Download PDF/JPG (clean)" />
+        <Feature text="Transpose, BPM & note editing" />
+        <Feature text="No subscription needed" />
+        <TouchableOpacity
+          style={styles.btnGray}
+          onPress={() => console.log('Pay-per-track purchase initiated')}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.btnGrayText}>Buy Per Track — $1.99</Text>
+        </TouchableOpacity>
       </View>
 
       {/* ── Card 3: Advanced Pro ── */}
@@ -224,17 +227,21 @@ export default function SubscriptionScreen() {
             </View>
           </View>
 
-          <Text style={styles.price}>
-            {cycle === 'monthly' ? '$9.99' : '$5.99'}
-            <Text style={styles.priceSub}> /mo</Text>
-          </Text>
-          {cycle === 'annual' && (
-            <View style={styles.annualInfoRow}>
-              <Text style={styles.billedNote}>billed as $71.88/year</Text>
-              <View style={styles.saveBadgeGreen}>
-                <Text style={styles.saveBadgeGreenText}>Save 40%</Text>
+          {cycle === 'annual' ? (
+            <>
+              <View style={styles.annualPriceRow}>
+                <Text style={styles.price}>$7.49<Text style={styles.priceSub}> /mo</Text></Text>
+                <Text style={styles.priceStrike}>$14.99/mo</Text>
               </View>
-            </View>
+              <View style={styles.annualInfoRow}>
+                <Text style={styles.billedNote}>billed $89.88/year</Text>
+                <View style={styles.saveBadgeGreen}>
+                  <Text style={styles.saveBadgeGreenText}>Save 50%</Text>
+                </View>
+              </View>
+            </>
+          ) : (
+            <Text style={styles.price}>$14.99<Text style={styles.priceSub}> /mo</Text></Text>
           )}
 
           <View style={styles.divider} />
@@ -253,7 +260,9 @@ export default function SubscriptionScreen() {
           >
             {purchasing === 'pro_monthly' || purchasing === 'pro_annual'
               ? <ActivityIndicator size="small" color="#FFFFFF" />
-              : <Text style={styles.btnTurquoiseText}>Subscribe</Text>
+              : <Text style={styles.btnTurquoiseText}>
+                  {cycle === 'annual' ? 'Subscribe · Best Value' : 'Subscribe'}
+                </Text>
             }
           </TouchableOpacity>
         </View>
@@ -264,17 +273,21 @@ export default function SubscriptionScreen() {
         <View style={[styles.card, styles.cardGoldInner]}>
           <Text style={styles.planNameGold}>Virtuosos</Text>
 
-          <Text style={styles.priceGold}>
-            {cycle === 'monthly' ? '$15.99' : '$9.99'}
-            <Text style={styles.priceSubGold}> /mo</Text>
-          </Text>
-          {cycle === 'annual' && (
-            <View style={styles.annualInfoRow}>
-              <Text style={styles.billedNote}>billed as $119.88/year</Text>
-              <View style={styles.saveBadgeGreen}>
-                <Text style={styles.saveBadgeGreenText}>Save 40%</Text>
+          {cycle === 'annual' ? (
+            <>
+              <View style={styles.annualPriceRow}>
+                <Text style={styles.priceGold}>$9.99<Text style={styles.priceSubGold}> /mo</Text></Text>
+                <Text style={styles.priceStrikeGold}>$19.99/mo</Text>
               </View>
-            </View>
+              <View style={styles.annualInfoRow}>
+                <Text style={styles.billedNote}>billed $119.88/year</Text>
+                <View style={styles.saveBadgeGreen}>
+                  <Text style={styles.saveBadgeGreenText}>Save 50%</Text>
+                </View>
+              </View>
+            </>
+          ) : (
+            <Text style={styles.priceGold}>$19.99<Text style={styles.priceSubGold}> /mo</Text></Text>
           )}
 
           <View style={styles.dividerGold} />
@@ -293,7 +306,9 @@ export default function SubscriptionScreen() {
           >
             {purchasing === 'virtuosos_monthly' || purchasing === 'virtuosos_annual'
               ? <ActivityIndicator size="small" color="#111118" />
-              : <Text style={styles.btnGoldText}>Subscribe</Text>
+              : <Text style={styles.btnGoldText}>
+                  {cycle === 'annual' ? 'Subscribe · Best Value' : 'Subscribe'}
+                </Text>
             }
           </TouchableOpacity>
         </View>
@@ -444,6 +459,24 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '400',
     color: '#9CA3AF',
+  },
+  annualPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 10,
+    marginBottom: 2,
+  },
+  priceStrike: {
+    color: '#6B7280',
+    fontSize: 14,
+    fontWeight: '400',
+    textDecorationLine: 'line-through',
+  },
+  priceStrikeGold: {
+    color: '#92400E',
+    fontSize: 14,
+    fontWeight: '400',
+    textDecorationLine: 'line-through',
   },
   annualInfoRow: {
     flexDirection: 'row',
