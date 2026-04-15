@@ -244,33 +244,45 @@ def generate_musicxml(
 
             new_score.insert(0, new_part)
 
-        # Step 5: Quantize to rhythmic grid for note variety
-        # Divisors: 4 = sixteenth, 3 = triplet eighth, 2 = eighth, 1 = quarter
-        new_score.quantize(
-            quarterLengthDivisors=[4, 3, 2, 1],
-            inPlace=True,
-        )
+        # Step 5: Snap note durations to standard rhythmic values
+        raw_durations = [n.duration.quarterLength for n in new_score.recurse().notes[:10]]
+        print(f"[musicxml] Raw note durations (first 10): {raw_durations}")
 
-        # Step 6: Strip per-note accidentals already covered by the key signature
         for n in new_score.recurse().notes:
-            if hasattr(n, 'pitch'):
-                if n.pitch.accidental:
-                    step  = n.pitch.step
-                    alter = n.pitch.accidental.alter
-                    for kp in detected_key.alteredPitches:
-                        if kp.step == step and kp.accidental.alter == alter:
-                            n.pitch.accidental.displayStatus = False
-                            break
-            elif hasattr(n, 'pitches'):  # chord
-                for p in n.pitches:
-                    if p.accidental:
-                        for kp in detected_key.alteredPitches:
-                            if kp.step == p.step and kp.accidental.alter == p.accidental.alter:
-                                p.accidental.displayStatus = False
-                                break
+            ql = n.duration.quarterLength
+            if ql < 0.375:        # less than dotted sixteenth → sixteenth
+                n.duration.quarterLength = 0.25
+            elif ql < 0.625:      # less than dotted eighth → eighth
+                n.duration.quarterLength = 0.5
+            elif ql < 1.25:       # less than dotted quarter → quarter
+                n.duration.quarterLength = 1.0
+            elif ql < 2.5:        # less than dotted half → half
+                n.duration.quarterLength = 2.0
+            else:                 # whole
+                n.duration.quarterLength = 4.0
+
+        # Step 6: Force correct key signature and recalculate accidental display
+        for part in new_score.parts:
+            # Remove any existing key signatures written by the earlier part-build loop
+            for ks in part.recurse().getElementsByClass('KeySignature'):
+                part.remove(ks, recurse=True)
+            # Re-insert the detected key at the very start of each part
+            part.insert(0, key.KeySignature(detected_key.sharps))
+
+        # If measures already exist (e.g. from music21 intermediate state),
+        # force music21 to recalculate which accidentals the key sig covers.
+        for part in new_score.parts:
+            for measure in part.getElementsByClass('Measure'):
+                measure.makeAccidentals(
+                    inPlace=True,
+                    overrideStatus=True,
+                    cautionaryNotImmediateRepeat=False,
+                )
 
         # Step 7: Apply full notation (beams, stems, rests, ties)
         new_score.makeNotation(inPlace=True)
+        durations_after = [n.duration.quarterLength for n in new_score.recurse().notes[:10]]
+        print(f"[musicxml] Quantized durations (first 10): {durations_after}")
 
         # Step 8: Export
         new_score.write('musicxml', fp=musicxml_path)
