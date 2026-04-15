@@ -800,14 +800,91 @@ export function buildScreenHtml(notes, meta) {
   const playbackBlock = `<script>
 window.__NOTES = ${notesJson};
 window.__BPM   = ${bpm};
-var _pbCtx=null,_pbTimer=null,_pbSched=[],_pbTotal=0,_pbStart=0;
+var _pbCtx=null,_pbTimer=null,_pbTotal=0,_pbStart=0;
 var _NS={C:0,'C#':1,Db:1,D:2,'D#':3,Eb:3,E:4,F:5,'F#':6,Gb:6,G:7,'G#':8,Ab:8,A:9,'A#':10,Bb:10,B:11};
-function _freq(p){var m=String(p).match(/^([A-G][#b]?)([0-9])$/);if(!m)return 0;var s=_NS[m[1]];if(s===undefined)return 0;return 440*Math.pow(2,((parseInt(m[2])+1)*12+s-69)/12);}
-function _tone(ctx,freq,t0,dur){if(freq<=0)return;var osc=ctx.createOscillator(),g=ctx.createGain();osc.connect(g);g.connect(ctx.destination);osc.type='sine';osc.frequency.value=freq;var att=Math.min(0.015,dur*0.1),rel=Math.min(0.06,dur*0.25);g.gain.setValueAtTime(0,t0);g.gain.linearRampToValueAtTime(0.3,t0+att);g.gain.setValueAtTime(0.3,t0+dur-rel);g.gain.linearRampToValueAtTime(0,t0+dur);osc.start(t0);osc.stop(t0+dur+0.01);}
+
+// Convert pitch name (e.g. "C4", "D#5") to frequency in Hz.
+// Formula: freq = 440 * 2^((MIDI-69)/12), where MIDI = (octave+1)*12 + semitone.
+function _freq(p){
+  var m=String(p).match(/^([A-G][#b]?)(-?[0-9]+)$/);
+  if(!m)return 0;
+  var s=_NS[m[1]];
+  if(s===undefined)return 0;
+  return 440*Math.pow(2,((parseInt(m[2])+1)*12+s-69)/12);
+}
+
+// Play a single note as a sine-wave oscillator with a short ADSR envelope.
+function _tone(ctx,freq,t0,dur){
+  if(freq<=0||dur<=0)return;
+  var osc=ctx.createOscillator(),g=ctx.createGain();
+  osc.connect(g); g.connect(ctx.destination);
+  osc.type='sine'; osc.frequency.value=freq;
+  var att=Math.min(0.015,dur*0.1),rel=Math.min(0.06,dur*0.25);
+  g.gain.setValueAtTime(0,t0);
+  g.gain.linearRampToValueAtTime(0.3,t0+att);
+  g.gain.setValueAtTime(0.3,t0+dur-rel);
+  g.gain.linearRampToValueAtTime(0,t0+dur);
+  osc.start(t0); osc.stop(t0+dur+0.01);
+}
+
 function _post(o){try{window.ReactNativeWebView.postMessage(JSON.stringify(o));}catch(e){}}
-function _tick(){if(!_pbCtx||_pbCtx.state!=='running')return;var ct=_pbCtx.currentTime,el=ct-_pbStart;_post({type:'progress',currentTime:Math.min(el,_pbTotal),totalTime:_pbTotal});if(el<_pbTotal+0.3){_pbTimer=setTimeout(_tick,80);}else{_pbTimer=null;_post({type:'ended'});}}
-function _stopPb(){if(_pbTimer){clearTimeout(_pbTimer);_pbTimer=null;}if(_pbCtx){try{_pbCtx.close();}catch(e){}_pbCtx=null;}_pbSched=[];}
-function handlePlaybackCommand(cmd){if(cmd.type==='play'){_stopPb();var ns=window.__NOTES||[],bpm=window.__BPM||120;_pbCtx=new(window.AudioContext||window.webkitAudioContext)();_pbStart=_pbCtx.currentTime+0.05;var t=_pbStart;for(var i=0;i<ns.length;i++){var n=ns[i],dur=Math.max(0.05,(n.duration||0.5)*(120/bpm));_tone(_pbCtx,_freq(n.pitch),t,dur*0.88);_pbSched.push({idx:i,t0:t,t1:t+dur});t+=dur;}_pbTotal=t-_pbStart;_post({type:'totalTime',totalTime:_pbTotal});_pbTimer=setTimeout(_tick,80);}else if(cmd.type==='pause'){if(_pbCtx&&_pbCtx.state==='running'){_pbCtx.suspend();if(_pbTimer){clearTimeout(_pbTimer);_pbTimer=null;}_post({type:'paused'});}}else if(cmd.type==='resume'){if(_pbCtx&&_pbCtx.state==='suspended'){_pbCtx.resume();_tick();_post({type:'resumed'});}}else if(cmd.type==='stop'){_stopPb();_post({type:'stopped'});}}
+
+function _tick(){
+  if(!_pbCtx||_pbCtx.state!=='running')return;
+  var el=_pbCtx.currentTime-_pbStart;
+  _post({type:'progress',currentTime:Math.min(el,_pbTotal),totalTime:_pbTotal});
+  if(el<_pbTotal+0.3){_pbTimer=setTimeout(_tick,80);}
+  else{_pbTimer=null;_post({type:'ended'});}
+}
+
+function _stopPb(){
+  if(_pbTimer){clearTimeout(_pbTimer);_pbTimer=null;}
+  if(_pbCtx){try{_pbCtx.close();}catch(e){}_pbCtx=null;}
+}
+
+function _schedulePb(){
+  // Use actual note start times (polyphonic) scaled by BPM.
+  // n.start is in seconds at tempo=120; bpmScale adjusts playback speed.
+  var ns=window.__NOTES||[], bpm=window.__BPM||120, bpmScale=120/bpm;
+  var t0=_pbCtx.currentTime+0.1;
+  var maxEnd=t0;
+  for(var i=0;i<ns.length;i++){
+    var n=ns[i];
+    var noteStart=t0+(n.start||0)*bpmScale;
+    var dur=Math.max(0.05,(n.duration||0.25)*bpmScale);
+    _tone(_pbCtx,_freq(n.pitch),noteStart,dur*0.88);
+    var noteEnd=noteStart+dur;
+    if(noteEnd>maxEnd) maxEnd=noteEnd;
+  }
+  _pbStart=t0;
+  _pbTotal=maxEnd-t0;
+  _post({type:'totalTime',totalTime:_pbTotal});
+  _pbTimer=setTimeout(_tick,80);
+}
+
+function handlePlaybackCommand(cmd){
+  if(cmd.type==='play'){
+    _stopPb();
+    _pbCtx=new(window.AudioContext||window.webkitAudioContext)();
+    // AudioContext can start suspended on mobile (autoplay policy).
+    // resume() ensures it is running before we schedule any oscillators.
+    _pbCtx.resume().then(function(){ _schedulePb(); });
+  } else if(cmd.type==='pause'){
+    if(_pbCtx&&_pbCtx.state==='running'){
+      _pbCtx.suspend();
+      if(_pbTimer){clearTimeout(_pbTimer);_pbTimer=null;}
+      _post({type:'paused'});
+    }
+  } else if(cmd.type==='resume'){
+    if(_pbCtx&&_pbCtx.state==='suspended'){
+      _pbCtx.resume().then(function(){ _tick(); });
+      _post({type:'resumed'});
+    }
+  } else if(cmd.type==='stop'){
+    _stopPb();
+    _post({type:'stopped'});
+  }
+}
 </script>`;
 
   html = html.replace('</body>', playbackBlock + '\n</body>');

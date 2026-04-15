@@ -75,11 +75,14 @@ def detect_notes_with_basic_pitch(wav_path: str) -> tuple:
     """
     Run Spotify Basic Pitch on a WAV file.
     Returns (notes, midi_data) where:
-      notes     – list of note dicts: pitch, start, duration, velocity, confidence
-      midi_data – PrettyMIDI object (used downstream for MusicXML generation)
+      notes     – list of note dicts with CLAMPED pitches (C4–C6, MIDI 60–84)
+      midi_data – fresh PrettyMIDI object built from the same clamped events
+
+    Clamping happens here so both the frontend JSON and the MusicXML MIDI file
+    are guaranteed to share identical, in-range pitches.
     """
     print("[basic_pitch] Running Basic Pitch inference...")
-    model_output, midi_data, note_events = predict(wav_path)
+    model_output, _raw_midi, note_events = predict(wav_path)
     print(f"[basic_pitch] Inference complete. {len(note_events)} raw note events.")
 
     if note_events and len(note_events) > 0:
@@ -87,54 +90,83 @@ def detect_notes_with_basic_pitch(wav_path: str) -> tuple:
         print(f"[basic_pitch] First note_event: {note_events[0]}")
 
     def _scalar(v):
-        """Extract a plain float/int from a value that may be a list or array."""
+        """Extract a plain Python scalar from a numpy array, list, or bare value."""
         if isinstance(v, (list, tuple)):
             return v[0]
         if hasattr(v, '__len__') and not isinstance(v, str):
             return float(v.flat[0]) if hasattr(v, 'flat') else v[0]
         return v
 
-    notes = []
+    # ── Step 1: Normalize all event formats → plain Python tuples ────────────
+    raw = []
     for event in note_events:
         try:
             if isinstance(event, (list, tuple)):
                 if len(event) >= 5:
-                    start, end, pitch_midi, velocity, confidence = event[0], event[1], event[2], event[3], event[4]
+                    s, e, p, v, c = event[0], event[1], event[2], event[3], event[4]
                 elif len(event) >= 4:
-                    start, end, pitch_midi, velocity = event[0], event[1], event[2], event[3]
-                    confidence = 0.8
+                    s, e, p, v = event[0], event[1], event[2], event[3]
+                    c = 0.8
                 else:
                     continue
             elif hasattr(event, 'start'):
-                start      = float(event.start)
-                end        = float(event.end)
-                pitch_midi = int(event.pitch)
-                velocity   = float(event.velocity)   if hasattr(event, 'velocity')   else 0.8
-                confidence = float(event.confidence) if hasattr(event, 'confidence') else 0.8
+                s = event.start
+                e = event.end
+                p = event.pitch
+                v = event.velocity   if hasattr(event, 'velocity')   else 0.8
+                c = event.confidence if hasattr(event, 'confidence') else 0.8
             else:
                 print(f"[basic_pitch] Unknown event format: {event}")
                 continue
 
-            start      = float(_scalar(start))
-            end        = float(_scalar(end))
-            pitch_midi = int(_scalar(pitch_midi))
-            velocity   = float(_scalar(velocity))
-            confidence = float(_scalar(confidence))
-
-            note_name = pretty_midi.note_number_to_name(pitch_midi)
-            notes.append({
-                "pitch":      note_name,
-                "start":      round(start, 3),
-                "duration":   round(end - start, 3),
-                "velocity":   round(velocity, 2),
-                "confidence": round(confidence, 2),
-            })
-        except Exception as e:
-            print(f"[basic_pitch] Skipping note event due to error: {e}")
+            raw.append((
+                float(_scalar(s)),
+                float(_scalar(e)),
+                int(_scalar(p)),
+                float(_scalar(v)),
+                float(_scalar(c)),
+            ))
+        except Exception as ex:
+            print(f"[basic_pitch] Skipping note event due to error: {ex}")
             continue
 
-    print(f"[basic_pitch] {len(notes)} notes after processing.")
-    return notes, midi_data
+    # ── Step 2: Clamp pitches to treble clef range C4–C6 (MIDI 60–84) ───────
+    adjusted = []
+    for start, end, pitch, velocity, confidence in raw:
+        while pitch < 60:
+            pitch += 12
+        while pitch > 84:
+            pitch -= 12
+        adjusted.append((start, end, pitch, velocity, confidence))
+    print(f"[basic_pitch] {len(adjusted)} notes after normalization and clamping.")
+
+    # ── Step 3: Build the notes JSON list from clamped events ─────────────────
+    notes = []
+    for start, end, pitch, velocity, confidence in adjusted:
+        notes.append({
+            "pitch":      pretty_midi.note_number_to_name(pitch),
+            "start":      round(start, 3),
+            "duration":   round(end - start, 3),
+            "velocity":   round(velocity, 2),
+            "confidence": round(confidence, 2),
+        })
+
+    # ── Step 4: Build a fresh PrettyMIDI from the clamped events ─────────────
+    new_midi = pretty_midi.PrettyMIDI(initial_tempo=120)
+    piano    = pretty_midi.Instrument(program=0)  # Acoustic Grand Piano
+    for start, end, pitch, velocity, confidence in adjusted:
+        # velocity from Basic Pitch is 0–1; PrettyMIDI expects 0–127
+        vel_int = max(1, min(127, int(velocity * 127) if velocity <= 1.0 else int(velocity)))
+        piano.notes.append(pretty_midi.Note(
+            velocity=vel_int,
+            pitch=int(pitch),
+            start=float(start),
+            end=float(end),
+        ))
+    new_midi.instruments.append(piano)
+    print(f"[basic_pitch] PrettyMIDI rebuilt with {len(piano.notes)} clamped notes.")
+
+    return notes, new_midi
 
 
 # ─── MusicXML generation ──────────────────────────────────────────────────────
@@ -157,28 +189,20 @@ def generate_musicxml(
     musicxml_path = f"/tmp/{uuid.uuid4()}_output.musicxml"
     try:
         print("[musicxml] Generating professional MusicXML...")
+        # Pitches are already clamped to C4–C6 (MIDI 60–84) by detect_notes_with_basic_pitch.
 
-        # Step 1: Clamp pitches to treble clef staff range (G3–A5, MIDI 55–81)
-        for inst in midi_data.instruments:
-            for n in inst.notes:
-                while n.pitch < 55:
-                    n.pitch += 12
-                while n.pitch > 81:
-                    n.pitch -= 12
-        print("[musicxml] Note pitches clamped to MIDI 55–81 (G3–A5)")
-
-        # Step 2: Write clamped MIDI to temp file
+        # Step 1: Write MIDI to temp file
         midi_data.write(midi_path)
         print("[musicxml] MIDI written, parsing with music21...")
 
-        # Step 3: Parse with music21
+        # Step 2: Parse with music21
         score = music21.converter.parse(midi_path)
 
-        # Step 4: Detect key signature
+        # Step 3: Detect key signature
         detected_key = score.analyze('key')
         print(f"[musicxml] Detected key: {detected_key}")
 
-        # Step 5: Build the reconstructed score with proper notation headers
+        # Step 4: Build the reconstructed score with proper notation headers
         ts = meter.TimeSignature('4/4')
         mm = tempo.MetronomeMark(number=bpm)
 
@@ -216,14 +240,14 @@ def generate_musicxml(
 
             new_score.insert(0, new_part)
 
-        # Step 6: Quantize to rhythmic grid for note variety
+        # Step 5: Quantize to rhythmic grid for note variety
         # Divisors: 4 = sixteenth, 3 = triplet eighth, 2 = eighth, 1 = quarter
         new_score.quantize(
             quarterLengthDivisors=[4, 3, 2, 1],
             inPlace=True,
         )
 
-        # Step 7: Strip per-note accidentals already covered by the key signature
+        # Step 6: Strip per-note accidentals already covered by the key signature
         for n in new_score.recurse().notes:
             if hasattr(n, 'pitch'):
                 if n.pitch.accidental:
@@ -241,10 +265,10 @@ def generate_musicxml(
                                 p.accidental.displayStatus = False
                                 break
 
-        # Step 8: Apply full notation (beams, stems, rests, ties)
+        # Step 7: Apply full notation (beams, stems, rests, ties)
         new_score.makeNotation(inPlace=True)
 
-        # Step 9: Export
+        # Step 8: Export
         new_score.write('musicxml', fp=musicxml_path)
         with open(musicxml_path, 'r', encoding='utf-8') as f:
             content = f.read()
