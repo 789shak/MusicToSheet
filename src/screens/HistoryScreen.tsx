@@ -15,6 +15,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { BottomTabBar } from '../components/BottomTabBar';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../hooks/useAuth';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type HistoryItem = {
@@ -194,6 +195,7 @@ const card = StyleSheet.create({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function HistoryScreen() {
   const router = useRouter();
+  const { isGuest } = useAuth();
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [activeTab, setActiveTab] = useState<ActiveTab>('history');
   const [search, setSearch] = useState('');
@@ -310,6 +312,30 @@ export default function HistoryScreen() {
     return (
       <View style={[styles.root, { alignItems: 'center', justifyContent: 'center' }]}>
         <ActivityIndicator color="#0EA5E9" size="large" />
+      </View>
+    );
+  }
+
+  if (isGuest) {
+    return (
+      <View style={styles.root}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>My Music</Text>
+        </View>
+        <View style={guestWall.wrap}>
+          <Ionicons name="person-circle-outline" size={64} color="#2D2D3E" style={{ marginBottom: 16 }} />
+          <Text style={guestWall.title}>Sign in to see your history</Text>
+          <Text style={guestWall.sub}>
+            Create a free account to save conversions, favorites, and access your library across devices.
+          </Text>
+          <TouchableOpacity style={guestWall.btn} onPress={() => router.replace('/')} activeOpacity={0.85}>
+            <Text style={guestWall.btnText}>Sign Up Free</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={guestWall.secondaryBtn} onPress={() => router.replace('/')} activeOpacity={0.7}>
+            <Text style={guestWall.secondaryBtnText}>Log In</Text>
+          </TouchableOpacity>
+        </View>
+        <BottomTabBar active="history" />
       </View>
     );
   }
@@ -457,5 +483,52 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: 20,
     paddingBottom: 16,
+  },
+});
+
+const guestWall = StyleSheet.create({
+  wrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 36,
+    paddingBottom: 80,
+  },
+  title: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  sub: {
+    color: '#6B7280',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 32,
+  },
+  btn: {
+    backgroundColor: '#0EA5E9',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 40,
+    alignItems: 'center',
+    marginBottom: 12,
+    width: '100%',
+  },
+  btnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  secondaryBtn: {
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  secondaryBtnText: {
+    color: '#6B7280',
+    fontSize: 14,
+    textDecorationLine: 'underline',
   },
 });

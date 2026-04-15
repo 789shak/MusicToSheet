@@ -11,6 +11,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isGuest, setIsGuest] = useState(false);
 
   useEffect(() => {
     // Load existing session on mount
@@ -25,10 +26,16 @@ export function AuthProvider({ children }) {
       console.log("onAuthStateChange fired:", event, session?.user?.email);
       setSession(session);
       setUser(session?.user ?? null);
+      // Real sign-in clears guest mode automatically
+      if (session) setIsGuest(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
+  function enterGuestMode() {
+    setIsGuest(true);
+  }
 
   async function signUp(email, password) {
     const { data, error } = await supabase.auth.signUp({ email, password });
@@ -101,6 +108,8 @@ export function AuthProvider({ children }) {
         user,
         session,
         loading,
+        isGuest,
+        enterGuestMode,
         signUp,
         signIn,
         signOut,

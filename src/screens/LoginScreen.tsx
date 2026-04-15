@@ -42,7 +42,7 @@ function SocialButton({ icon, label, buttonStyle, textStyle, onPress, disabled }
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { signUp, signIn, signInWithGoogle, signInWithApple, signInWithMicrosoft } = useAuth();
+  const { signUp, signIn, signInWithGoogle, signInWithApple, signInWithMicrosoft, enterGuestMode } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -210,6 +210,20 @@ export default function LoginScreen() {
           onPress={() => handleSocialLogin(signInWithMicrosoft, 'Microsoft')}
           disabled={loading}
         />
+
+        {/* Get Started without account */}
+        <View style={styles.guestSeparator}>
+          <View style={styles.guestLine} />
+        </View>
+        <TouchableOpacity
+          style={styles.guestBtn}
+          onPress={() => { enterGuestMode(); router.replace('/upload'); }}
+          activeOpacity={0.7}
+          disabled={loading}
+        >
+          <Text style={styles.guestBtnText}>Get Started (No Signup Required)</Text>
+          <Text style={styles.guestBtnSub}>60 sec limit · watermarked results</Text>
+        </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -223,14 +237,14 @@ const styles = StyleSheet.create({
   scroll: {
     flexGrow: 1,
     paddingHorizontal: 24,
-    paddingTop: 64,
-    paddingBottom: 40,
+    paddingTop: 80,
+    paddingBottom: 20,
   },
 
   // Logo
   logoArea: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 32,
   },
   logoImage: {
     width: 96,
@@ -382,5 +396,35 @@ const styles = StyleSheet.create({
   },
   btnMicrosoftText: {
     color: '#FFFFFF',
+  },
+
+  // Guest / no-signup
+  guestSeparator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 4,
+  },
+  guestLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#1C1C27',
+  },
+  guestBtn: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  guestBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '500',
+    textDecorationLine: 'underline',
+    textDecorationColor: '#4B5563',
+    marginBottom: 4,
+  },
+  guestBtnSub: {
+    color: '#4B5563',
+    fontSize: 11,
+    letterSpacing: 0.2,
   },
 });

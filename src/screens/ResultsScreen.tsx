@@ -17,6 +17,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { supabase } from '../lib/supabase';
 import { useSubscription } from '../hooks/useSubscription';
+import { useAuth } from '../hooks/useAuth';
 import SheetMusicViewer, { buildPdfHtml, buildScreenHtml } from '../components/SheetMusicViewer';
 
 // ─── Constants ─────────────────────────────────────────────────────────────
@@ -118,6 +119,7 @@ export default function ResultsScreen() {
   const { show: showToast, message: toastMessage, opacity: toastOpacity } = useToast();
 
   const { tier, canTranspose, canBPM, canEdit } = useSubscription();
+  const { isGuest } = useAuth();
   // Tiers that can download clean PDFs: advancedPro, virtuosos, payAsYouGo
   const canDownloadPdf = tier !== 'free' && tier !== 'freeGuest';
   // Tiers that get a watermark-free share PDF (same set)
@@ -317,6 +319,10 @@ export default function ResultsScreen() {
   }
 
   async function handleSave() {
+    if (isGuest) {
+      showToast('Sign up free to save your results');
+      return;
+    }
     if (isSaved) {
       showToast('Already saved');
       return;
@@ -363,6 +369,10 @@ export default function ResultsScreen() {
   }
 
   function toggleFavorite() {
+    if (isGuest) {
+      showToast('Sign up free to favorite tracks');
+      return;
+    }
     const next = !favorited;
     setFavorited(next);
     if (next) {
@@ -570,18 +580,32 @@ export default function ResultsScreen() {
           <SheetMusicViewer ref={webviewRef} musicxml={musicxml ?? null} previewHtml={previewHtml} notes={displayNotes} bpm={bpm} onMessage={handleWebViewMessage} />
         </View>
 
-        {/* ── Upgrade Banner ── */}
-        <View style={styles.upgradeBanner}>
-          <View style={styles.upgradeLeft}>
-            <MaterialIcons name="lock-outline" size={14} color="#F59E0B" style={{ marginRight: 6 }} />
-            <Text style={styles.upgradeText} numberOfLines={1}>
-              Upgrade to Pro for full-length output and clean downloads
-            </Text>
+        {/* ── Contextual Banner ── */}
+        {tier === 'freeGuest' ? (
+          <View style={[styles.upgradeBanner, styles.guestBanner]}>
+            <View style={styles.upgradeLeft}>
+              <Ionicons name="person-add-outline" size={14} color="#0EA5E9" style={{ marginRight: 6 }} />
+              <Text style={styles.guestBannerText} numberOfLines={2}>
+                Sign up free — unlock 180s audio &amp; save your results
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => router.replace('/')}>
+              <Text style={styles.guestBannerLink}>Sign Up</Text>
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={() => router.push('/subscription')}>
-            <Text style={styles.upgradeLink}>View Plans</Text>
-          </TouchableOpacity>
-        </View>
+        ) : (
+          <View style={styles.upgradeBanner}>
+            <View style={styles.upgradeLeft}>
+              <MaterialIcons name="lock-outline" size={14} color="#F59E0B" style={{ marginRight: 6 }} />
+              <Text style={styles.upgradeText} numberOfLines={1}>
+                Upgrade to Pro for full-length output and clean downloads
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => router.push('/subscription')}>
+              <Text style={styles.upgradeLink}>View Plans</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* ── Bottom Action Bar ── */}
         <View style={styles.actionBar}>
@@ -992,6 +1016,9 @@ const styles = StyleSheet.create({
   },
   upgradeText: { color: '#9CA3AF', fontSize: 12, flex: 1 },
   upgradeLink: { color: '#F59E0B', fontSize: 12, fontWeight: '700' },
+  guestBanner: { borderTopColor: '#0EA5E920', backgroundColor: '#0EA5E908' },
+  guestBannerText: { color: '#9CA3AF', fontSize: 12, flex: 1 },
+  guestBannerLink: { color: '#0EA5E9', fontSize: 12, fontWeight: '700' },
 
   // Action bar
   actionBar: {

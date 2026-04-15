@@ -276,13 +276,29 @@ export default function ProcessingScreen() {
         await new Promise((r) => setTimeout(r, 800));
         if (cancelled) return;
 
-        // ── 4. Save conversion history ────────────────────────────────────────
-        console.log('[ProcessingScreen] API success, saving to conversion_history');
+        // ── 4. Save conversion history (authenticated users only) ────────────
+        console.log('[ProcessingScreen] API success');
 
         const trackName =
           sourceType === 'link'      ? 'Pasted Link' :
           sourceType === 'recording' ? 'Voice Recording' :
           (fileName || 'Untitled');
+
+        const resultParams = {
+          notesJson:       JSON.stringify(result.notes ?? []),
+          durationSeconds: String(result.duration_seconds ?? 30),
+          musicxml:        result.musicxml ?? '',
+        };
+
+        // Guest users: skip DB insert, navigate with notes in params only.
+        if (!uid) {
+          if (!cancelled) {
+            router.replace({ pathname: '/results', params: resultParams });
+          }
+          return;
+        }
+
+        console.log('[ProcessingScreen] saving to conversion_history');
 
         const { data: historyRow, error: dbError } = await supabase
           .from('conversion_history')
@@ -302,25 +318,22 @@ export default function ProcessingScreen() {
         if (cancelled) return;
 
         // ── 5. Log conversion + maybe run anomaly detection ───────────────────
-        if (uid) {
-          try {
-            const totalCount = await logConversion(
-              uid, trackHash, trackName, instrument ?? '', sourceType ?? 'upload'
-            );
-            // Every 5th conversion, silently run anomaly detection in the background
-            if (totalCount % 5 === 0) {
-              detectAnomalies(uid).catch(() => {});
-            }
-          } catch (logErr) {
-            // Logging failure must never block the user
-            console.log('[ProcessingScreen] logConversion error (non-fatal):', logErr);
+        try {
+          const totalCount = await logConversion(
+            uid, trackHash, trackName, instrument ?? '', sourceType ?? 'upload'
+          );
+          if (totalCount % 5 === 0) {
+            detectAnomalies(uid).catch(() => {});
           }
+        } catch (logErr) {
+          console.log('[ProcessingScreen] logConversion error (non-fatal):', logErr);
         }
 
         // ── 6. Navigate to results ────────────────────────────────────────────
         if (dbError) {
           console.log('[ProcessingScreen] conversion_history insert error:', dbError);
-          router.replace('/results');
+          // Still pass notes so the screen isn't blank
+          router.replace({ pathname: '/results', params: resultParams });
           return;
         }
 
@@ -328,12 +341,7 @@ export default function ProcessingScreen() {
 
         router.replace({
           pathname: '/results',
-          params: {
-            historyId:       historyRow.id,
-            notesJson:       JSON.stringify(result.notes ?? []),
-            durationSeconds: String(result.duration_seconds ?? 30),
-            musicxml:        result.musicxml ?? '',
-          },
+          params: { historyId: historyRow.id, ...resultParams },
         });
       } catch (e: any) {
         if (cancelled) return;

@@ -13,7 +13,7 @@ import { configureRevenueCat } from '@/src/lib/revenuecat';
 SplashScreen.preventAutoHideAsync();
 
 function AuthGate() {
-  const { session, loading } = useAuth();
+  const { session, loading, isGuest } = useAuth();
   const router = useRouter();
   const segments = useSegments();
   // Tracks whether we've made the initial routing decision on app start
@@ -27,7 +27,8 @@ function AuthGate() {
     // Segments is read as a snapshot here (not in deps) to avoid a loop.
     if (!initialRoutingDone.current) {
       initialRoutingDone.current = true;
-      const onLoginScreen = segments.length === 0 || segments[0] === 'index';
+      const segs = segments as string[];
+      const onLoginScreen = segs.length === 0 || segs[0] === 'index';
       if (session && onLoginScreen) {
         // Already logged in — skip login and go straight to subscription
         router.replace('/subscription');
@@ -38,18 +39,20 @@ function AuthGate() {
 
     // ── Case 2: Session arrives (login) or disappears (logout) ───────────
     // After initial routing is done, react to session changes.
-    const onLoginScreen = segments.length === 0 || segments[0] === 'index';
+    const segs = segments as string[];
+    const onLoginScreen = segs.length === 0 || segs[0] === 'index';
     if (session && onLoginScreen) {
       // onAuthStateChange fired and committed to context — safe to navigate now
       router.replace('/subscription');
-    } else if (!session && !onLoginScreen) {
+    } else if (!session && !isGuest && !onLoginScreen) {
+      // Only redirect to login if this is a genuine sign-out, not guest mode.
       router.replace('/');
     }
 
     // Note: post-login navigation (→ /subscription) is now handled here via
     // onAuthStateChange → context update → this effect, not in LoginScreen.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, loading]); // segments intentionally omitted — read as snapshot to prevent loop
+  }, [session, loading, isGuest]); // segments intentionally omitted — read as snapshot to prevent loop
 
   return null;
 }
