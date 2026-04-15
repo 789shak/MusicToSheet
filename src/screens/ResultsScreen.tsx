@@ -8,6 +8,7 @@ import {
   Modal,
   ScrollView,
   Pressable,
+  Alert,
 } from 'react-native';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { useState, useRef, useEffect, useMemo } from 'react';
@@ -261,12 +262,27 @@ export default function ResultsScreen() {
   async function generatePdf(notes: typeof displayNotes): Promise<string> {
     const trimmedNotes = notes.length > 200 ? notes.slice(0, 200) : notes;
     const html = buildPdfHtml(trimmedNotes, pdfMeta());
-    console.log('[ResultsScreen] PDF HTML size:', html.length, 'chars', '| notes:', trimmedNotes.length);
-    const printPromise = Print.printToFileAsync({ html });
+
+    console.log('PDF SHARE: Starting PDF generation');
+    console.log('PDF SHARE: Number of notes:', trimmedNotes.length);
+    console.log('PDF SHARE: HTML length:', html.length);
+
+    const pdfPromise = Print.printToFileAsync({ html });
     const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('timeout')), 15000)
+      setTimeout(() => reject(new Error('PDF timeout')), 10000)
     );
-    const { uri } = await Promise.race([printPromise, timeoutPromise]);
+
+    let uri: string;
+    try {
+      const result = await Promise.race([pdfPromise, timeoutPromise]);
+      uri = result.uri;
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'unknown error';
+      console.log('PDF SHARE: Failed -', msg);
+      Alert.alert('Export Failed', 'PDF generation took too long. Try again.');
+      throw e;
+    }
+
     return uri;
   }
 
@@ -276,13 +292,8 @@ export default function ResultsScreen() {
       const uri = await generatePdf(displayNotes);
       console.log('[ResultsScreen] share PDF uri:', uri);
       await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Share sheet music' });
-    } catch (err: unknown) {
-      if (err instanceof Error && err.message === 'timeout') {
-        showToast('PDF generation timed out, please try again');
-      } else {
-        console.log('[ResultsScreen] handleShare error:', err);
-        showToast('Could not generate PDF — please try again');
-      }
+    } catch {
+      // error already logged and alerted inside generatePdf
     } finally {
       setShareLoading(false);
     }
@@ -298,13 +309,8 @@ export default function ResultsScreen() {
       const uri = await generatePdf(displayNotes);
       console.log('[ResultsScreen] PDF saved to:', uri);
       await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Save or share sheet music' });
-    } catch (err: unknown) {
-      if (err instanceof Error && err.message === 'timeout') {
-        showToast('PDF generation timed out, please try again');
-      } else {
-        console.log('[ResultsScreen] PDF error:', err);
-        showToast('Could not generate PDF — please try again');
-      }
+    } catch {
+      // error already logged and alerted inside generatePdf
     } finally {
       setPdfLoading(false);
     }
