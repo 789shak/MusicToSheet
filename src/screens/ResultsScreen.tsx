@@ -258,15 +258,31 @@ export default function ResultsScreen() {
     };
   }
 
+  async function generatePdf(notes: typeof displayNotes): Promise<string> {
+    const trimmedNotes = notes.length > 200 ? notes.slice(0, 200) : notes;
+    const html = buildPdfHtml(trimmedNotes, pdfMeta());
+    console.log('[ResultsScreen] PDF HTML size:', html.length, 'chars', '| notes:', trimmedNotes.length);
+    const printPromise = Print.printToFileAsync({ html });
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), 15000)
+    );
+    const { uri } = await Promise.race([printPromise, timeoutPromise]);
+    return uri;
+  }
+
   async function handleShare() {
     setShareLoading(true);
     try {
-      const html = buildPdfHtml(displayNotes, pdfMeta());
-      const { uri } = await Print.printToFileAsync({ html });
+      const uri = await generatePdf(displayNotes);
       console.log('[ResultsScreen] share PDF uri:', uri);
       await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Share sheet music' });
-    } catch (err) {
-      console.log('[ResultsScreen] handleShare error:', err);
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message === 'timeout') {
+        showToast('PDF generation timed out, please try again');
+      } else {
+        console.log('[ResultsScreen] handleShare error:', err);
+        showToast('Could not generate PDF — please try again');
+      }
     } finally {
       setShareLoading(false);
     }
@@ -279,12 +295,16 @@ export default function ResultsScreen() {
     }
     setPdfLoading(true);
     try {
-      const html = buildPdfHtml(displayNotes, pdfMeta());
-      const { uri } = await Print.printToFileAsync({ html });
+      const uri = await generatePdf(displayNotes);
       console.log('[ResultsScreen] PDF saved to:', uri);
       await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Save or share sheet music' });
-    } catch (err) {
-      console.log('[ResultsScreen] PDF error:', err);
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message === 'timeout') {
+        showToast('PDF generation timed out, please try again');
+      } else {
+        console.log('[ResultsScreen] PDF error:', err);
+        showToast('Could not generate PDF — please try again');
+      }
     } finally {
       setPdfLoading(false);
     }
@@ -631,6 +651,16 @@ export default function ResultsScreen() {
 
         <Toast message={toastMessage} opacity={toastOpacity} />
       </View>
+
+      {/* ── PDF Generation Overlay ── */}
+      {(shareLoading || pdfLoading) && (
+        <View style={styles.pdfOverlay}>
+          <View style={styles.pdfOverlayBox}>
+            <ActivityIndicator size="large" color="#0EA5E9" />
+            <Text style={styles.pdfOverlayText}>Generating PDF…</Text>
+          </View>
+        </View>
+      )}
 
       {/* ── Note Editor Modal ── */}
       <Modal
@@ -981,6 +1011,26 @@ const styles = StyleSheet.create({
     backgroundColor: '#111118',
     borderRadius: 6,
     padding: 1,
+  },
+  pdfOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999,
+  },
+  pdfOverlayBox: {
+    backgroundColor: '#1C1C2E',
+    borderRadius: 14,
+    paddingVertical: 28,
+    paddingHorizontal: 36,
+    alignItems: 'center',
+    gap: 14,
+  },
+  pdfOverlayText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '500',
   },
 });
 
