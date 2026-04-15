@@ -16,7 +16,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { supabase } from '../lib/supabase';
 import { useSubscription } from '../hooks/useSubscription';
-import SheetMusicViewer, { buildPdfHtml, buildScreenHtml, buildOsmdPdfHtml } from '../components/SheetMusicViewer';
+import SheetMusicViewer, { buildPdfHtml, buildScreenHtml } from '../components/SheetMusicViewer';
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 const FORMATS = ['Score', 'Part', 'Lead Sheet', 'Tabs', 'Fake Book', 'Staff'];
@@ -261,9 +261,7 @@ export default function ResultsScreen() {
   async function handleShare() {
     setShareLoading(true);
     try {
-      const html = musicxml
-        ? buildOsmdPdfHtml(musicxml, pdfMeta())
-        : buildPdfHtml(displayNotes, pdfMeta());
+      const html = buildPdfHtml(displayNotes, pdfMeta());
       const { uri } = await Print.printToFileAsync({ html });
       console.log('[ResultsScreen] share PDF uri:', uri);
       await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Share sheet music' });
@@ -281,9 +279,7 @@ export default function ResultsScreen() {
     }
     setPdfLoading(true);
     try {
-      const html = musicxml
-        ? buildOsmdPdfHtml(musicxml, pdfMeta())
-        : buildPdfHtml(displayNotes, pdfMeta());
+      const html = buildPdfHtml(displayNotes, pdfMeta());
       const { uri } = await Print.printToFileAsync({ html });
       console.log('[ResultsScreen] PDF saved to:', uri);
       await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Save or share sheet music' });
