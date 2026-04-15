@@ -600,7 +600,7 @@ export function buildPdfHtml(notes, meta) {
     var CLEF_W        = 52;
     var TIME_W        = 24;
     var PER_ROW       = 8;
-    var ROWS_PER_PAGE = 6;
+    var ROWS_PER_PAGE = 7;
 
     var NX0_FIRST = CLEF_W + TIME_W + 8;
     var NX0_REST  = CLEF_W + 8;
@@ -1038,12 +1038,12 @@ const SheetMusicViewer = forwardRef(function SheetMusicViewer(
   ref
 ) {
   let html;
-  if (musicxml) {
-    html = buildOsmdScreenHtml(musicxml);        // OSMD — primary renderer
-  } else if (previewHtml) {
-    html = previewHtml;                          // SVG fallback (no musicxml available)
+  if (previewHtml) {
+    html = previewHtml;                    // SVG via buildScreenHtml — matches PDF quality
+  } else if (musicxml) {
+    html = buildOsmdScreenHtml(musicxml);  // OSMD (CDN-dependent, future option)
   } else {
-    html = buildHtml(notes, { bpm });            // custom SVG fallback
+    html = buildHtml(notes, { bpm });      // custom SVG fallback
   }
 
   return (

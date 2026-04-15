@@ -145,17 +145,17 @@ export default function ResultsScreen() {
     [notes, transposeOffset]
   );
 
-  // When musicxml is available, SheetMusicViewer uses OSMD directly — no previewHtml needed.
-  // Fall back to SVG-based preview only when the server didn't return MusicXML.
+  // Always build SVG-based preview — this is the same renderer used for PDF export,
+  // so in-app display and PDF look identical. OSMD/CDN is not used for in-app display.
   const previewHtml = useMemo(
-    () => musicxml ? null : buildScreenHtml(displayNotes, {
+    () => buildScreenHtml(displayNotes, {
       trackName:  trackRecord?.track_name ?? 'Sample Track',
       instrument: trackRecord?.instrument ?? 'Unknown',
       format:     activeFormat,
       bpm,
       watermark:  !isPro,
     }),
-    [musicxml, displayNotes, trackRecord, activeFormat, bpm, isPro]
+    [displayNotes, trackRecord, activeFormat, bpm, isPro]
   );
 
   // Persist transpose & BPM changes to Supabase (skip first render)
