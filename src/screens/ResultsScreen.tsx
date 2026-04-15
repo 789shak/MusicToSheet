@@ -16,7 +16,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { supabase } from '../lib/supabase';
 import { useSubscription } from '../hooks/useSubscription';
-import SheetMusicViewer, { buildPdfHtml, buildScreenHtml } from '../components/SheetMusicViewer';
+import SheetMusicViewer, { buildPdfHtml, buildScreenHtml, buildOsmdPdfHtml } from '../components/SheetMusicViewer';
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 const FORMATS = ['Score', 'Part', 'Lead Sheet', 'Tabs', 'Fake Book', 'Staff'];
@@ -145,17 +145,17 @@ export default function ResultsScreen() {
     [notes, transposeOffset]
   );
 
-  // Pre-built screen HTML — identical to PDF export, scaled to fit phone width.
-  // Recomputed whenever notes, transpose, BPM, format, or track metadata changes.
+  // When musicxml is available, SheetMusicViewer uses OSMD directly — no previewHtml needed.
+  // Fall back to SVG-based preview only when the server didn't return MusicXML.
   const previewHtml = useMemo(
-    () => buildScreenHtml(displayNotes, {
+    () => musicxml ? null : buildScreenHtml(displayNotes, {
       trackName:  trackRecord?.track_name ?? 'Sample Track',
       instrument: trackRecord?.instrument ?? 'Unknown',
       format:     activeFormat,
       bpm,
       watermark:  !isPro,
     }),
-    [displayNotes, trackRecord, activeFormat, bpm, isPro]
+    [musicxml, displayNotes, trackRecord, activeFormat, bpm, isPro]
   );
 
   // Persist transpose & BPM changes to Supabase (skip first render)
@@ -261,7 +261,9 @@ export default function ResultsScreen() {
   async function handleShare() {
     setShareLoading(true);
     try {
-      const html = buildPdfHtml(displayNotes, pdfMeta());
+      const html = musicxml
+        ? buildOsmdPdfHtml(musicxml, pdfMeta())
+        : buildPdfHtml(displayNotes, pdfMeta());
       const { uri } = await Print.printToFileAsync({ html });
       console.log('[ResultsScreen] share PDF uri:', uri);
       await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Share sheet music' });
@@ -279,7 +281,9 @@ export default function ResultsScreen() {
     }
     setPdfLoading(true);
     try {
-      const html = buildPdfHtml(displayNotes, pdfMeta());
+      const html = musicxml
+        ? buildOsmdPdfHtml(musicxml, pdfMeta())
+        : buildPdfHtml(displayNotes, pdfMeta());
       const { uri } = await Print.printToFileAsync({ html });
       console.log('[ResultsScreen] PDF saved to:', uri);
       await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Save or share sheet music' });
@@ -541,7 +545,7 @@ export default function ResultsScreen() {
 
         {/* ── Sheet Music Viewer ── */}
         <View style={styles.viewerContainer}>
-          <SheetMusicViewer ref={webviewRef} previewHtml={previewHtml} notes={displayNotes} bpm={bpm} onMessage={handleWebViewMessage} />
+          <SheetMusicViewer ref={webviewRef} musicxml={musicxml ?? null} previewHtml={previewHtml} notes={displayNotes} bpm={bpm} onMessage={handleWebViewMessage} />
         </View>
 
         {/* ── Upgrade Banner ── */}
