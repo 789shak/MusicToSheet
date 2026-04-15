@@ -138,75 +138,119 @@ def detect_notes_with_basic_pitch(wav_path: str) -> tuple:
 
 
 # ─── MusicXML generation ──────────────────────────────────────────────────────
-def generate_musicxml(midi_data, uid: str) -> str | None:
+def generate_musicxml(
+    midi_data,
+    track_name: str = "Untitled",
+    instrument_name: str = "Piano",
+    bpm: int = 120,
+) -> str | None:
     """
-    Convert a PrettyMIDI object → MusicXML string via music21.
+    Convert a PrettyMIDI object → professional MusicXML string via music21.
 
-    Before writing the MIDI file, all note pitches are clamped to the
-    treble clef staff range (G3–A5, MIDI 55–81) by shifting
-    out-of-range notes up or down by octaves. This keeps notes within
-    the staff with at most 1–2 ledger lines.
-
-    Returns None on failure (non-fatal; caller renders without MusicXML).
+    Applies pitch clamping, key signature, quantization, rests, and beaming.
+    Returns None on failure (non-fatal; callers render notes-only fallback).
     """
-    midi_path     = f"/tmp/{uid}_midi.mid"
-    musicxml_path = f"/tmp/{uid}_score.musicxml"
+    import music21
+    from music21 import stream, meter, tempo, key, clef, instrument, metadata
+
+    midi_path     = f"/tmp/{uuid.uuid4()}_output.mid"
+    musicxml_path = f"/tmp/{uuid.uuid4()}_output.musicxml"
     try:
-        # ── Clamp all note pitches to treble clef range (C3–C6) ──────────
-        # Any note below C3 (48) is shifted up by octaves until it fits.
-        # Any note above C6 (84) is shifted down by octaves until it fits.
-        # This mirrors what the user would hear but keeps notation readable.
-        for instrument in midi_data.instruments:
-            for note in instrument.notes:
-                while note.pitch < 55:
-                    note.pitch += 12
-                while note.pitch > 81:
-                    note.pitch -= 12
+        print("[musicxml] Generating professional MusicXML...")
+
+        # Step 1: Clamp pitches to treble clef staff range (G3–A5, MIDI 55–81)
+        for inst in midi_data.instruments:
+            for n in inst.notes:
+                while n.pitch < 55:
+                    n.pitch += 12
+                while n.pitch > 81:
+                    n.pitch -= 12
         print("[musicxml] Note pitches clamped to MIDI 55–81 (G3–A5)")
 
+        # Step 2: Write clamped MIDI to temp file
         midi_data.write(midi_path)
         print("[musicxml] MIDI written, parsing with music21...")
 
-        import music21  # lazy import — avoids heavy startup cost on cold boot
-        from music21 import key as m21key
+        # Step 3: Parse with music21
         score = music21.converter.parse(midi_path)
 
-        # Quantize to rhythmic grid (produces quarter, eighth, half notes, etc.)
-        score.quantize([0.25, 0.5, 1.0, 2.0], inPlace=True)
+        # Step 4: Detect key signature
+        detected_key = score.analyze('key')
+        print(f"[musicxml] Detected key: {detected_key}")
 
-        # Key analysis — detect and embed key signature
-        key = score.analyze('key')
-        print(f"[musicxml] Detected key: {key}")
+        # Step 5: Build the reconstructed score with proper notation headers
+        ts = meter.TimeSignature('4/4')
+        mm = tempo.MetronomeMark(number=bpm)
 
-        # Insert key signature at the start of every part so music21 groups
-        # sharps/flats into a key signature instead of marking each note
-        ks = m21key.KeySignature(key.sharps)
-        for part in score.parts:
-            part.insert(0, ks)
+        new_score = stream.Score()
+        md = metadata.Metadata()
+        md.title = track_name
+        new_score.metadata = md
 
-        # Strip explicit accidentals that are already covered by the key signature.
-        # MIDI files encode every sharp/flat explicitly; without this, music21
-        # renders redundant accidentals on every note even when a key sig is present.
-        key_obj = music21.key.Key(key.tonic.name, key.mode)
-        key_pitches = [p.name for p in key_obj.pitches]
-        for note in score.recurse().notes:
-            if hasattr(note, 'pitch'):
-                if note.pitch.name in key_pitches and note.pitch.accidental:
-                    note.pitch.accidental.displayStatus = False
-            elif hasattr(note, 'pitches'):  # chord
-                for p in note.pitches:
-                    if p.name in key_pitches and p.accidental:
-                        p.accidental.displayStatus = False
+        INSTRUMENT_MAP = {
+            'piano':     instrument.Piano,
+            'guitar':    instrument.Guitar,
+            'violin':    instrument.Violin,
+            'cello':     instrument.Violoncello,
+            'flute':     instrument.Flute,
+            'trumpet':   instrument.Trumpet,
+            'saxophone': instrument.Saxophone,
+            'bass':      instrument.ElectricBass,
+            'vocals':    instrument.Vocalist,
+            'singing':   instrument.Vocalist,
+            'drums':     instrument.UnpitchedPercussion,
+        }
+        inst_class = INSTRUMENT_MAP.get(instrument_name.lower(), instrument.Piano)
 
-        # Apply notation rules (respects the key signature when rendering accidentals)
-        score.makeNotation(inPlace=True)
+        for part_idx, part in enumerate(score.parts):
+            new_part = stream.Part()
+            new_part.insert(0, inst_class())
+            new_part.insert(0, clef.TrebleClef())
+            new_part.insert(0, key.KeySignature(detected_key.sharps))
+            new_part.insert(0, ts)
+            if part_idx == 0:
+                new_part.insert(0, mm)
 
-        score.write('musicxml', fp=musicxml_path)
+            for element in part.recurse().notesAndRests:
+                new_part.append(element)
 
+            new_score.insert(0, new_part)
+
+        # Step 6: Quantize to rhythmic grid for note variety
+        # Divisors: 4 = sixteenth, 3 = triplet eighth, 2 = eighth, 1 = quarter
+        new_score.quantize(
+            quarterLengthDivisors=[4, 3, 2, 1],
+            inPlace=True,
+        )
+
+        # Step 7: Strip per-note accidentals already covered by the key signature
+        for n in new_score.recurse().notes:
+            if hasattr(n, 'pitch'):
+                if n.pitch.accidental:
+                    step  = n.pitch.step
+                    alter = n.pitch.accidental.alter
+                    for kp in detected_key.alteredPitches:
+                        if kp.step == step and kp.accidental.alter == alter:
+                            n.pitch.accidental.displayStatus = False
+                            break
+            elif hasattr(n, 'pitches'):  # chord
+                for p in n.pitches:
+                    if p.accidental:
+                        for kp in detected_key.alteredPitches:
+                            if kp.step == p.step and kp.accidental.alter == p.accidental.alter:
+                                p.accidental.displayStatus = False
+                                break
+
+        # Step 8: Apply full notation (beams, stems, rests, ties)
+        new_score.makeNotation(inPlace=True)
+
+        # Step 9: Export
+        new_score.write('musicxml', fp=musicxml_path)
         with open(musicxml_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
         print(f"[musicxml] MusicXML generated — {len(content):,} chars")
+        print(f"[musicxml] Key: {detected_key}, Time: 4/4, Tempo: {bpm} bpm")
         return content
 
     except Exception as e:
@@ -277,14 +321,15 @@ async def process_audio(body: ProcessRequest):
         print(f"[process] Basic Pitch detected {len(notes)} notes")
 
         # Step 5: Generate MusicXML from the MIDI data
+        track_name = os.path.splitext(original_name)[0] or "Untitled"
         print("[process] Step 5: Generating MusicXML...")
-        musicxml = await asyncio.to_thread(generate_musicxml, midi_data, uid)
+        musicxml = await asyncio.to_thread(
+            generate_musicxml, midi_data, track_name, body.instrument, 120
+        )
         if musicxml:
             print(f"[process] MusicXML ready ({len(musicxml):,} chars)")
         else:
             print("[process] MusicXML generation skipped/failed — returning notes only")
-
-        track_name = os.path.splitext(original_name)[0] or "Untitled"
         gc.collect()
 
         return {
@@ -406,14 +451,15 @@ async def process_with_stems(body: ProcessRequest):
         print(f"[stems] Basic Pitch detected {len(notes)} notes.")
 
         # Step 9: Generate MusicXML from the MIDI data
+        track_name = os.path.splitext(original_name)[0] or "Untitled"
         print("[stems] Step 9: Generating MusicXML...")
-        musicxml = await asyncio.to_thread(generate_musicxml, midi_data, uid)
+        musicxml = await asyncio.to_thread(
+            generate_musicxml, midi_data, track_name, body.instrument, 120
+        )
         if musicxml:
             print(f"[stems] MusicXML ready ({len(musicxml):,} chars)")
         else:
             print("[stems] MusicXML generation skipped/failed — returning notes only")
-
-        track_name = os.path.splitext(original_name)[0] or "Untitled"
         gc.collect()
 
         # Step 10: Return notes + MusicXML + detected stems
