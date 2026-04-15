@@ -139,6 +139,8 @@ def detect_notes_with_basic_pitch(wav_path: str) -> tuple:
             pitch -= 12
         adjusted.append((start, end, pitch, velocity, confidence))
     print(f"[basic_pitch] {len(adjusted)} notes after normalization and clamping.")
+    if adjusted:
+        print(f"[basic_pitch] Pitch range after clamping: min={min(p[2] for p in adjusted)}, max={max(p[2] for p in adjusted)}")
 
     # ── Step 3: Build the notes JSON list from clamped events ─────────────────
     notes = []
@@ -189,6 +191,8 @@ def generate_musicxml(
     musicxml_path = f"/tmp/{uuid.uuid4()}_output.musicxml"
     try:
         print("[musicxml] Generating professional MusicXML...")
+        if midi_data.instruments and midi_data.instruments[0].notes:
+            print(f"[musicxml] First 5 note pitches in midi_data: {[n.pitch for n in midi_data.instruments[0].notes[:5]]}")
         # Pitches are already clamped to C4–C6 (MIDI 60–84) by detect_notes_with_basic_pitch.
 
         # Step 1: Write MIDI to temp file
