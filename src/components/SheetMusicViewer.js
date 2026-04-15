@@ -572,7 +572,7 @@ export function buildPdfHtml(notes, meta) {
   @page { margin: 20mm 20mm 20mm 45mm; }
   html, body { background: #FFFFFF; font-family: sans-serif; }
   .page { position: relative; }
-  .page.break { page-break-after: always; }
+  .page.break { page-break-after: always; border-bottom: 2px solid red; }
   .header { padding-bottom: 14px; border-bottom: 1px solid #E5E7EB; margin-bottom: 16px; }
   .header-title { font-size: 18px; font-weight: 700; color: #111118; margin-bottom: 4px; }
   .header-meta  { font-size: 12px; color: #6B7280; }

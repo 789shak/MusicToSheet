@@ -177,12 +177,13 @@ def generate_musicxml(
     track_name: str = "Untitled",
     instrument_name: str = "Piano",
     bpm: int = 120,
-) -> str | None:
+) -> tuple:
     """
     Convert a PrettyMIDI object → professional MusicXML string via music21.
 
     Applies pitch clamping, key signature, quantization, rests, and beaming.
-    Returns None on failure (non-fatal; callers render notes-only fallback).
+    Returns (musicxml_string, transposed_notes_list).
+    Both values are None on failure (non-fatal; callers fall back to original notes).
     """
     import music21
     from music21 import stream, meter, tempo, key, clef, instrument, metadata
@@ -285,18 +286,43 @@ def generate_musicxml(
         durations_after = [n.duration.quarterLength for n in new_score.recurse().notes[:10]]
         print(f"[musicxml] Quantized durations (first 10): {durations_after}")
 
-        # Step 8: Export
+        # Step 7: Extract note names from the transposed + quantized score.
+        # These replace the original Basic Pitch notes so the frontend receives
+        # pitch names that match the MusicXML (e.g. "C4" not "C#4").
+        transposed_notes = []
+        for n in new_score.recurse().notes:
+            if hasattr(n, 'pitch'):
+                transposed_notes.append({
+                    "pitch":      n.pitch.nameWithOctave,
+                    "start":      round(float(n.offset), 3),
+                    "duration":   round(float(n.duration.quarterLength), 3),
+                    "velocity":   0.8,
+                    "confidence": 0.8,
+                })
+            elif hasattr(n, 'pitches'):  # chord
+                for p in n.pitches:
+                    transposed_notes.append({
+                        "pitch":      p.nameWithOctave,
+                        "start":      round(float(n.offset), 3),
+                        "duration":   round(float(n.duration.quarterLength), 3),
+                        "velocity":   0.8,
+                        "confidence": 0.8,
+                    })
+        transposed_notes.sort(key=lambda x: x['start'])
+        print(f"[musicxml] Transposed notes — first 5 pitches: {[n['pitch'] for n in transposed_notes[:5]]}")
+
+        # Step 8: Export MusicXML
         new_score.write('musicxml', fp=musicxml_path)
         with open(musicxml_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
         print(f"[musicxml] MusicXML generated — {len(content):,} chars")
         print(f"[musicxml] Key: {detected_key}, Time: 4/4, Tempo: {bpm} bpm")
-        return content
+        return content, transposed_notes
 
     except Exception as e:
         print(f"[musicxml] Generation failed (non-fatal): {e}\n{traceback.format_exc()}")
-        return None
+        return None, None
 
     finally:
         for f in [midi_path, musicxml_path]:
@@ -364,7 +390,7 @@ async def process_audio(body: ProcessRequest):
         # Step 5: Generate MusicXML from the MIDI data
         track_name = os.path.splitext(original_name)[0] or "Untitled"
         print("[process] Step 5: Generating MusicXML...")
-        musicxml = await asyncio.to_thread(
+        musicxml, transposed_notes = await asyncio.to_thread(
             generate_musicxml, midi_data, track_name, body.instrument, 120
         )
         if musicxml:
@@ -379,7 +405,7 @@ async def process_audio(body: ProcessRequest):
             "instrument":       body.instrument,
             "format":           body.output_format,
             "duration_seconds": round(duration_seconds),
-            "notes":            notes,
+            "notes":            transposed_notes or notes,
             "musicxml":         musicxml,
             "confidence":       0.90,
         }
@@ -494,7 +520,7 @@ async def process_with_stems(body: ProcessRequest):
         # Step 9: Generate MusicXML from the MIDI data
         track_name = os.path.splitext(original_name)[0] or "Untitled"
         print("[stems] Step 9: Generating MusicXML...")
-        musicxml = await asyncio.to_thread(
+        musicxml, transposed_notes = await asyncio.to_thread(
             generate_musicxml, midi_data, track_name, body.instrument, 120
         )
         if musicxml:
@@ -510,7 +536,7 @@ async def process_with_stems(body: ProcessRequest):
             "instrument":       body.instrument,
             "format":           body.output_format,
             "duration_seconds": round(duration_seconds),
-            "notes":            notes,
+            "notes":            transposed_notes or notes,
             "musicxml":         musicxml,
             "confidence":       0.90,
             "stems_detected":   detected_stems,
