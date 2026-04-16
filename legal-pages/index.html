@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Legal — Music To Sheet</title>
+  <meta name="description" content="Legal pages for Music To Sheet — Privacy Policy, Terms of Service, and DMCA Copyright Policy." />
+  <style>
+    /* ── Reset ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Tokens ── */
+    :root {
+      --bg:       #111118;
+      --surface:  #1C1C27;
+      --surface2: #16161F;
+      --border:   #2D2D3E;
+      --accent:   #0EA5E9;
+      --accent-dim: rgba(14,165,233,0.12);
+      --accent-border: rgba(14,165,233,0.3);
+      --text:     #FFFFFF;
+      --muted:    #9CA3AF;
+      --dim:      #6B7280;
+      --radius:   14px;
+    }
+
+    /* ── Base ── */
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Header ── */
+    .site-header {
+      border-bottom: 1px solid var(--border);
+      padding: 18px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo-mark {
+      width: 36px; height: 36px;
+      background: var(--accent-dim);
+      border: 1px solid var(--accent-border);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .logo-mark svg { display: block; }
+    .logo-text {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: -0.3px;
+    }
+
+    /* ── Main layout ── */
+    main {
+      flex: 1;
+      max-width: 800px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 64px 40px 80px;
+    }
+
+    /* ── Hero ── */
+    .hero-eyebrow {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 12px;
+    }
+    .hero-title {
+      font-size: 44px;
+      font-weight: 800;
+      letter-spacing: -0.8px;
+      line-height: 1.1;
+      margin-bottom: 16px;
+    }
+    .hero-title span { color: var(--accent); }
+    .hero-subtitle {
+      font-size: 17px;
+      color: var(--muted);
+      line-height: 1.65;
+      max-width: 540px;
+      margin-bottom: 56px;
+    }
+
+    /* ── Cards ── */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 56px;
+    }
+    .legal-card {
+      display: flex;
+      flex-direction: column;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      transition: border-color 0.15s, background 0.15s;
+      text-decoration: none;
+      color: inherit;
+    }
+    .legal-card:hover {
+      border-color: var(--accent-border);
+      background: var(--surface2);
+      text-decoration: none;
+    }
+    .card-icon {
+      width: 44px; height: 44px;
+      background: var(--accent-dim);
+      border: 1px solid var(--accent-border);
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 16px;
+      font-size: 22px;
+    }
+    .card-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+    .card-desc {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.6;
+      flex: 1;
+      margin-bottom: 16px;
+    }
+    .card-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--accent);
+    }
+    .card-link svg { transition: transform 0.15s; }
+    .legal-card:hover .card-link svg { transform: translateX(3px); }
+
+    /* ── Contact strip ── */
+    .contact-strip {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .contact-strip h2 {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    .contact-strip p {
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .contact-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--accent);
+      color: #FFFFFF;
+      font-size: 14px;
+      font-weight: 700;
+      padding: 12px 22px;
+      border-radius: 10px;
+      white-space: nowrap;
+      transition: opacity 0.15s;
+    }
+    .contact-btn:hover { opacity: 0.88; text-decoration: none; }
+
+    /* ── Footer ── */
+    .site-footer {
+      border-top: 1px solid var(--border);
+      padding: 24px 40px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      font-size: 13px;
+      color: var(--dim);
+    }
+    .footer-links { display: flex; gap: 20px; flex-wrap: wrap; }
+    .footer-links a { color: var(--dim); }
+    .footer-links a:hover { color: var(--muted); text-decoration: none; }
+    .back-home {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--accent);
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .back-home:hover { text-decoration: none; opacity: 0.85; }
+
+    /* ── Responsive ── */
+    @media (max-width: 640px) {
+      main { padding: 40px 20px 60px; }
+      .hero-title { font-size: 30px; }
+      .hero-subtitle { font-size: 15px; margin-bottom: 36px; }
+      .site-footer { padding: 20px; flex-direction: column; align-items: flex-start; }
+      .contact-strip { flex-direction: column; align-items: flex-start; padding: 22px; }
+      .cards-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="site-header">
+    <div class="logo-mark">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0EA5E9" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 18V5l12-2v13"/>
+        <circle cx="6" cy="18" r="3"/>
+        <circle cx="18" cy="16" r="3"/>
+      </svg>
+    </div>
+    <span class="logo-text">Music To Sheet</span>
+  </header>
+
+  <!-- Content -->
+  <main>
+    <div class="hero-eyebrow">Legal</div>
+    <h1 class="hero-title">Policies &amp;<br><span>Legal Documents</span></h1>
+    <p class="hero-subtitle">
+      Everything you need to know about your rights, our responsibilities, and how we handle
+      your data and content when you use Music To Sheet.
+    </p>
+
+    <!-- Cards -->
+    <div class="cards-grid">
+
+      <!-- Privacy -->
+      <a class="legal-card" href="privacy.html">
+        <div class="card-icon">🔒</div>
+        <div class="card-title">Privacy Policy</div>
+        <p class="card-desc">
+          What data we collect, how we use it, your rights under GDPR and CCPA, and how we
+          protect your information.
+        </p>
+        <span class="card-link">
+          Read policy
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+        </span>
+      </a>
+
+      <!-- Terms -->
+      <a class="legal-card" href="terms.html">
+        <div class="card-icon">📋</div>
+        <div class="card-title">Terms of Service</div>
+        <p class="card-desc">
+          The rules governing your use of the app, subscription plans, billing, user
+          responsibilities, and limitations of liability.
+        </p>
+        <span class="card-link">
+          Read terms
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+        </span>
+      </a>
+
+      <!-- DMCA -->
+      <a class="legal-card" href="dmca.html">
+        <div class="card-icon">⚖️</div>
+        <div class="card-title">DMCA Policy</div>
+        <p class="card-desc">
+          How to file a copyright takedown notice, our counter-notification process, and
+          our repeat infringer policy.
+        </p>
+        <span class="card-link">
+          Read policy
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+        </span>
+      </a>
+
+    </div>
+
+    <!-- Contact strip -->
+    <div class="contact-strip">
+      <div>
+        <h2>Have a question?</h2>
+        <p>Our support team is here to help with any legal, privacy, or copyright concerns.</p>
+      </div>
+      <a class="contact-btn" href="mailto:support@musictosheet.com">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+          <polyline points="22,6 12,13 2,6"/>
+        </svg>
+        support@musictosheet.com
+      </a>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="footer-links">
+      <a href="privacy.html">Privacy Policy</a>
+      <a href="terms.html">Terms of Service</a>
+      <a href="dmca.html">DMCA Policy</a>
+    </div>
+    <a class="back-home" href="https://musictosheet.com">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 18l-6-6 6-6"/>
+      </svg>
+      musictosheet.com
+    </a>
+  </footer>
+
+</body>
+</html>
