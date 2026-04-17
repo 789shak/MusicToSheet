@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy — Music To Sheet</title>
+  <meta name="description" content="Privacy Policy for Music To Sheet — how we collect, use, and protect your personal information." />
+  <style>
+    /* ── Reset ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Tokens ── */
+    :root {
+      --bg:       #111118;
+      --surface:  #1C1C27;
+      --surface2: #16161F;
+      --border:   #2D2D3E;
+      --accent:   #0EA5E9;
+      --accent-dim: rgba(14,165,233,0.12);
+      --accent-border: rgba(14,165,233,0.3);
+      --text:     #FFFFFF;
+      --muted:    #9CA3AF;
+      --dim:      #6B7280;
+      --radius:   12px;
+    }
+
+    /* ── Base ── */
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.7;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Header ── */
+    .site-header {
+      border-bottom: 1px solid var(--border);
+      padding: 18px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo-mark {
+      width: 36px; height: 36px;
+      background: var(--accent-dim);
+      border: 1px solid var(--accent-border);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .logo-mark svg { display: block; }
+    .logo-text {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: -0.3px;
+      text-decoration: none;
+    }
+    .logo-text:hover { text-decoration: none; opacity: 0.85; }
+
+    /* ── Main layout ── */
+    main {
+      flex: 1;
+      max-width: 800px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 56px 40px 80px;
+    }
+
+    /* ── Page hero ── */
+    .page-eyebrow {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+    .page-title {
+      font-size: 38px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      line-height: 1.15;
+      margin-bottom: 10px;
+    }
+    .page-date {
+      font-size: 13px;
+      color: var(--dim);
+      margin-bottom: 40px;
+      padding-bottom: 32px;
+      border-bottom: 1px solid var(--border);
+    }
+    .page-intro {
+      font-size: 16px;
+      color: var(--muted);
+      line-height: 1.75;
+      margin-bottom: 48px;
+    }
+
+    /* ── Sections ── */
+    .legal-section {
+      margin-bottom: 48px;
+    }
+    .legal-section h2 {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 16px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .section-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px; height: 26px;
+      background: var(--accent-dim);
+      border: 1px solid var(--accent-border);
+      border-radius: 50%;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent);
+      flex-shrink: 0;
+    }
+    .legal-section h3 {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      margin: 20px 0 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .legal-section p {
+      font-size: 15px;
+      color: var(--muted);
+      line-height: 1.75;
+      margin-bottom: 14px;
+    }
+    .legal-section p:last-child { margin-bottom: 0; }
+    .legal-section ul, .legal-section ol {
+      margin: 10px 0 14px 0;
+      padding-left: 0;
+      list-style: none;
+    }
+    .legal-section ul li, .legal-section ol li {
+      font-size: 15px;
+      color: var(--muted);
+      line-height: 1.65;
+      padding: 5px 0 5px 22px;
+      position: relative;
+    }
+    .legal-section ul li::before {
+      content: "–";
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+      font-weight: 700;
+    }
+    .legal-section ol { counter-reset: legal-counter; }
+    .legal-section ol li { padding-left: 28px; }
+    .legal-section ol li::before {
+      counter-increment: legal-counter;
+      content: counter(legal-counter) ".";
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    /* ── Info box ── */
+    .info-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin: 14px 0;
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+    .info-box strong { color: var(--text); }
+
+    /* ── Data table ── */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0;
+      font-size: 14px;
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .data-table th {
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      padding: 11px 14px;
+      text-align: left;
+      border: 1px solid var(--border);
+    }
+    .data-table td {
+      padding: 10px 14px;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      vertical-align: top;
+      line-height: 1.55;
+    }
+    .data-table tr:nth-child(even) td {
+      background: rgba(255,255,255,0.018);
+    }
+
+    /* ── Rights grid ── */
+    .rights-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .rights-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+    }
+    .rights-card strong {
+      display: block;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 6px;
+    }
+    .rights-card p {
+      font-size: 13px !important;
+      margin: 0 !important;
+    }
+
+    /* ── Contact box ── */
+    .contact-box {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      margin-top: 12px;
+      display: inline-block;
+    }
+    .contact-box a { font-weight: 600; }
+
+    /* ── Footer ── */
+    .site-footer {
+      border-top: 1px solid var(--border);
+      padding: 24px 40px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      font-size: 13px;
+      color: var(--dim);
+    }
+    .footer-links { display: flex; gap: 20px; flex-wrap: wrap; }
+    .footer-links a { color: var(--dim); }
+    .footer-links a:hover { color: var(--muted); text-decoration: none; }
+    .back-home {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--accent);
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .back-home:hover { text-decoration: none; opacity: 0.85; }
+
+    /* ── Responsive ── */
+    @media (max-width: 640px) {
+      main { padding: 36px 20px 60px; }
+      .page-title { font-size: 28px; }
+      .site-footer { padding: 20px; flex-direction: column; align-items: flex-start; }
+      .rights-grid { grid-template-columns: 1fr; }
+      .data-table { font-size: 13px; }
+      .data-table th, .data-table td { padding: 8px 10px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="site-header">
+    <a class="logo-mark" href="https://musictosheet.com" aria-label="Music To Sheet home">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0EA5E9" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 18V5l12-2v13"/>
+        <circle cx="6" cy="18" r="3"/>
+        <circle cx="18" cy="16" r="3"/>
+      </svg>
+    </a>
+    <a class="logo-text" href="https://musictosheet.com">Music To Sheet</a>
+  </header>
+
+  <!-- Content -->
+  <main>
+    <div class="page-eyebrow">Legal</div>
+    <h1 class="page-title">Privacy Policy</h1>
+    <p class="page-date">Last Updated: April 2026 &nbsp;·&nbsp; Effective upon account creation or first use</p>
+
+    <p class="page-intro">
+      Music To Sheet ("we", "our", or "us") is committed to protecting your privacy. This Privacy
+      Policy explains what information we collect when you use our mobile app and website, why we
+      collect it, how we use and protect it, and the choices you have regarding your information.
+    </p>
+
+    <!-- 1. Information We Collect -->
+    <section class="legal-section">
+      <h2><span class="section-num">1</span> Information We Collect</h2>
+
+      <h3>Account Information</h3>
+      <p>When you create an account, we collect:</p>
+      <ul>
+        <li><strong>Email address</strong> — used to identify your account and send important updates.</li>
+        <li><strong>Authentication provider ID</strong> — a unique identifier from Google, Microsoft, or Apple when you sign in using those services. We do not receive or store your social account password.</li>
+        <li><strong>Display name</strong> (optional) — if you choose to set one.</li>
+      </ul>
+
+      <h3>Audio Content You Upload</h3>
+      <ul>
+        <li>Audio files or links you submit for conversion are processed <strong>ephemerally</strong>.</li>
+        <li>Files are transmitted to our processing server solely to perform the conversion, and are <strong>permanently deleted immediately after conversion completes</strong>.</li>
+        <li>We do not store, archive, or retain copies of your audio for any purpose.</li>
+        <li>Your audio is <strong>never</strong> used to train, fine-tune, or improve any AI or machine learning model.</li>
+      </ul>
+
+      <h3>Usage Data</h3>
+      <ul>
+        <li>App interactions (features used, screens visited, conversion counts)</li>
+        <li>Device type and operating system version</li>
+        <li>App version</li>
+        <li>Crash and error reports</li>
+      </ul>
+      <p>We do <strong>not</strong> collect precise location, biometric data, contact lists, or browsing history.</p>
+
+      <h3>Purchase and Subscription Data</h3>
+      <ul>
+        <li>Current subscription plan tier</li>
+        <li>Transaction IDs and subscription status (via RevenueCat)</li>
+        <li>Purchase history within the app</li>
+      </ul>
+      <p>Payment card details are handled exclusively by Apple App Store or Google Play — we never see or store your payment credentials.</p>
+
+      <div class="info-box">
+        <strong>Conversion history</strong> (track name, instrument, output format, creation date) is stored in your account so you can access past results. This does <em>not</em> include the original audio file.
+      </div>
+    </section>
+
+    <!-- 2. How We Use Your Information -->
+    <section class="legal-section">
+      <h2><span class="section-num">2</span> How We Use Your Information</h2>
+      <ul>
+        <li>Provide, operate, and maintain the audio-to-sheet-music conversion service</li>
+        <li>Authenticate your identity and manage your account</li>
+        <li>Verify and enforce your subscription plan and entitlements</li>
+        <li>Display your conversion history within the app</li>
+        <li>Respond to support requests and communicate service-related updates</li>
+        <li>Detect and prevent fraud, abuse, and violations of our Terms of Service</li>
+        <li>Diagnose crashes and improve app performance and reliability</li>
+        <li>Comply with applicable legal obligations</li>
+      </ul>
+      <p>We do <strong>not</strong> sell, rent, trade, or share your personal data with third parties for advertising or marketing purposes.</p>
+    </section>
+
+    <!-- 3. Data Storage and Security -->
+    <section class="legal-section">
+      <h2><span class="section-num">3</span> Data Storage and Security</h2>
+
+      <h3>Storage</h3>
+      <p>
+        Your account data and conversion history are stored on <strong>Supabase</strong>, a managed database
+        platform that provides encrypted storage at rest and encrypted transmission in transit (TLS 1.2+).
+        Row-level security policies ensure your data is accessible only to your account.
+      </p>
+
+      <h3>Audio Processing</h3>
+      <p>
+        Audio files are processed on a strictly temporary basis and <strong>deleted immediately after
+        conversion</strong>. We have no ability to retrieve your audio after processing completes. No audio
+        is cached, archived, or backed up.
+      </p>
+
+      <h3>Security Measures</h3>
+      <ul>
+        <li>All data in transit is encrypted using TLS</li>
+        <li>Database access is restricted by row-level security policies</li>
+        <li>Access controls limit which systems and personnel can access your data</li>
+        <li>No method of transmission or storage is 100% secure; we cannot guarantee absolute security</li>
+      </ul>
+
+      <div class="info-box">
+        We do <strong>not</strong> sell, rent, or share your personal data with any third party for marketing or advertising purposes.
+      </div>
+    </section>
+
+    <!-- 4. Third-Party Services -->
+    <section class="legal-section">
+      <h2><span class="section-num">4</span> Third-Party Services</h2>
+      <p>We use the following sub-processors to operate the app. Each is bound by its own privacy policy and data agreements:</p>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Service</th>
+            <th>Purpose</th>
+            <th>Data Shared</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Supabase</strong></td>
+            <td>Database, authentication, and storage</td>
+            <td>Account data, conversion history</td>
+          </tr>
+          <tr>
+            <td><strong>RevenueCat</strong></td>
+            <td>Subscription and in-app purchase management</td>
+            <td>Anonymous app user ID, subscription status</td>
+          </tr>
+          <tr>
+            <td><strong>Replicate</strong></td>
+            <td>AI audio processing (stem separation)</td>
+            <td>Audio file URL — ephemeral, deleted after processing</td>
+          </tr>
+          <tr>
+            <td><strong>Apple App Store</strong></td>
+            <td>iOS app distribution and payments</td>
+            <td>Purchase receipts (managed by Apple)</td>
+          </tr>
+          <tr>
+            <td><strong>Google Play</strong></td>
+            <td>Android app distribution and payments</td>
+            <td>Purchase receipts (managed by Google)</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 5. Your Rights -->
+    <section class="legal-section">
+      <h2><span class="section-num">5</span> Your Rights</h2>
+      <p>Depending on your location, you may have the following rights regarding your personal data:</p>
+
+      <div class="rights-grid">
+        <div class="rights-card">
+          <strong>Access</strong>
+          <p>Request a copy of the personal data we hold about you.</p>
+        </div>
+        <div class="rights-card">
+          <strong>Correction</strong>
+          <p>Request correction of inaccurate or incomplete data.</p>
+        </div>
+        <div class="rights-card">
+          <strong>Deletion</strong>
+          <p>Delete your account and all associated data directly in the app, or by emailing us. Completed within 30 days.</p>
+        </div>
+        <div class="rights-card">
+          <strong>Portability</strong>
+          <p>Receive your conversion history in a portable format on request.</p>
+        </div>
+        <div class="rights-card">
+          <strong>Objection</strong>
+          <p>Object to processing based on our legitimate interests.</p>
+        </div>
+        <div class="rights-card">
+          <strong>Restriction</strong>
+          <p>Request that we pause processing of your data in certain circumstances.</p>
+        </div>
+      </div>
+
+      <h3>GDPR (EU / UK Users)</h3>
+      <p>
+        If you are located in the European Economic Area or United Kingdom, the above rights apply to you
+        under the General Data Protection Regulation (GDPR) or UK GDPR. Our legal bases for processing
+        are: contract performance (to provide the service you signed up for), legitimate interests (fraud
+        prevention and app improvement), and compliance with legal obligations.
+      </p>
+      <p>
+        You have the right to lodge a complaint with your national data protection supervisory authority
+        (e.g., the ICO in the UK, or your local EU authority) if you are dissatisfied with how we handle
+        your data.
+      </p>
+
+      <h3>CCPA (California Users)</h3>
+      <p>California residents have additional rights under the California Consumer Privacy Act (CCPA):</p>
+      <ul>
+        <li><strong>Right to Know</strong> — what personal information we collect and how we use it</li>
+        <li><strong>Right to Delete</strong> — request deletion of your personal information</li>
+        <li><strong>Right to Opt Out of Sale</strong> — we do <strong>not</strong> sell personal information; there is nothing to opt out of</li>
+        <li><strong>Right to Non-Discrimination</strong> — we will not discriminate for exercising any CCPA right</li>
+      </ul>
+      <p>To submit a CCPA request, email <a href="mailto:support@musictosheet.com">support@musictosheet.com</a> with subject "CCPA Request".</p>
+    </section>
+
+    <!-- 6. Children's Privacy -->
+    <section class="legal-section">
+      <h2><span class="section-num">6</span> Children's Privacy</h2>
+      <p>
+        Music To Sheet is intended for users aged <strong>13 and older</strong>. We do not knowingly collect
+        personal information from children under 13. If we become aware that a child under 13 has provided
+        personal data, we will delete it promptly. If you believe your child has created an account, please
+        contact us at <a href="mailto:support@musictosheet.com">support@musictosheet.com</a> and we will
+        take immediate action.
+      </p>
+      <p>Users aged 13–17 should have parental or guardian consent before using the app.</p>
+    </section>
+
+    <!-- 7. Data Retention -->
+    <section class="legal-section">
+      <h2><span class="section-num">7</span> Data Retention</h2>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Data Type</th>
+            <th>Retention Period</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Audio files</td>
+            <td>Deleted immediately after processing completes (typically under 60 seconds)</td>
+          </tr>
+          <tr>
+            <td>Active account data</td>
+            <td>Retained while your account remains active</td>
+          </tr>
+          <tr>
+            <td>Account on deletion request</td>
+            <td>Permanently deleted within 30 days of your request</td>
+          </tr>
+          <tr>
+            <td>Backup copies</td>
+            <td>Purged within 30 days following deletion of primary data</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 8. International Data Transfers -->
+    <section class="legal-section">
+      <h2><span class="section-num">8</span> International Data Transfers</h2>
+      <p>
+        Your data may be processed on servers located outside your home country (including the United
+        States and the EU), as our sub-processors operate globally. Where data is transferred
+        internationally, we ensure appropriate safeguards — including Standard Contractual Clauses
+        where required by GDPR — are in place to protect your information.
+      </p>
+    </section>
+
+    <!-- 9. Changes to This Policy -->
+    <section class="legal-section">
+      <h2><span class="section-num">9</span> Changes to This Policy</h2>
+      <p>
+        We may update this Privacy Policy from time to time to reflect changes in our practices, technology,
+        or legal requirements. When we make material changes, we will notify you via the app or by email and
+        update the "Last Updated" date at the top of this page. Continued use of the app after changes are
+        posted constitutes your acceptance of the updated policy.
+      </p>
+    </section>
+
+    <!-- 10. Contact -->
+    <section class="legal-section">
+      <h2><span class="section-num">10</span> Contact Us</h2>
+      <p>For privacy questions, data requests, or to exercise your rights:</p>
+      <div class="contact-box">
+        <p>Email: <a href="mailto:support@musictosheet.com">support@musictosheet.com</a></p>
+        <p style="color: var(--dim); font-size: 13px; margin-top: 6px;">We aim to respond within 30 days.</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="footer-links">
+      <a href="terms.html">Terms of Service</a>
+      <a href="dmca.html">DMCA Policy</a>
+      <a href="mailto:support@musictosheet.com">support@musictosheet.com</a>
+    </div>
+    <a class="back-home" href="https://musictosheet.com">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 18l-6-6 6-6"/>
+      </svg>
+      musictosheet.com
+    </a>
+  </footer>
+
+</body>
+</html>
