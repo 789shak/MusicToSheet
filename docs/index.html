@@ -1,250 +1,1139 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Music-To-Sheet — Audio to Sheet Music, Instantly</title>
-  <meta name="description" content="Music-To-Sheet converts your audio recordings into readable sheet music using AI. Coming soon to iOS and Android." />
-  <link rel="icon" type="image/png" href="images/logo.png">
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Music-To-Sheet — Convert Audio to Sheet Music with AI</title>
+<meta name="description" content="Transform any audio recording into professional sheet music using AI. Upload MP3, WAV, or record directly. Export as PDF, MIDI, or MusicXML. Try free.">
+<meta name="keywords" content="audio to sheet music, music transcription, AI sheet music, convert audio to notes, music notation, piano sheet music, guitar tabs, MIDI converter">
+<meta property="og:title" content="Music-To-Sheet — Audio to Sheet Music, Instantly">
+<meta property="og:description" content="AI-powered music transcription. Upload any audio and get professional sheet music in seconds.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://musictosheet.com">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #080810;
+  --bg-elevated: #111118;
+  --bg-card: #16161f;
+  --turquoise: #0EA5E9;
+  --turquoise-glow: #38bdf8;
+  --turquoise-dark: #0284c7;
+  --white: #ffffff;
+  --gray-100: #f1f5f9;
+  --gray-300: #cbd5e1;
+  --gray-400: #94a3b8;
+  --gray-500: #64748b;
+  --gray-700: #334155;
+  --red: #ef4444;
+  --green: #22c55e;
+  --font-display: 'Plus Jakarta Sans', sans-serif;
+  --font-mono: 'Space Mono', monospace;
+}
 
-    :root {
-      --bg:       #111118;
-      --surface:  #1C1C27;
-      --border:   #2D2D3E;
-      --accent:   #0EA5E9;
-      --text:     #FFFFFF;
-      --muted:    #9CA3AF;
-      --dim:      #6B7280;
-    }
+* { margin: 0; padding: 0; box-sizing: border-box; }
 
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
+html { scroll-behavior: smooth; }
 
-    a { color: var(--accent); text-decoration: none; }
-    a:hover { text-decoration: underline; }
+body {
+  font-family: var(--font-display);
+  background: var(--bg);
+  color: var(--white);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
 
-    /* ── Nav ── */
-    nav {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 20px 40px;
-      border-bottom: 1px solid var(--border);
-    }
-    .nav-logo {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-weight: 700;
-      font-size: 17px;
-      color: var(--text);
-      text-decoration: none;
-    }
-    .nav-logo svg { flex-shrink: 0; }
-    .site-logo { height: 40px; width: auto; display: block; }
-    @media (max-width: 600px) { .site-logo { height: 32px; } }
-    .nav-links { display: flex; gap: 24px; font-size: 14px; color: var(--muted); }
-    .nav-links a { color: var(--muted); }
-    .nav-links a:hover { color: var(--text); text-decoration: none; }
+/* ===== GRAIN OVERLAY ===== */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='256' height='256' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.5;
+}
 
-    /* ── Hero ── */
-    .hero {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      padding: 80px 24px 60px;
-    }
-    .hero-badge {
-      display: inline-block;
-      background: rgba(14, 165, 233, 0.1);
-      border: 1px solid rgba(14, 165, 233, 0.3);
-      color: var(--accent);
-      font-size: 12px;
-      font-weight: 600;
-      letter-spacing: 1px;
-      text-transform: uppercase;
-      padding: 6px 16px;
-      border-radius: 100px;
-      margin-bottom: 28px;
-    }
-    .hero h1 {
-      font-size: clamp(36px, 7vw, 72px);
-      font-weight: 800;
-      line-height: 1.1;
-      letter-spacing: -1px;
-      margin-bottom: 20px;
-    }
-    .hero h1 span { color: var(--accent); }
-    .hero p {
-      font-size: clamp(16px, 2.5vw, 20px);
-      color: var(--muted);
-      max-width: 560px;
-      line-height: 1.6;
-      margin-bottom: 48px;
-    }
+/* ===== NAVIGATION ===== */
+nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 100;
+  padding: 16px 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  backdrop-filter: blur(20px);
+  background: rgba(8,8,16,0.8);
+  border-bottom: 1px solid rgba(14,165,233,0.1);
+  transition: all 0.3s ease;
+}
 
-    /* ── Store badges ── */
-    .badges { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; margin-bottom: 56px; }
-    .badge {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 14px 22px;
-      color: var(--text);
-      font-size: 14px;
-      opacity: 0.7;
-      cursor: default;
-    }
-    .badge-label { display: flex; flex-direction: column; text-align: left; }
-    .badge-label span:first-child { font-size: 11px; color: var(--muted); }
-    .badge-label span:last-child { font-weight: 700; font-size: 15px; }
+.nav-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+}
 
-    /* ── Features ── */
-    .features {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 20px;
-      max-width: 900px;
-      width: 100%;
-      margin: 0 auto;
-      padding: 0 24px 80px;
-    }
-    .feature-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 24px;
-    }
-    .feature-icon {
-      width: 40px;
-      height: 40px;
-      background: rgba(14, 165, 233, 0.12);
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 14px;
-      color: var(--accent);
-      font-size: 20px;
-    }
-    .feature-card h3 { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
-    .feature-card p { font-size: 13px; color: var(--muted); line-height: 1.5; }
+.nav-logo img {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+}
 
-    /* ── Footer ── */
-    footer {
-      border-top: 1px solid var(--border);
-      padding: 28px 40px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 16px;
-      font-size: 13px;
-      color: var(--dim);
-      text-align: center;
-    }
-    .footer-links { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
-    .footer-links a { color: var(--dim); }
-    .footer-links a:hover { color: var(--muted); text-decoration: none; }
+.nav-logo span {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--turquoise);
+  letter-spacing: -0.5px;
+}
 
-    @media (max-width: 600px) {
-      nav { padding: 16px 20px; }
-      .nav-links { gap: 14px; font-size: 13px; }
-      footer { padding: 24px 20px; }
-    }
-  </style>
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  list-style: none;
+}
+
+.nav-links a {
+  color: var(--gray-400);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.nav-links a:hover { color: var(--white); }
+
+.nav-cta {
+  padding: 10px 24px;
+  background: var(--turquoise);
+  color: var(--bg) !important;
+  border-radius: 8px;
+  font-weight: 700 !important;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.nav-cta:hover { background: var(--turquoise-glow); transform: translateY(-1px); }
+
+/* ===== HERO ===== */
+.hero {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 120px 20px 80px;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  top: -200px; left: 50%;
+  transform: translateX(-50%);
+  width: 800px; height: 800px;
+  background: radial-gradient(circle, rgba(14,165,233,0.15) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  background: rgba(14,165,233,0.1);
+  border: 1px solid rgba(14,165,233,0.2);
+  border-radius: 100px;
+  font-size: 13px;
+  color: var(--turquoise);
+  margin-bottom: 32px;
+  animation: fadeInUp 0.6s ease;
+}
+
+.hero-badge::before {
+  content: '';
+  width: 6px; height: 6px;
+  background: var(--turquoise);
+  border-radius: 50%;
+  animation: pulse-dot 2s infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.hero h1 {
+  font-size: clamp(40px, 7vw, 80px);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -2px;
+  margin-bottom: 24px;
+  animation: fadeInUp 0.6s ease 0.1s both;
+}
+
+.hero h1 .gradient {
+  background: linear-gradient(135deg, var(--turquoise), var(--turquoise-glow), #a78bfa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero-sub {
+  font-size: clamp(16px, 2vw, 20px);
+  color: var(--gray-400);
+  max-width: 600px;
+  line-height: 1.6;
+  margin-bottom: 48px;
+  animation: fadeInUp 0.6s ease 0.2s both;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+  animation: fadeInUp 0.6s ease 0.3s both;
+}
+
+.btn-primary {
+  padding: 16px 36px;
+  background: var(--turquoise);
+  color: var(--bg);
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  font-family: var(--font-display);
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-primary:hover { background: var(--turquoise-glow); transform: translateY(-2px); box-shadow: 0 8px 30px rgba(14,165,233,0.3); }
+
+.btn-secondary {
+  padding: 16px 36px;
+  background: transparent;
+  color: var(--white);
+  border: 1px solid var(--gray-700);
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  font-family: var(--font-display);
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+}
+
+.btn-secondary:hover { border-color: var(--turquoise); color: var(--turquoise); }
+
+.hero-visual {
+  margin-top: 80px;
+  width: 100%;
+  max-width: 900px;
+  animation: fadeInUp 0.8s ease 0.4s both;
+}
+
+.hero-mockup {
+  background: var(--bg-card);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 40px 80px rgba(0,0,0,0.5);
+  position: relative;
+}
+
+.mockup-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.mockup-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+}
+
+.mockup-dot:nth-child(1) { background: #ef4444; }
+.mockup-dot:nth-child(2) { background: #eab308; }
+.mockup-dot:nth-child(3) { background: #22c55e; }
+
+.mockup-staff {
+  padding: 20px 0;
+}
+
+.staff-line {
+  height: 1px;
+  background: rgba(255,255,255,0.15);
+  margin-bottom: 10px;
+  position: relative;
+}
+
+.note-dot {
+  position: absolute;
+  width: 12px; height: 9px;
+  background: var(--turquoise);
+  border-radius: 50%;
+  top: -4px;
+  animation: noteAppear 0.4s ease both;
+}
+
+.note-dot::after {
+  content: '';
+  position: absolute;
+  right: -1px; top: -20px;
+  width: 2px; height: 20px;
+  background: var(--turquoise);
+}
+
+@keyframes noteAppear {
+  from { opacity: 0; transform: scale(0); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* ===== STATS ===== */
+.stats {
+  padding: 40px 20px;
+  display: flex;
+  justify-content: center;
+  gap: 60px;
+  flex-wrap: wrap;
+  border-top: 1px solid rgba(255,255,255,0.05);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.stat {
+  text-align: center;
+}
+
+.stat-num {
+  font-size: 36px;
+  font-weight: 800;
+  color: var(--turquoise);
+  font-family: var(--font-mono);
+}
+
+.stat-label {
+  font-size: 13px;
+  color: var(--gray-500);
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* ===== SECTION COMMON ===== */
+section {
+  padding: 120px 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.section-tag {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--turquoise);
+  margin-bottom: 16px;
+}
+
+.section-title {
+  font-size: clamp(28px, 4vw, 48px);
+  font-weight: 800;
+  letter-spacing: -1px;
+  margin-bottom: 16px;
+}
+
+.section-desc {
+  font-size: 17px;
+  color: var(--gray-400);
+  max-width: 600px;
+  line-height: 1.6;
+}
+
+/* ===== HOW IT WORKS ===== */
+.steps-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 32px;
+  margin-top: 64px;
+}
+
+.step-card {
+  background: var(--bg-card);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 16px;
+  padding: 40px 32px;
+  transition: all 0.3s;
+  position: relative;
+  overflow: hidden;
+}
+
+.step-card:hover {
+  border-color: rgba(14,165,233,0.3);
+  transform: translateY(-4px);
+}
+
+.step-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--turquoise), transparent);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.step-card:hover::before { opacity: 1; }
+
+.step-num {
+  font-size: 48px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  color: rgba(14,165,233,0.2);
+  margin-bottom: 16px;
+}
+
+.step-card h3 {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.step-card p {
+  font-size: 15px;
+  color: var(--gray-400);
+  line-height: 1.6;
+}
+
+/* ===== FEATURES ===== */
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
+  margin-top: 64px;
+}
+
+.feature-card {
+  background: var(--bg-card);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 16px;
+  padding: 36px;
+  transition: all 0.3s;
+}
+
+.feature-card:hover {
+  border-color: rgba(14,165,233,0.2);
+}
+
+.feature-icon {
+  width: 48px; height: 48px;
+  background: rgba(14,165,233,0.1);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  margin-bottom: 20px;
+}
+
+.feature-card h3 {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.feature-card p {
+  font-size: 14px;
+  color: var(--gray-400);
+  line-height: 1.6;
+}
+
+/* ===== INSTRUMENTS ===== */
+.instruments-row {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 64px;
+}
+
+.instrument-pill {
+  padding: 12px 28px;
+  background: var(--bg-card);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 100px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--gray-300);
+  transition: all 0.2s;
+  cursor: default;
+}
+
+.instrument-pill:hover {
+  border-color: var(--turquoise);
+  color: var(--turquoise);
+  background: rgba(14,165,233,0.05);
+}
+
+/* ===== PRICING ===== */
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  margin-top: 64px;
+  align-items: start;
+}
+
+.price-card {
+  background: var(--bg-card);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 20px;
+  padding: 40px 32px;
+  transition: all 0.3s;
+  position: relative;
+}
+
+.price-card.featured {
+  border-color: var(--turquoise);
+  background: linear-gradient(180deg, rgba(14,165,233,0.08) 0%, var(--bg-card) 100%);
+}
+
+.price-card.featured::before {
+  content: 'Most Popular';
+  position: absolute;
+  top: -12px; left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 16px;
+  background: var(--turquoise);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 100px;
+}
+
+.price-tier {
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--turquoise);
+  margin-bottom: 8px;
+}
+
+.price-amount {
+  font-size: 48px;
+  font-weight: 800;
+  letter-spacing: -2px;
+  margin-bottom: 4px;
+}
+
+.price-amount span {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--gray-500);
+}
+
+.price-annual {
+  font-size: 13px;
+  color: var(--green);
+  margin-bottom: 24px;
+}
+
+.price-features {
+  list-style: none;
+  margin-bottom: 32px;
+}
+
+.price-features li {
+  font-size: 14px;
+  color: var(--gray-300);
+  padding: 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.price-features li::before {
+  content: '✓';
+  color: var(--turquoise);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.price-btn {
+  width: 100%;
+  padding: 14px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  font-family: var(--font-display);
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+  text-decoration: none;
+  display: block;
+}
+
+.price-btn-primary {
+  background: var(--turquoise);
+  color: var(--bg);
+  border: none;
+}
+
+.price-btn-primary:hover { background: var(--turquoise-glow); }
+
+.price-btn-secondary {
+  background: transparent;
+  color: var(--white);
+  border: 1px solid var(--gray-700);
+}
+
+.price-btn-secondary:hover { border-color: var(--turquoise); }
+
+/* ===== TESTIMONIALS ===== */
+.testimonials-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  margin-top: 64px;
+}
+
+.testimonial-card {
+  background: var(--bg-card);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 16px;
+  padding: 32px;
+}
+
+.testimonial-stars {
+  color: #facc15;
+  font-size: 14px;
+  margin-bottom: 16px;
+  letter-spacing: 2px;
+}
+
+.testimonial-text {
+  font-size: 15px;
+  color: var(--gray-300);
+  line-height: 1.6;
+  margin-bottom: 20px;
+  font-style: italic;
+}
+
+.testimonial-author {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.testimonial-role {
+  font-size: 12px;
+  color: var(--gray-500);
+}
+
+/* ===== FAQ ===== */
+.faq-list {
+  max-width: 700px;
+  margin: 64px auto 0;
+}
+
+.faq-item {
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  padding: 24px 0;
+}
+
+.faq-q {
+  font-size: 17px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: color 0.2s;
+}
+
+.faq-q:hover { color: var(--turquoise); }
+
+.faq-q::after {
+  content: '+';
+  font-size: 24px;
+  color: var(--gray-500);
+  transition: transform 0.3s;
+}
+
+.faq-item.open .faq-q::after {
+  transform: rotate(45deg);
+  color: var(--turquoise);
+}
+
+.faq-a {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+  font-size: 15px;
+  color: var(--gray-400);
+  line-height: 1.6;
+}
+
+.faq-item.open .faq-a {
+  max-height: 200px;
+  padding-top: 16px;
+}
+
+/* ===== CTA ===== */
+.cta-section {
+  text-align: center;
+  padding: 120px 20px;
+  position: relative;
+}
+
+.cta-section::before {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 50%;
+  transform: translateX(-50%);
+  width: 600px; height: 600px;
+  background: radial-gradient(circle, rgba(14,165,233,0.1) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+/* ===== FOOTER ===== */
+footer {
+  border-top: 1px solid rgba(255,255,255,0.06);
+  padding: 60px 40px 40px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.footer-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 40px;
+  margin-bottom: 40px;
+}
+
+.footer-brand p {
+  color: var(--gray-500);
+  font-size: 14px;
+  line-height: 1.6;
+  margin-top: 12px;
+  max-width: 300px;
+}
+
+.footer-col h4 {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--gray-400);
+  margin-bottom: 16px;
+}
+
+.footer-col a {
+  display: block;
+  color: var(--gray-500);
+  text-decoration: none;
+  font-size: 14px;
+  padding: 4px 0;
+  transition: color 0.2s;
+}
+
+.footer-col a:hover { color: var(--turquoise); }
+
+.footer-bottom {
+  border-top: 1px solid rgba(255,255,255,0.06);
+  padding-top: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: var(--gray-500);
+}
+
+/* ===== ANIMATIONS ===== */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.reveal {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: all 0.7s ease;
+}
+
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ===== MOBILE ===== */
+@media (max-width: 768px) {
+  nav { padding: 12px 20px; }
+  .nav-links { display: none; }
+  .steps-grid, .features-grid, .pricing-grid, .testimonials-grid { grid-template-columns: 1fr; }
+  .footer-grid { grid-template-columns: 1fr 1fr; }
+  .stats { gap: 30px; }
+  .hero h1 { letter-spacing: -1px; }
+  section { padding: 80px 20px; }
+}
+
+@media (max-width: 480px) {
+  .hero-actions { flex-direction: column; width: 100%; }
+  .btn-primary, .btn-secondary { width: 100%; justify-content: center; }
+  .footer-grid { grid-template-columns: 1fr; }
+}
+</style>
 </head>
 <body>
 
-  <!-- Nav -->
-  <nav>
-    <a class="nav-logo" href="index.html">
-      <img src="images/logo.png" alt="Music-To-Sheet" class="site-logo">
+<!-- NAV -->
+<nav>
+  <a href="#" class="nav-logo">
+    <img src="icon.png" alt="Music-To-Sheet">
+    <span>Music-To-Sheet</span>
+  </a>
+  <ul class="nav-links">
+    <li><a href="#how-it-works">How It Works</a></li>
+    <li><a href="#features">Features</a></li>
+    <li><a href="#instruments">Instruments</a></li>
+    <li><a href="#pricing">Pricing</a></li>
+    <li><a href="#faq">FAQ</a></li>
+    <li><a href="#download" class="nav-cta">Download App</a></li>
+  </ul>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-badge">
+    <span>Now Available on iOS & Android</span>
+  </div>
+  <h1>Audio to Sheet Music,<br><span class="gradient">Instantly.</span></h1>
+  <p class="hero-sub">Upload any audio recording and get professional sheet music in seconds. Powered by AI stem separation and polyphonic note detection.</p>
+  <div class="hero-actions">
+    <a href="#download" class="btn-primary">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+      Download Free
     </a>
-    <div class="nav-links">
-      <a href="terms.html">Terms</a>
-      <a href="privacy.html">Privacy</a>
-      <a href="dmca.html">Copyright</a>
-    </div>
-  </nav>
-
-  <!-- Hero -->
-  <section class="hero">
-    <div class="hero-badge">Coming Soon</div>
-    <h1>Audio to <span>Sheet Music</span>,<br>Instantly.</h1>
-    <p>
-      Music-To-Sheet uses AI to convert your recordings, links, and voice
-      into readable sheet music — in seconds, not hours.
-    </p>
-
-    <!-- Store badges -->
-    <div class="badges">
-      <div class="badge">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
-        <div class="badge-label">
-          <span>Download on the</span>
-          <span>App Store</span>
-        </div>
-      </div>
-      <div class="badge">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M3.18 23.76c.3.17.64.22.99.14l12.88-7.43-2.88-2.88-11 10.17zm16.28-9.89L5.45.86C5.12.54 4.7.4 4.3.46L15.5 11.67l4-3.9.96.83-4.01 3.9L17.44 13l2.02 2zm-1.55 8.77l-3.88-3.89 2.87-2.87 1 .58c1.04.6 1.04 2.16 0 2.77l-.02.01-.01.01-2 1.16.04.23zm-14.7-21.6c-.19.22-.3.56-.3.99v20.94c0 .43.11.77.3.99l.05.04L15.48 11.9v-.29L3.26 1.01l-.05.03z"/></svg>
-        <div class="badge-label">
-          <span>Get it on</span>
-          <span>Google Play</span>
-        </div>
+    <a href="#how-it-works" class="btn-secondary">See How It Works</a>
+  </div>
+  <div class="hero-visual">
+    <div class="hero-mockup">
+      <div class="mockup-bar"><div class="mockup-dot"></div><div class="mockup-dot"></div><div class="mockup-dot"></div></div>
+      <div class="mockup-staff">
+        <div class="staff-line"><div class="note-dot" style="left:12%; animation-delay:0.1s"></div><div class="note-dot" style="left:28%; animation-delay:0.3s"></div><div class="note-dot" style="left:55%; animation-delay:0.6s"></div><div class="note-dot" style="left:78%; animation-delay:0.8s"></div></div>
+        <div class="staff-line"><div class="note-dot" style="left:8%; animation-delay:0.15s"></div><div class="note-dot" style="left:38%; animation-delay:0.45s"></div><div class="note-dot" style="left:62%; animation-delay:0.65s"></div><div class="note-dot" style="left:88%; animation-delay:0.9s"></div></div>
+        <div class="staff-line"><div class="note-dot" style="left:18%; animation-delay:0.2s"></div><div class="note-dot" style="left:45%; animation-delay:0.5s"></div><div class="note-dot" style="left:72%; animation-delay:0.75s"></div></div>
+        <div class="staff-line"><div class="note-dot" style="left:5%; animation-delay:0.05s"></div><div class="note-dot" style="left:32%; animation-delay:0.35s"></div><div class="note-dot" style="left:58%; animation-delay:0.55s"></div><div class="note-dot" style="left:82%; animation-delay:0.85s"></div></div>
+        <div class="staff-line"><div class="note-dot" style="left:22%; animation-delay:0.25s"></div><div class="note-dot" style="left:48%; animation-delay:0.55s"></div><div class="note-dot" style="left:68%; animation-delay:0.7s"></div><div class="note-dot" style="left:92%; animation-delay:0.95s"></div></div>
       </div>
     </div>
-  </section>
+  </div>
+</section>
 
-  <!-- Features -->
-  <div class="features">
+<!-- STATS -->
+<div class="stats">
+  <div class="stat"><div class="stat-num">10+</div><div class="stat-label">Instruments</div></div>
+  <div class="stat"><div class="stat-num">6</div><div class="stat-label">Output Formats</div></div>
+  <div class="stat"><div class="stat-num">60s</div><div class="stat-label">Free Transcription</div></div>
+  <div class="stat"><div class="stat-num">AI</div><div class="stat-label">Stem Separation</div></div>
+</div>
+
+<!-- HOW IT WORKS -->
+<section id="how-it-works" class="reveal">
+  <div class="section-tag">How It Works</div>
+  <h2 class="section-title">Three steps. That's it.</h2>
+  <p class="section-desc">From audio file to printable sheet music in under a minute.</p>
+  <div class="steps-grid">
+    <div class="step-card">
+      <div class="step-num">01</div>
+      <h3>Upload Your Audio</h3>
+      <p>Drop an MP3, WAV, or M4A file. Paste a direct audio link. Or record directly in the app. We accept any format.</p>
+    </div>
+    <div class="step-card">
+      <div class="step-num">02</div>
+      <h3>AI Processes & Separates</h3>
+      <p>Our AI isolates your chosen instrument using Demucs stem separation, then detects every note with polyphonic accuracy.</p>
+    </div>
+    <div class="step-card">
+      <div class="step-num">03</div>
+      <h3>Download Sheet Music</h3>
+      <p>Get professional notation in Score, Part, Lead Sheet, Tabs, Fake Book, or Staff format. Export as PDF, MIDI, or MusicXML.</p>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features" class="reveal">
+  <div class="section-tag">Features</div>
+  <h2 class="section-title">Everything musicians need.</h2>
+  <p class="section-desc">Built by music lovers, powered by cutting-edge AI.</p>
+  <div class="features-grid">
     <div class="feature-card">
       <div class="feature-icon">🎵</div>
-      <h3>AI Pitch Detection</h3>
-      <p>Upload any audio — we detect notes, timing, and melody using state-of-the-art pitch analysis.</p>
+      <h3>AI Stem Separation</h3>
+      <p>Isolate vocals, drums, bass, piano, or guitar from any mixed track. Powered by Meta's Demucs — the most accurate open-source model.</p>
     </div>
     <div class="feature-card">
-      <div class="feature-icon">🎸</div>
-      <h3>Instrument Isolation</h3>
-      <p>Separate vocals, drums, bass, and melody so each instrument gets its own accurate sheet.</p>
+      <div class="feature-icon">🎼</div>
+      <h3>6 Output Formats</h3>
+      <p>Score, Part, Lead Sheet, Guitar Tabs, Fake Book, and Staff notation. Whatever format you need, we've got it.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🎹</div>
+      <h3>Transpose & BPM Control</h3>
+      <p>Shift the key up or down 12 semitones instantly. Adjust tempo from 40-240 BPM. Hear changes with built-in playback.</p>
     </div>
     <div class="feature-card">
       <div class="feature-icon">📄</div>
-      <h3>Export to PDF</h3>
-      <p>Download clean, print-ready sheet music or share directly from the app.</p>
+      <h3>Professional PDF Export</h3>
+      <p>Clean, printable PDF with proper pagination, headers, and footers. Share directly to WhatsApp, email, or any app.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">✏️</div>
+      <h3>Note Editor</h3>
+      <p>Tap any note to adjust its pitch or delete it. Fine-tune the AI's output to match exactly what you hear.</p>
     </div>
     <div class="feature-card">
       <div class="feature-icon">🔒</div>
-      <h3>Privacy First</h3>
-      <p>Your audio is processed ephemerally and deleted immediately. We never store or train on your recordings.</p>
+      <h3>Copyright Compliant</h3>
+      <p>Rights declaration before every conversion. Ephemeral processing — audio is never stored. Full DMCA compliance built in.</p>
     </div>
   </div>
+</section>
 
-  <!-- Footer -->
-  <footer>
-    <div class="footer-links">
-      <a href="index.html">Home</a>
+<!-- INSTRUMENTS -->
+<section id="instruments" class="reveal">
+  <div class="section-tag">Instruments</div>
+  <h2 class="section-title">Works with any instrument.</h2>
+  <p class="section-desc">Upload a track and select which instrument to transcribe.</p>
+  <div class="instruments-row">
+    <div class="instrument-pill">🎹 Piano</div>
+    <div class="instrument-pill">🎸 Guitar</div>
+    <div class="instrument-pill">🎻 Violin</div>
+    <div class="instrument-pill">🥁 Drums</div>
+    <div class="instrument-pill">🎤 Vocals</div>
+    <div class="instrument-pill">🎷 Saxophone</div>
+    <div class="instrument-pill">🎺 Trumpet</div>
+    <div class="instrument-pill">🪈 Flute</div>
+    <div class="instrument-pill">🎸 Bass</div>
+    <div class="instrument-pill">🎻 Cello</div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section id="pricing" class="reveal">
+  <div class="section-tag">Pricing</div>
+  <h2 class="section-title">Start free. Upgrade when ready.</h2>
+  <p class="section-desc">No credit card required. Free tier includes unlimited access.</p>
+  <div class="pricing-grid" style="grid-template-columns: repeat(4, 1fr);">
+    <div class="price-card">
+      <div class="price-tier">Free Forever</div>
+      <div class="price-amount">$0</div>
+      <div class="price-annual">No signup required</div>
+      <ul class="price-features">
+        <li>Up to 60s (180s with signup)</li>
+        <li>5 sheets per month</li>
+        <li>Free metronome access</li>
+        <li>Record up to 10 minutes</li>
+        <li>Play and listen to results</li>
+        <li>PDF download with watermark</li>
+      </ul>
+      <a href="#download" class="price-btn price-btn-secondary">Get Started Free</a>
+    </div>
+    <div class="price-card">
+      <div class="price-tier">Pay-As-You-Go</div>
+      <div class="price-amount">$1.99<span>/track</span></div>
+      <div class="price-annual">No subscription needed</div>
+      <ul class="price-features">
+        <li>Up to 600 seconds per track</li>
+        <li>5 attempts per track</li>
+        <li>Clean PDF without watermark</li>
+        <li>Transpose, BPM & Note editing</li>
+        <li>Pay only when you need it</li>
+      </ul>
+      <a href="#download" class="price-btn price-btn-secondary">Buy Per Track</a>
+    </div>
+    <div class="price-card featured">
+      <div class="price-tier">Advanced Pro</div>
+      <div class="price-amount">$14.99<span>/mo</span></div>
+      <div class="price-annual">$7.49/mo billed annually — Save 50%</div>
+      <ul class="price-features">
+        <li>Up to 15 minutes per track</li>
+        <li>60 sheets per month</li>
+        <li>2x priority processing</li>
+        <li>Clean PDF download</li>
+        <li>Transpose, BPM & Note editing</li>
+      </ul>
+      <a href="#download" class="price-btn price-btn-primary">Start Pro</a>
+    </div>
+    <div class="price-card">
+      <div class="price-tier">Virtuosos</div>
+      <div class="price-amount">$19.99<span>/mo</span></div>
+      <div class="price-annual">$9.99/mo billed annually — Save 50%</div>
+      <ul class="price-features">
+        <li>Full length output — no limits</li>
+        <li>100 sheets per month</li>
+        <li>5x priority processing</li>
+        <li>Record up to 30 minutes</li>
+        <li>Every single feature unlocked</li>
+        <li>Transpose, BPM & Note editing</li>
+      </ul>
+      <a href="#download" class="price-btn price-btn-secondary">Go Virtuosos</a>
+    </div>
+  </div>
+</section>
+
+<!-- TESTIMONIALS -->
+<section class="reveal">
+  <div class="section-tag">What Musicians Say</div>
+  <h2 class="section-title">Loved by musicians worldwide.</h2>
+  <div class="testimonials-grid">
+    <div class="testimonial-card">
+      <div class="testimonial-stars">★★★★★</div>
+      <p class="testimonial-text">"I've been looking for an app that can transcribe my piano recordings into sheet music. Music-To-Sheet does it in seconds. The AI stem separation is incredibly accurate."</p>
+      <div class="testimonial-author">Sarah M.</div>
+      <div class="testimonial-role">Piano Teacher, London</div>
+    </div>
+    <div class="testimonial-card">
+      <div class="testimonial-stars">★★★★★</div>
+      <p class="testimonial-text">"As a guitar player, I love the tabs format. I can upload any song, isolate the guitar, and get playable tabs. The transpose feature is a game changer for different tunings."</p>
+      <div class="testimonial-author">Mike R.</div>
+      <div class="testimonial-role">Session Guitarist, Nashville</div>
+    </div>
+    <div class="testimonial-card">
+      <div class="testimonial-stars">★★★★★</div>
+      <p class="testimonial-text">"The pay-per-track option is perfect for students like me. I don't need a subscription — just $0.99 when I need to transcribe a song for practice. Brilliant pricing model."</p>
+      <div class="testimonial-author">Anita K.</div>
+      <div class="testimonial-role">Music Student, Mumbai</div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq" class="reveal">
+  <div class="section-tag">FAQ</div>
+  <h2 class="section-title" style="text-align:center;">Frequently asked questions.</h2>
+  <div class="faq-list">
+    <div class="faq-item">
+      <div class="faq-q">What audio formats do you support?</div>
+      <div class="faq-a">We support MP3, WAV, M4A, AAC, FLAC, and most common audio formats. You can also paste a direct link to an audio file hosted online.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">How accurate is the transcription?</div>
+      <div class="faq-a">Our AI uses Spotify's Basic Pitch for polyphonic note detection combined with Meta's Demucs for stem separation. Accuracy depends on recording quality — clean recordings with a single instrument produce the best results.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">Can I transcribe copyrighted music?</div>
+      <div class="faq-a">You are responsible for having the necessary rights to transcribe audio you upload. Our Terms of Service require a rights declaration before each conversion. All processing is ephemeral — audio is never stored on our servers.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">What output formats are available?</div>
+      <div class="faq-a">Score, Part, Lead Sheet, Guitar Tabs, Fake Book, and Staff notation. You can export as PDF (all tiers), MIDI and MusicXML (Pro and Virtuosos tiers).</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">Do I need an account to use it?</div>
+      <div class="faq-a">No! Free users can transcribe up to 60 seconds of audio without creating an account. Sign up for longer transcriptions and access to your conversion history.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">Can I cancel my subscription anytime?</div>
+      <div class="faq-a">Yes, you can cancel your subscription at any time through your Apple App Store or Google Play Store account settings. There are no cancellation fees.</div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section reveal" id="download">
+  <div class="section-tag">Get Started</div>
+  <h2 class="section-title" style="text-align:center;">Ready to see your music?</h2>
+  <p class="section-desc" style="text-align:center; margin:0 auto 40px;">Download Music-To-Sheet and convert your first track for free.</p>
+  <div style="display:flex; gap:16px; justify-content:center; flex-wrap:wrap;">
+    <a href="#" class="btn-primary" style="padding:18px 40px; font-size:17px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+      App Store
+    </a>
+    <a href="#" class="btn-primary" style="padding:18px 40px; font-size:17px; background:var(--white); color:var(--bg);">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M3 20.5v-17c0-.59.34-1.11.84-1.35L13.69 12l-9.85 9.85c-.5-.24-.84-.76-.84-1.35zm13.81-5.38L6.05 21.34l8.49-8.49 2.27 2.27zm.91-.52l2.71-1.54c.5-.29.8-.8.8-1.36 0-.56-.3-1.07-.8-1.36l-2.71-1.54-2.5 2.5 2.5 2.3zM6.05 2.66l10.76 6.22-2.27 2.27-8.49-8.49z"/></svg>
+      Google Play
+    </a>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-grid">
+    <div class="footer-brand">
+      <a href="#" class="nav-logo" style="margin-bottom:8px;">
+        <img src="icon.png" alt="Music-To-Sheet">
+        <span>Music-To-Sheet</span>
+      </a>
+      <p>AI-powered audio to sheet music transcription. Upload any recording and get professional notation in seconds.</p>
+    </div>
+    <div class="footer-col">
+      <h4>Product</h4>
+      <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#instruments">Instruments</a>
+      <a href="#faq">FAQ</a>
+    </div>
+    <div class="footer-col">
+      <h4>Legal</h4>
       <a href="terms.html">Terms of Service</a>
       <a href="privacy.html">Privacy Policy</a>
-      <a href="dmca.html">Copyright Policy</a>
-      <a href="delete-account.html">Delete Account</a>
-      <a href="mailto:support@musictosheet.com">support@musictosheet.com</a>
+      <a href="dmca.html">DMCA Policy</a>
     </div>
-    <p>&copy; 2026 Music-To-Sheet. All rights reserved.</p>
-  </footer>
+    <div class="footer-col">
+      <h4>Contact</h4>
+      <a href="mailto:support@musictosheet.com">support@musictosheet.com</a>
+      <a href="mailto:dmca@musictosheet.com">dmca@musictosheet.com</a>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>&copy; 2026 Music-To-Sheet. All rights reserved.</span>
+    <span>Made with ♪ for musicians everywhere</span>
+  </div>
+</footer>
+
+<script>
+// FAQ Toggle
+document.querySelectorAll('.faq-q').forEach(q => {
+  q.addEventListener('click', () => {
+    q.parentElement.classList.toggle('open');
+  });
+});
+
+// Scroll Reveal
+const reveals = document.querySelectorAll('.reveal');
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+    }
+  });
+}, { threshold: 0.1 });
+reveals.forEach(el => observer.observe(el));
+
+// Nav scroll effect
+window.addEventListener('scroll', () => {
+  const nav = document.querySelector('nav');
+  if (window.scrollY > 50) {
+    nav.style.borderBottom = '1px solid rgba(14,165,233,0.2)';
+  } else {
+    nav.style.borderBottom = '1px solid rgba(14,165,233,0.1)';
+  }
+});
+</script>
 
 </body>
 </html>
