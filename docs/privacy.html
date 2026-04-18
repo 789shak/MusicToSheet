@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Privacy Policy — Music-To-Sheet</title>
+  <meta name="description" content="Privacy Policy for Music-To-Sheet — how we collect, use, and protect your data." />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -147,6 +148,34 @@
       line-height: 1.6;
     }
 
+    .rights-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .rights-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+    }
+    .rights-card strong {
+      display: block;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .rights-card p {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.5;
+      margin: 0;
+    }
+
     footer {
       border-top: 1px solid var(--border);
       padding: 28px 40px;
@@ -167,6 +196,7 @@
       h1 { font-size: 28px; }
       footer { padding: 24px 20px; }
       table { font-size: 13px; }
+      .rights-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -189,14 +219,14 @@
   <main>
     <div class="page-label">Legal</div>
     <h1>Privacy Policy</h1>
-    <p class="meta">Last updated: June 2025 &nbsp;·&nbsp; Applies to the Music-To-Sheet mobile application and website</p>
+    <p class="meta">Last updated: April 16, 2026 &nbsp;·&nbsp; Applies to the Music-To-Sheet mobile app and website</p>
 
-    <p>Music-To-Sheet ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy explains what data we collect, why we collect it, how we use it, and your rights regarding your information.</p>
+    <p>Music-To-Sheet ("we", "our", or "us") takes your privacy seriously. This policy explains what data we collect, why we collect it, how it is used, who it is shared with, and what rights you have over your information.</p>
 
     <!-- 1 -->
     <section>
       <h2>1. Data We Collect</h2>
-      <p>We collect the minimum data necessary to provide the service:</p>
+      <p>We collect only what is necessary to provide the service:</p>
       <table>
         <thead>
           <tr>
@@ -208,57 +238,52 @@
         <tbody>
           <tr>
             <td>Account</td>
-            <td>Name, email address, phone number (optional), country</td>
+            <td>Email address, authentication provider ID (e.g. Google or Apple sign-in token), display name (optional)</td>
             <td>Authentication, account management, support</td>
-          </tr>
-          <tr>
-            <td>Profile</td>
-            <td>Optional social media handles (e.g. Instagram, YouTube)</td>
-            <td>User profile display within the app</td>
           </tr>
           <tr>
             <td>Audio</td>
             <td>Audio files you upload or links you submit</td>
-            <td>Transcription processing only — deleted immediately after</td>
+            <td>Transcription processing only — permanently deleted immediately after</td>
           </tr>
           <tr>
             <td>Conversion history</td>
             <td>Track name, instrument, output format, generated notes, duration</td>
-            <td>Display your history in-app; never shared</td>
+            <td>Displayed in your in-app history; never shared externally</td>
           </tr>
           <tr>
             <td>Rights declarations</td>
-            <td>Your self-declared rights statement per uploaded track</td>
+            <td>Self-declared ownership or rights statement per track</td>
             <td>Compliance record-keeping</td>
           </tr>
           <tr>
-            <td>Purchase records</td>
-            <td>Subscription tier, per-track purchase history</td>
+            <td>Subscription</td>
+            <td>Current plan tier, purchase history via RevenueCat</td>
             <td>Access control and billing verification</td>
           </tr>
           <tr>
-            <td>Usage</td>
-            <td>App version, device OS type, feature interactions</td>
+            <td>Usage analytics</td>
+            <td>App version, device OS type (not device ID), feature interaction events</td>
             <td>Crash diagnostics and product improvement</td>
           </tr>
         </tbody>
       </table>
       <div class="highlight-box">
-        We do <strong>not</strong> collect your precise city, precise location, or any biometric data. Country is collected solely for regional compliance purposes.
+        We do <strong>not</strong> collect precise location, biometric data, contact lists, browsing history, or any data beyond what is listed above.
       </div>
     </section>
 
     <!-- 2 -->
     <section>
-      <h2>2. Audio Processing &amp; Ephemeral Data</h2>
-      <p>Audio files are the most sensitive data we handle. Our processing is strictly ephemeral:</p>
+      <h2>2. Audio Processing — Strictly Ephemeral</h2>
+      <p>Audio is the most sensitive data we handle. Our commitment:</p>
       <ul>
-        <li>Audio is transmitted to our processing server solely to perform pitch detection and stem separation.</li>
-        <li>Processing completes within 60 seconds for standard files.</li>
-        <li>Audio files are permanently deleted from our servers immediately upon completion.</li>
-        <li>We do not store, cache, archive, back up, or retain copies of your audio for any purpose.</li>
+        <li>Audio is transmitted to our servers solely to perform pitch detection and stem separation.</li>
+        <li>Standard files are processed in under 60 seconds.</li>
+        <li>Audio files are permanently and irrecoverably deleted from our servers immediately upon completion of processing.</li>
+        <li>We do not store, cache, back up, or archive your audio for any purpose whatsoever.</li>
         <li>Your audio is <strong>never</strong> used to train, fine-tune, evaluate, or improve any AI or machine learning model.</li>
-        <li>Each transcription is generated specifically for you and is never shared with or reused for any other user.</li>
+        <li>Each transcription is generated solely for you and is never shared with or reused for any other user.</li>
       </ul>
     </section>
 
@@ -267,19 +292,32 @@
       <h2>3. How We Use Your Data</h2>
       <ul>
         <li>To provide, operate, and maintain the App and its features.</li>
-        <li>To authenticate your account and verify subscription status.</li>
+        <li>To authenticate your identity and verify your subscription status.</li>
         <li>To display your conversion history within the App.</li>
-        <li>To respond to support requests and communicate service updates.</li>
-        <li>To detect and prevent fraud, abuse, or violations of our Terms.</li>
+        <li>To respond to your support requests and communicate important service updates.</li>
+        <li>To detect and prevent fraud, abuse, and violations of our Terms of Service.</li>
         <li>To comply with legal obligations.</li>
       </ul>
-      <p>We do not sell, rent, or share your personal data with third parties for marketing purposes.</p>
+      <p>We do <strong>not</strong> sell, rent, trade, or share your personal data with third parties for advertising or marketing purposes.</p>
     </section>
 
     <!-- 4 -->
     <section>
-      <h2>4. Third-Party Services</h2>
-      <p>We use the following third-party services to operate the App. Each has their own privacy policy:</p>
+      <h2>4. Legal Basis for Processing (EU/UK Users)</h2>
+      <p>If you are located in the European Economic Area (EEA), United Kingdom, or Switzerland, we process your personal data under the following legal bases of the General Data Protection Regulation (GDPR) and UK GDPR:</p>
+      <ul>
+        <li><strong>Performance of a contract:</strong> Processing your account data, audio files, and conversion history is necessary to provide the App and fulfil our Terms of Service.</li>
+        <li><strong>Legitimate interests:</strong> Processing usage and diagnostic data to detect fraud, prevent abuse, secure the App, and improve product quality. You may object to this processing at any time (see Section 6, Your Rights).</li>
+        <li><strong>Consent:</strong> Where we rely on your consent (for example, optional profile information such as social media handles), you may withdraw consent at any time without affecting the lawfulness of prior processing.</li>
+        <li><strong>Legal obligation:</strong> Where we are required to process data to comply with applicable law, including tax, accounting, or law-enforcement requests.</li>
+      </ul>
+      <p>If you have questions about the legal basis for any specific processing activity, contact us at <a href="mailto:support@musictosheet.com">support@musictosheet.com</a>.</p>
+    </section>
+
+    <!-- 5 -->
+    <section>
+      <h2>5. Third-Party Services</h2>
+      <p>We use the following sub-processors to operate the App. Each is bound by data processing agreements and has its own privacy policy:</p>
       <table>
         <thead>
           <tr>
@@ -291,96 +329,158 @@
         <tbody>
           <tr>
             <td>Supabase</td>
-            <td>Database, authentication, file storage</td>
-            <td>Account data, conversion history, audio (temporary)</td>
+            <td>Database, authentication, and temporary file storage</td>
+            <td>Account data, conversion history, audio (temporary — deleted immediately after processing)</td>
           </tr>
           <tr>
             <td>Replicate</td>
-            <td>AI stem separation (Demucs)</td>
-            <td>Audio file URL (ephemeral; deleted after processing)</td>
+            <td>AI stem separation (Demucs model)</td>
+            <td>Audio file URL (ephemeral; deleted after processing completes)</td>
           </tr>
           <tr>
             <td>RevenueCat</td>
             <td>Subscription and in-app purchase management</td>
-            <td>Anonymous device ID, subscription status</td>
+            <td>Anonymous app user ID, subscription status</td>
           </tr>
           <tr>
             <td>Apple App Store</td>
-            <td>iOS app distribution and payments</td>
-            <td>Purchase receipts (handled by Apple)</td>
+            <td>iOS app distribution and payment processing</td>
+            <td>Purchase receipts (managed by Apple under their privacy policy)</td>
           </tr>
           <tr>
             <td>Google Play</td>
-            <td>Android app distribution and payments</td>
-            <td>Purchase receipts (handled by Google)</td>
+            <td>Android app distribution and payment processing</td>
+            <td>Purchase receipts (managed by Google under their privacy policy)</td>
           </tr>
         </tbody>
       </table>
     </section>
 
-    <!-- 5 -->
-    <section>
-      <h2>5. Your Rights</h2>
-      <p>Depending on your jurisdiction, you may have the following rights regarding your personal data:</p>
-      <ul>
-        <li><strong>Access:</strong> Request a copy of the personal data we hold about you.</li>
-        <li><strong>Correction:</strong> Request correction of inaccurate or incomplete data.</li>
-        <li><strong>Export:</strong> Request your conversion history and account data in a portable format.</li>
-        <li><strong>Deletion:</strong> Request deletion of your account and all associated data. Requests are processed within 30 days.</li>
-        <li><strong>Restriction:</strong> Request that we restrict processing of your data in certain circumstances.</li>
-        <li><strong>Objection:</strong> Object to processing based on legitimate interests.</li>
-      </ul>
-      <p>To exercise any of these rights, contact us at <a href="mailto:support@musictosheet.com">support@musictosheet.com</a> or use the account deletion feature within the App.</p>
-    </section>
-
     <!-- 6 -->
     <section>
-      <h2>6. Data Retention</h2>
-      <ul>
-        <li><strong>Active accounts:</strong> Data is retained for as long as your account remains active.</li>
-        <li><strong>Deactivated accounts:</strong> Data is retained for 60 days to allow account recovery, then permanently deleted.</li>
-        <li><strong>Deleted accounts:</strong> All data is permanently deleted within 30 days of your deletion request.</li>
-        <li><strong>Audio files:</strong> Deleted immediately after processing completes (see Section 2).</li>
-        <li><strong>Backups:</strong> Backup copies may persist for up to 30 additional days before being purged.</li>
-      </ul>
+      <h2>6. Your Rights (GDPR &amp; Global)</h2>
+      <p>If you are located in the European Economic Area, United Kingdom, or another jurisdiction with comprehensive privacy laws, you have the following rights regarding your personal data:</p>
+      <div class="rights-grid">
+        <div class="rights-card">
+          <strong>Access</strong>
+          <p>Request a copy of all personal data we hold about you.</p>
+        </div>
+        <div class="rights-card">
+          <strong>Correction</strong>
+          <p>Request correction of inaccurate or incomplete data.</p>
+        </div>
+        <div class="rights-card">
+          <strong>Portability</strong>
+          <p>Receive your conversion history and account data in a portable, machine-readable format.</p>
+        </div>
+        <div class="rights-card">
+          <strong>Deletion</strong>
+          <p>Request deletion of your account and all associated data. Completed within 30 days.</p>
+        </div>
+        <div class="rights-card">
+          <strong>Restriction</strong>
+          <p>Request that we pause processing of your data in certain circumstances.</p>
+        </div>
+        <div class="rights-card">
+          <strong>Objection</strong>
+          <p>Object to processing based on our legitimate interests.</p>
+        </div>
+      </div>
+      <p style="margin-top:16px;">Our legal basis for processing your data is: (a) contract performance — to provide the transcription service you signed up for; (b) legitimate interests — for fraud prevention and product improvement; and (c) compliance with legal obligations.</p>
+      <p>To exercise any right, email <a href="mailto:support@musictosheet.com">support@musictosheet.com</a> or use the account deletion feature in the App. We will respond within 30 days. If you are dissatisfied with our response, you have the right to lodge a complaint with your local supervisory authority (e.g., the ICO in the UK, or your national data protection authority in the EU).</p>
     </section>
 
     <!-- 7 -->
     <section>
-      <h2>7. Data Security</h2>
-      <p>We implement industry-standard technical and organisational measures to protect your data, including encrypted data transmission (TLS), encrypted storage, row-level security policies in our database, and access controls limiting who can access your data. No method of transmission or storage is 100% secure; we cannot guarantee absolute security.</p>
+      <h2>7. California Privacy Rights (CCPA)</h2>
+      <p>If you are a California resident, the California Consumer Privacy Act (CCPA) gives you specific rights:</p>
+      <ul>
+        <li><strong>Right to Know:</strong> You may request disclosure of the categories and specific pieces of personal information we have collected about you, and the purposes for which we use it.</li>
+        <li><strong>Right to Delete:</strong> You may request deletion of your personal information, subject to certain exceptions.</li>
+        <li><strong>Right to Opt Out of Sale:</strong> We do <strong>not</strong> sell personal information. There is nothing to opt out of.</li>
+        <li><strong>Right to Non-Discrimination:</strong> We will not discriminate against you for exercising any CCPA right.</li>
+      </ul>
+      <p>To submit a CCPA request, email <a href="mailto:support@musictosheet.com">support@musictosheet.com</a> with the subject line "CCPA Request". We will verify your identity and respond within 45 days.</p>
     </section>
 
     <!-- 8 -->
     <section>
-      <h2>8. Children's Privacy</h2>
-      <p>Music-To-Sheet is not directed to children under the age of 13, and we do not knowingly collect personal data from children under 13. If we become aware that a child under 13 has provided us with personal data, we will delete it promptly. If you believe your child has submitted data to us, contact us at <a href="mailto:support@musictosheet.com">support@musictosheet.com</a>.</p>
+      <h2>8. Data Retention</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Data Type</th>
+            <th>Retention Period</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Audio files</td>
+            <td>Deleted immediately after processing completes (typically under 60 seconds)</td>
+          </tr>
+          <tr>
+            <td>Active account data</td>
+            <td>Retained while your account is active</td>
+          </tr>
+          <tr>
+            <td>Deactivated account data</td>
+            <td>Retained for 60 days to allow recovery, then permanently deleted</td>
+          </tr>
+          <tr>
+            <td>Deleted account data</td>
+            <td>Permanently deleted within 30 days of your deletion request</td>
+          </tr>
+          <tr>
+            <td>Backup copies</td>
+            <td>Purged within 30 days following deletion of primary data</td>
+          </tr>
+        </tbody>
+      </table>
     </section>
 
     <!-- 9 -->
     <section>
-      <h2>9. Changes to This Policy</h2>
-      <p>We may update this Privacy Policy from time to time. We will notify you of material changes via the App or by email. The "Last updated" date at the top of this page reflects the most recent revision. Continued use of the App after changes are posted constitutes your acceptance of the updated policy.</p>
+      <h2>9. Data Security</h2>
+      <p>We implement industry-standard technical and organisational safeguards including encrypted data transmission (TLS 1.2+), encrypted storage at rest, row-level security policies in our database (Supabase), and strict access controls. No transmission or storage method is 100% secure — we cannot guarantee absolute security, but we take our obligation to protect your data seriously.</p>
     </section>
 
     <!-- 10 -->
     <section>
-      <h2>10. Contact</h2>
-      <p>For privacy-related questions, data requests, or concerns, contact us at:</p>
+      <h2>10. Children's Privacy</h2>
+      <p>Music-To-Sheet is not directed to children under 13, and we do not knowingly collect personal data from anyone under 13. If we become aware that a child under 13 has provided personal data, we will delete it promptly. If you believe your child has submitted data, contact us at <a href="mailto:support@musictosheet.com">support@musictosheet.com</a>. Users between 13 and 17 should have parental or guardian consent before using the App.</p>
+    </section>
+
+    <!-- 11 -->
+    <section>
+      <h2>11. International Data Transfers</h2>
+      <p>Your data may be processed on servers located outside your home country (including the United States and the European Union), as our sub-processors operate globally. Where data is transferred internationally, we ensure appropriate safeguards are in place — including Standard Contractual Clauses where required by GDPR — to protect your information.</p>
+    </section>
+
+    <!-- 12 -->
+    <section>
+      <h2>12. Changes to This Policy</h2>
+      <p>We may update this Privacy Policy from time to time. We will notify you of material changes via the App or by email, and will update the "Last updated" date at the top of this page. Continued use of the App after changes are posted constitutes acceptance of the updated policy.</p>
+    </section>
+
+    <!-- 13 -->
+    <section>
+      <h2>13. Contact</h2>
+      <p>For privacy questions, data requests, or complaints:</p>
       <p><a href="mailto:support@musictosheet.com">support@musictosheet.com</a></p>
+      <p>We aim to respond to all privacy requests within 30 days.</p>
     </section>
 
   </main>
 
   <footer>
     <div class="footer-links">
-      <a href="index.html">Home</a>
+      <a href="index.html">&#8592; musictosheet.com</a>
       <a href="terms.html">Terms of Service</a>
       <a href="privacy.html">Privacy Policy</a>
       <a href="dmca.html">Copyright Policy</a>
       <a href="mailto:support@musictosheet.com">support@musictosheet.com</a>
     </div>
-    <p>&copy; 2025 Music-To-Sheet. All rights reserved.</p>
+    <p>&copy; 2026 Music-To-Sheet. All rights reserved.</p>
   </footer>
 
 </body>
