@@ -20,7 +20,6 @@ import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import * as MediaLibrary from 'expo-media-library';
 import { decode } from 'base64-arraybuffer';
 import { Audio } from 'expo-av';
 import { BottomTabBar } from '../components/BottomTabBar';
@@ -47,52 +46,6 @@ function formatBytes(bytes: number | null): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
-
-// ─── Toast ────────────────────────────────────────────────────────────────────
-function useToast() {
-  const [message, setMessage] = useState('');
-  const opacity = useRef(new Animated.Value(0)).current;
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  function show(msg: string) {
-    if (timer.current) clearTimeout(timer.current);
-    setMessage(msg);
-    opacity.setValue(0);
-    Animated.sequence([
-      Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
-      Animated.delay(1800),
-      Animated.timing(opacity, { toValue: 0, duration: 300, useNativeDriver: true }),
-    ]).start();
-    timer.current = setTimeout(() => setMessage(''), 2400);
-  }
-
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
-  return { message, opacity, show };
-}
-
-function Toast({ message, opacity }: { message: string; opacity: Animated.Value }) {
-  if (!message) return null;
-  return (
-    <Animated.View style={[toastStyles.wrap, { opacity }]}>
-      <Text style={toastStyles.text}>{message}</Text>
-    </Animated.View>
-  );
-}
-
-const toastStyles = StyleSheet.create({
-  wrap: {
-    position: 'absolute',
-    bottom: 120,
-    alignSelf: 'center',
-    backgroundColor: '#1C1C27',
-    borderWidth: 1,
-    borderColor: '#0EA5E940',
-    borderRadius: 20,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-  },
-  text: { color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
-});
 
 // ─── Dropdown ─────────────────────────────────────────────────────────────────
 function Dropdown({
@@ -203,7 +156,6 @@ export default function UploadScreen() {
   const router = useRouter();
   const { maxFileSizeMB, tier } = useSubscription();
   const { isGuest } = useAuth();
-  const { show: showToast, message: toastMessage, opacity: toastOpacity } = useToast();
 
   const [file, setFile] = useState<PickedFile | null>(null);
   const [link, setLink] = useState('');
@@ -380,7 +332,7 @@ export default function UploadScreen() {
   async function saveCleanedAudio() {
     if (!cleanedFileUri) return;
 
-    // Free / guest tier — prompt upgrade
+    // Free / guest tier — prompt upgrade instead of downloading
     if (tier === 'free' || tier === 'freeGuest') {
       Alert.alert(
         'Premium Feature',
@@ -394,24 +346,12 @@ export default function UploadScreen() {
     }
 
     try {
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Storage permission is needed to save files.');
-        return;
-      }
-
       const filename = `MusicToSheet_Cleaned_${Date.now()}.mp3`;
-      const fileUri = FileSystem.cacheDirectory + filename;
-      await FileSystem.copyAsync({ from: cleanedFileUri, to: fileUri });
-
-      const asset = await MediaLibrary.createAssetAsync(fileUri);
-      if (asset) {
-        showToast('Saved to your device!');
-      } else {
-        await Sharing.shareAsync(fileUri, { mimeType: 'audio/mpeg' });
-      }
+      const destination = FileSystem.documentDirectory + filename;
+      await FileSystem.copyAsync({ from: cleanedFileUri, to: destination });
+      await Sharing.shareAsync(destination, { mimeType: 'audio/mpeg', dialogTitle: 'Save Cleaned Audio' });
     } catch (e: any) {
-      Alert.alert('Save failed', e?.message ?? 'Could not save file.');
+      Alert.alert('Save failed', e?.message ?? 'Could not share file.');
     }
   }
 
@@ -1005,9 +945,6 @@ export default function UploadScreen() {
           This tool is for personal practice. You are responsible for rights to uploaded content.
         </Text>
       </ScrollView>
-
-      {/* Toast */}
-      <Toast message={toastMessage} opacity={toastOpacity} />
 
       {/* Bottom Tab Bar */}
       <BottomTabBar active="upload" />
