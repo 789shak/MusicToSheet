@@ -379,7 +379,14 @@ async def process_audio(body: ProcessRequest):
         # Step 2b: Noise reduction
         print("[process] Step 2b: Applying noise reduction...")
         _nr_y, _nr_sr = sf.read(wav_path)
-        _nr_reduced = nr.reduce_noise(y=_nr_y, sr=_nr_sr, prop_decrease=0.75)
+        _nr_reduced = nr.reduce_noise(
+            y=_nr_y,
+            sr=_nr_sr,
+            prop_decrease=0.6,
+            stationary=False,
+            n_fft=2048,
+            freq_mask_smooth_hz=500,
+        )
         sf.write(wav_path, _nr_reduced, _nr_sr)
         del _nr_y, _nr_reduced
         gc.collect()
@@ -519,7 +526,14 @@ async def process_with_stems(body: ProcessRequest):
         # Step 6b: Noise reduction
         print("[stems] Step 6b: Applying noise reduction...")
         _nr_y, _nr_sr = sf.read(wav_path)
-        _nr_reduced = nr.reduce_noise(y=_nr_y, sr=_nr_sr, prop_decrease=0.75)
+        _nr_reduced = nr.reduce_noise(
+            y=_nr_y,
+            sr=_nr_sr,
+            prop_decrease=0.6,
+            stationary=False,
+            n_fft=2048,
+            freq_mask_smooth_hz=500,
+        )
         sf.write(wav_path, _nr_reduced, _nr_sr)
         del _nr_y, _nr_reduced
         gc.collect()
@@ -609,7 +623,14 @@ async def clean_audio(request: Request):
 
         print("[clean] Step 3: Applying noise reduction...")
         audio_data, sample_rate = sf.read(wav_path)
-        reduced = nr.reduce_noise(y=audio_data, sr=sample_rate, prop_decrease=0.8)
+        reduced = nr.reduce_noise(
+            y=audio_data,
+            sr=sample_rate,
+            prop_decrease=0.6,
+            stationary=False,
+            n_fft=2048,
+            freq_mask_smooth_hz=500,
+        )
         sf.write(wav_path, reduced, sample_rate)
         del audio_data, reduced
         gc.collect()

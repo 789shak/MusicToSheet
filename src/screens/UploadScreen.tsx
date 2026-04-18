@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
   Animated,
   Image,
+  Switch,
 } from 'react-native';
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'expo-router';
@@ -182,8 +183,10 @@ export default function UploadScreen() {
   // ── Noise cleaning state ───────────────────────────────────────────────────
   const [cleaningNoise, setCleaningNoise] = useState(false);
   const [cleanedFileUri, setCleanedFileUri] = useState<string | null>(null);
+  const [originalRecordingUri, setOriginalRecordingUri] = useState<string | null>(null);
   const [cleanedDuration, setCleanedDuration] = useState('');
   const [isPlayingCleaned, setIsPlayingCleaned] = useState(false);
+  const [useCleanedEffect, setUseCleanedEffect] = useState(true);
   const cleanedSoundRef = useRef<Audio.Sound | null>(null);
 
   // Cleanup on unmount
@@ -255,6 +258,9 @@ export default function UploadScreen() {
       const outPath = FileSystem.cacheDirectory + `cleaned_${Date.now()}.${fmt}`;
       await FileSystem.writeAsStringAsync(outPath, json.audio_base64, { encoding: 'base64' });
 
+      // Save original URI for compare toggle before replacing
+      setOriginalRecordingUri(source.uri);
+
       // Replace current file with cleaned version — ready for conversion
       setFile({ name: cleanedName, uri: outPath, size: null, mimeType: 'audio/mpeg' });
 
@@ -274,6 +280,7 @@ export default function UploadScreen() {
       await cleanedSoundRef.current?.unloadAsync().catch(() => {});
       cleanedSoundRef.current = null;
       setIsPlayingCleaned(false);
+      setUseCleanedEffect(true);
       setCleanedFileUri(outPath);
     } catch (e: any) {
       Alert.alert('Error', e?.message ?? 'Could not clean audio.');
@@ -285,15 +292,17 @@ export default function UploadScreen() {
 
   async function toggleCleanedPlayback() {
     try {
-      if (!cleanedFileUri) return;
+      const activeUri = useCleanedEffect ? cleanedFileUri : originalRecordingUri;
+      if (!activeUri) return;
       if (isPlayingCleaned && cleanedSoundRef.current) {
         await cleanedSoundRef.current.pauseAsync();
         setIsPlayingCleaned(false);
         return;
       }
+      // Reload sound if the URI changed (toggle switched while stopped)
       if (!cleanedSoundRef.current) {
         await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
-        const { sound } = await Audio.Sound.createAsync({ uri: cleanedFileUri });
+        const { sound } = await Audio.Sound.createAsync({ uri: activeUri });
         cleanedSoundRef.current = sound;
         sound.setOnPlaybackStatusUpdate((status) => {
           if (status.isLoaded && status.didJustFinish) {
@@ -306,6 +315,17 @@ export default function UploadScreen() {
     } catch (e: any) {
       Alert.alert('Playback error', e?.message ?? 'Could not play audio.');
     }
+  }
+
+  async function switchEffect(cleaned: boolean) {
+    // Stop and unload current sound so next play loads the new URI
+    if (isPlayingCleaned && cleanedSoundRef.current) {
+      await cleanedSoundRef.current.stopAsync().catch(() => {});
+    }
+    await cleanedSoundRef.current?.unloadAsync().catch(() => {});
+    cleanedSoundRef.current = null;
+    setIsPlayingCleaned(false);
+    setUseCleanedEffect(cleaned);
   }
 
   async function startRecording() {
@@ -327,8 +347,10 @@ export default function UploadScreen() {
       setFile(null);
       setLink('');
       setCleanedFileUri(null);
+      setOriginalRecordingUri(null);
       setCleanedDuration('');
       setIsPlayingCleaned(false);
+      setUseCleanedEffect(true);
       await cleanedSoundRef.current?.unloadAsync().catch(() => {});
       cleanedSoundRef.current = null;
 
@@ -657,8 +679,10 @@ export default function UploadScreen() {
                 setFile(null);
                 setUploadError('');
                 setCleanedFileUri(null);
+                setOriginalRecordingUri(null);
                 setCleanedDuration('');
                 setIsPlayingCleaned(false);
+                setUseCleanedEffect(true);
                 cleanedSoundRef.current?.unloadAsync().catch(() => {});
                 cleanedSoundRef.current = null;
               }} hitSlop={8}>
@@ -780,10 +804,22 @@ export default function UploadScreen() {
               <TouchableOpacity onPress={toggleCleanedPlayback} style={styles.playBtn} activeOpacity={0.8}>
                 <Ionicons name={isPlayingCleaned ? 'pause' : 'play'} size={18} color="#0EA5E9" />
               </TouchableOpacity>
-              <Text style={styles.cleanedPreviewLabel}>Cleaned Audio Preview</Text>
+              <Text style={styles.cleanedPreviewLabel}>
+                {useCleanedEffect ? 'Cleaned Audio Preview' : 'Original Audio Preview'}
+              </Text>
               {cleanedDuration ? (
                 <Text style={styles.cleanedPreviewDuration}>{cleanedDuration}</Text>
               ) : null}
+              <View style={styles.effectToggleWrap}>
+                <Text style={styles.effectToggleLabel}>Effect</Text>
+                <Switch
+                  value={useCleanedEffect}
+                  onValueChange={switchEffect}
+                  trackColor={{ false: '#2D2D3E', true: '#0EA5E960' }}
+                  thumbColor={useCleanedEffect ? '#0EA5E9' : '#6B7280'}
+                  style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
+                />
+              </View>
             </View>
           ) : null}
         </View>
@@ -1171,6 +1207,16 @@ const styles = StyleSheet.create({
   cleanedPreviewDuration: {
     color: '#6B7280',
     fontSize: 12,
+  },
+  effectToggleWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  effectToggleLabel: {
+    color: '#9CA3AF',
+    fontSize: 11,
+    fontWeight: '500',
   },
 
   // Pro recording — idle button
