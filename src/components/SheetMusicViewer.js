@@ -579,6 +579,10 @@ function buildPdfBodyHtml(notes, meta) {
   );
   const BPM       = meta.bpm || 120;
   const WATERMARK = !!meta.watermark;
+  const username  = meta.username ? htmlEsc(String(meta.username)) : null;
+  const fileName  = meta.fileName ? htmlEsc(String(meta.fileName)) : null;
+  const duration  = meta.duration ? htmlEsc(String(meta.duration)) : null;
+  const dateTime  = meta.dateTime ? htmlEsc(String(meta.dateTime)) : null;
 
   const DEGREE    = { C:0, D:1, E:2, F:3, G:4, A:5, B:6 };
   const BEATS     = 4;
@@ -586,7 +590,7 @@ function buildPdfBodyHtml(notes, meta) {
   const LINE_GAP      = 12;
   const STEP          = LINE_GAP / 2;
   const STAFF_H       = 4 * LINE_GAP;
-  const ROW_H         = 110;
+  const ROW_H         = 140;
   const ST_OFF        = 48;
   const NH_RX         = 5;
   const NH_RY         = 4;
@@ -619,15 +623,29 @@ function buildPdfBodyHtml(notes, meta) {
   for (let i = 0; i < parsed.length; i += PER_ROW)
     allRows.push(parsed.slice(i, i + PER_ROW));
 
-  const pages = [];
+  const allPages = [];
   for (let p = 0; p < allRows.length; p += ROWS_PER_PAGE)
-    pages.push(allRows.slice(p, p + ROWS_PER_PAGE));
+    allPages.push(allRows.slice(p, p + ROWS_PER_PAGE));
 
+  // maxPages: optional limit — guest users export only the first N pages
+  const maxPages = (meta.maxPages != null) ? Number(meta.maxPages) : null;
+  const pages = (maxPages !== null) ? allPages.slice(0, maxPages) : allPages;
+
+  const metaRow = (lbl, val) => val
+    ? '<div class="meta-row"><span class="meta-lbl">' + lbl + ':</span> ' + val + '</div>'
+    : '';
   const HEADER_HTML =
-    '<div class="header">'
-    + '<div class="header-title">' + trackName + '</div>'
-    + '<div class="header-meta">' + instrument + ' &middot; ' + format + ' &middot; ' + date + ' &middot; \u2669 = ' + BPM + '</div>'
-    + '</div>';
+    '<div class="meta-block">'
+    + '<div class="meta-title">' + trackName + '</div>'
+    + (username ? metaRow('User',       username) : '')
+    + metaRow('File',       fileName)
+    + metaRow('Duration',   duration)
+    + metaRow('Date',       dateTime || date)
+    + metaRow('BPM',        String(BPM))
+    + metaRow('Instrument', instrument)
+    + metaRow('Format',     format)
+    + '</div>'
+    + '<div class="meta-sep"></div>';
 
   const FOOTER_HTML =
     '<div class="footer">'
@@ -740,8 +758,10 @@ function buildPdfBodyHtml(notes, meta) {
   return bodyHtml;
 }
 
-// ─── PDF HTML builder (exported for use in ResultsScreen) ────────────────────
-export function buildPdfHtml(notes, meta) {
+// ─── Static PDF HTML builder (exported for use in ResultsScreen) ─────────────
+// Fully static: ALL SVG/HTML content is pre-built as a string — no <script> tag,
+// no runtime DOM injection. expo-print sees the complete body on first render.
+export function buildStaticPdfHtml(notes, meta) {
   meta = meta || {};
   return `<!DOCTYPE html>
 <html>
@@ -749,13 +769,19 @@ export function buildPdfHtml(notes, meta) {
 <meta charset="utf-8"/>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  @page { margin: 20mm 20mm 20mm 45mm; }
+  @page { size: A4; margin: 20mm 20mm 20mm 45mm; }
   html, body { background: #FFFFFF; font-family: sans-serif; }
-  .page { position: relative; }
+  .page { }
   .page.break { page-break-after: always; }
-  .header { padding-bottom: 14px; border-bottom: 1px solid #E5E7EB; margin-bottom: 16px; }
-  .header-title { font-size: 18px; font-weight: 700; color: #111118; margin-bottom: 4px; }
-  .header-meta  { font-size: 12px; color: #6B7280; }
+  /* Center the fixed-width SVG within the A4 content area */
+  svg { display: block; margin: 0 auto; }
+  /* Metadata block — print-friendly */
+  .meta-block { background: #F8F9FA; padding: 10px 12px 8px; border-radius: 4px;
+                margin-bottom: 14px; border-left: 3px solid #0EA5E9; }
+  .meta-title { font-size: 14px; font-weight: 700; color: #111118; margin-bottom: 5px; }
+  .meta-row   { font-size: 11px; line-height: 1.7; color: #444444; }
+  .meta-lbl   { color: #888888; font-weight: 600; display: inline-block; min-width: 75px; }
+  .meta-sep   { display: none; }
   .footer { padding-top: 10px; border-top: 1px solid #E5E7EB; font-size: 9px; color: #333333; text-align: center; margin-top: 8px; }
 </style>
 </head>
@@ -765,37 +791,300 @@ ${buildPdfBodyHtml(notes, meta)}
 </html>`;
 }
 
-// ─── Screen preview HTML ──────────────────────────────────────────────────────
-// Takes the exact same HTML as the PDF export (proven to look correct) and
-// adapts it for in-app display by:
-//   1. Injecting a viewport meta so the 500px SVG scales to fit the phone screen
-//   2. Appending the Web Audio playback engine (not present in PDF HTML)
-// @page and page-break-after CSS are print-only and are ignored by the WebView.
+// ─── Screen preview HTML (with page-based locking for guest users) ───────────
+// Renders ALL notes. Pages at or past lockedFromPage are wrapped in a
+// CSS-blurred div and preceded by an upgrade overlay on the first locked page.
+// The PDF path (buildPdfHtml) uses maxPages in meta to cap exported pages.
 export function buildScreenHtml(notes, meta) {
   meta = meta || {};
-  const bpm       = meta.bpm || 120;
-  const notesJson = JSON.stringify(notes);
+  const BPM        = meta.bpm || 120;
+  const trackName  = htmlEsc(meta.trackName  || 'Untitled');
+  const instrument = htmlEsc(meta.instrument || 'Unknown');
+  const format     = htmlEsc(meta.format     || 'Score');
+  const WATERMARK  = !!meta.watermark;
+  const username   = meta.username ? htmlEsc(String(meta.username)) : null;
+  const fileName   = meta.fileName ? htmlEsc(String(meta.fileName)) : null;
+  const duration   = meta.duration ? htmlEsc(String(meta.duration)) : null;
+  const dateTime   = meta.dateTime ? htmlEsc(String(meta.dateTime)) : null;
+  // lockedFromPage: 0-indexed page index from which all subsequent pages are locked.
+  // null or Infinity → no locking (authenticated users see all pages clearly).
+  const lockedFromPage = (meta.lockedFromPage != null && isFinite(meta.lockedFromPage))
+                           ? Number(meta.lockedFromPage) : null;
+  const notesJson  = JSON.stringify(notes);
 
-  // Base: the proven PDF rendering (W=500 SVG, proper staves, barlines, etc.)
-  let html = buildPdfHtml(notes, meta);
+  // ── Layout constants (kept in sync with buildPdfBodyHtml) ──────────────────
+  const DEGREE        = { C:0, D:1, E:2, F:3, G:4, A:5, B:6 };
+  const BEATS         = 4;
+  const W             = 500;
+  const LINE_GAP      = 12;
+  const STEP          = LINE_GAP / 2;
+  const STAFF_H       = 4 * LINE_GAP;
+  const ROW_H         = 140;
+  const ST_OFF        = 48;
+  const NH_RX         = 5;
+  const NH_RY         = 4;
+  const CLEF_W        = 52;
+  const TIME_W        = 24;
+  const PER_ROW       = 8;
+  const ROWS_PER_PAGE = 7;
 
-  // 1. Viewport: 540px logical width × 0.72 ≈ 389px — fits a 390px phone exactly.
-  //    user-scalable=yes enables pinch-zoom.
-  html = html.replace(
-    '<meta charset="utf-8"/>',
-    '<meta charset="utf-8"/>\n<meta name="viewport" content="width=540, initial-scale=0.72, user-scalable=yes"/>'
+  const NX0_FIRST = CLEF_W + TIME_W + 8;
+  const NX0_REST  = CLEF_W + 8;
+  const NW_FIRST  = (W - NX0_FIRST - 6) / PER_ROW;
+  const NW_REST   = (W - NX0_REST  - 6) / PER_ROW;
+
+  function parsePitch(p) {
+    const m = (p || '').match(/^([A-G])([#b]?)([0-9])$/);
+    if (!m || DEGREE[m[1]] === undefined) return null;
+    return { steps: (parseInt(m[3], 10) - 4) * 7 + DEGREE[m[1]], acc: m[2] || null };
+  }
+
+  const INPUT = (notes && notes.length) ? notes : [
+    {pitch:'C4',start:0},{pitch:'D4',start:0.5},{pitch:'E4',start:1},{pitch:'F4',start:1.5},
+    {pitch:'G4',start:2},{pitch:'A4',start:2.5},{pitch:'B4',start:3},{pitch:'C5',start:3.5},
+    {pitch:'E5',start:4},{pitch:'D5',start:4.5},{pitch:'C5',start:5},{pitch:'B4',start:5.5},
+    {pitch:'A4',start:6},{pitch:'G4',start:6.5},{pitch:'F4',start:7},{pitch:'E4',start:7.5},
+  ];
+
+  const totalPages = Math.ceil(INPUT.length / (ROWS_PER_PAGE * PER_ROW)) || 1;
+  console.log(
+    '[SheetMusicViewer] page lock from:', lockedFromPage,
+    '| total notes:', INPUT.length, '| total pages:', totalPages
   );
 
-  // 2. Playback engine — lets the play button in ResultsScreen drive Web Audio.
-  //    Note highlighting is omitted (PDF SVG has no note-N IDs); audio still works.
-  const playbackBlock = `<script>
+  const parsed = INPUT.map(n => parsePitch(n.pitch));
+
+  const allRows = [];
+  for (let i = 0; i < parsed.length; i += PER_ROW)
+    allRows.push(parsed.slice(i, i + PER_ROW));
+
+  const pages = [];
+  for (let p = 0; p < allRows.length; p += ROWS_PER_PAGE)
+    pages.push(allRows.slice(p, p + ROWS_PER_PAGE));
+
+  // ── Build SVG inner content for a slice of rows ────────────────────────────
+  // rowsData      : array of parsed-note arrays to render
+  // globalRowStart: global row index of rowsData[0] (used only for isFirstRow check)
+  function buildRowsSvg(rowsData, globalRowStart) {
+    const svgH = rowsData.length * ROW_H + 24;
+    let out = svgRect(0, 0, W, svgH, '#FFFFFF');
+
+    rowsData.forEach((row, li) => {
+      const globalRi  = globalRowStart + li;
+      const isFirstRow = globalRi === 0;
+      const ry  = li * ROW_H;      // y-origin within THIS svg
+      const stT = ry + ST_OFF;
+      const stB = stT + STAFF_H;
+      const nx0 = isFirstRow ? NX0_FIRST : NX0_REST;
+      const nw  = isFirstRow ? NW_FIRST  : NW_REST;
+
+      for (let l = 0; l < 5; l++)
+        out += svgHLine(4, W - 4, stT + l * LINE_GAP, '#333333', 1);
+      out += svgVLine(4, stT, stB, '#333333', 1.5);
+      out += '<text x="5" y="' + (stB + 16) + '"'
+           + ' font-size="70" font-family="Times New Roman, Times, serif"'
+           + ' fill="#000000">&#x1D11E;</text>';
+
+      if (isFirstRow) {
+        const tx = CLEF_W + 2;
+        out += svgTimeSigNum(tx, stT + LINE_GAP + 7,     '4');
+        out += svgTimeSigNum(tx, stT + 3 * LINE_GAP + 7, '4');
+        out += '<text x="' + (CLEF_W + TIME_W + 14) + '" y="' + (stT - 5) + '"'
+             + ' font-size="11" font-family="sans-serif" fill="#333333">\u2669 = ' + BPM + '</text>';
+      }
+
+      row.forEach((note, ni) => {
+        const nx  = Math.round(nx0 + ni * nw + nw / 2);
+        const gni = globalRi * PER_ROW + ni;
+
+        if (!note) {
+          const mid = stT + STAFF_H / 2 + 2;
+          out += svgSeg(nx-3, mid-9,  nx+5, mid-3,  '#000000', 1.5);
+          out += svgSeg(nx+5, mid-3,  nx-3, mid+4,  '#000000', 1.5);
+          out += svgSeg(nx-3, mid+4,  nx+3, mid+11, '#000000', 1.5);
+        } else {
+          let sae = note.steps - 2;
+          while (sae < -4) sae += 7;
+          while (sae > 12) sae -= 7;
+          const ny = stB - sae * STEP;
+
+          if (sae <= -2) {
+            const loLedger = (sae % 2 === 0) ? sae : sae + 1;
+            for (let ls = -2; ls >= loLedger; ls -= 2)
+              out += svgHLine(nx-11, nx+11, stB - ls*STEP, '#333333', 1);
+          }
+          if (sae >= 10) {
+            const hiLedger = (sae % 2 === 0) ? sae : sae - 1;
+            for (let hs = 10; hs <= hiLedger; hs += 2)
+              out += svgHLine(nx-11, nx+11, stB - hs*STEP, '#333333', 1);
+          }
+          if (note.acc) {
+            const ch = note.acc === '#' ? '&#x266F;' : '&#x266D;';
+            out += '<text x="' + (nx-16) + '" y="' + (ny+5) + '"'
+                 + ' font-size="14" font-family="serif" fill="#000000">' + ch + '</text>';
+          }
+          out += '<ellipse cx="' + nx + '" cy="' + ny + '"'
+               + ' rx="' + NH_RX + '" ry="' + NH_RY + '" fill="#000000"'
+               + ' transform="rotate(-15,' + nx + ',' + ny + ')"/>';
+          const STEM_LEN = 30;
+          if (sae < 4) {
+            out += svgVLine(nx+NH_RX, ny-NH_RY, ny-NH_RY-STEM_LEN, '#000000', 1.5);
+          } else {
+            out += svgVLine(nx-NH_RX, ny+NH_RY, ny+NH_RY+STEM_LEN, '#000000', 1.5);
+          }
+        }
+
+        if ((gni + 1) % BEATS === 0 && ni < row.length - 1) {
+          const bx = Math.round(nx + nw / 2 + 1);
+          out += svgVLine(bx, stT, stB, '#333333', 1.5);
+        }
+      });
+      out += svgVLine(W - 4, stT, stB, '#333333', 1.5);
+    });
+
+    if (WATERMARK) {
+      const wmText = 'Music-To-Sheet Preview \u2014 Upgrade for full version';
+      const wmCx   = W / 2;
+      [svgH * 0.22, svgH * 0.5, svgH * 0.78].forEach(wmY => {
+        out += '<text x="' + wmCx + '" y="' + wmY + '"'
+             + ' font-size="16" font-family="sans-serif" font-weight="700"'
+             + ' fill="#DC143C" opacity="0.18" text-anchor="middle"'
+             + ' transform="rotate(-40,' + wmCx + ',' + wmY + ')">'
+             + wmText + '</text>';
+      });
+    }
+
+    return { content: out, height: svgH };
+  }
+
+  function makeSvg(content, height) {
+    return '<svg width="' + W + '" height="' + height
+         + '" xmlns="http://www.w3.org/2000/svg">' + content + '</svg>';
+  }
+
+  const metaRow = (lbl, val) => val
+    ? '<div class="meta-row"><span class="meta-lbl">' + lbl + ':</span> ' + val + '</div>'
+    : '';
+  const HEADER_HTML =
+    '<div class="meta-block">'
+    + '<div class="meta-title">' + trackName + '</div>'
+    + (username ? metaRow('User',       username) : '')
+    + metaRow('File',       fileName)
+    + metaRow('Duration',   duration)
+    + metaRow('Date',       dateTime)
+    + metaRow('BPM',        String(BPM))
+    + metaRow('Instrument', instrument)
+    + metaRow('Format',     format)
+    + '</div>'
+    + '<div class="meta-sep"></div>';
+
+  const FOOTER_HTML =
+    '<div class="footer">'
+    + 'Generated by Music-To-Sheet &nbsp;|&nbsp; musictosheet.com &nbsp;|&nbsp;'
+    + '<span style="color:#DC143C">For personal use only</span>'
+    + ' \u2014 not licensed for distribution'
+    + '</div>';
+
+  let bodyHtml = '';
+
+  pages.forEach((pageRows, pi) => {
+    const isLastPage    = pi === pages.length - 1;
+    const globalRowStart = pi * ROWS_PER_PAGE;
+    const isPageLocked  = lockedFromPage !== null && pi >= lockedFromPage;
+    const isFirstLocked = lockedFromPage !== null && pi === lockedFromPage;
+
+    bodyHtml += '<div class="page' + (isLastPage ? '' : ' break') + '">';
+    if (pi === 0) bodyHtml += HEADER_HTML;
+
+    if (!isPageLocked) {
+      // ── Clear page ──
+      const { content, height } = buildRowsSvg(pageRows, globalRowStart);
+      bodyHtml += makeSvg(content, height);
+    } else {
+      // ── Locked page: upgrade overlay (first locked page only) + blurred content ──
+      if (isFirstLocked) {
+        bodyHtml +=
+          '<div class="upgrade-overlay">'
+          + '<div class="upgrade-icon">\uD83D\uDD12</div>'
+          + '<div class="upgrade-heading">Unlock All Pages</div>'
+          + '<button class="upgrade-btn-primary" onclick="postNav(\'/\')">'
+          + 'Sign Up Free \u2014 Unlock All Pages</button>'
+          + '<button class="upgrade-btn-outline" onclick="postNav(\'/subscription\')">'
+          + 'Upgrade to Pro \u2014 Remove Watermark</button>'
+          + '</div>';
+      }
+      const { content, height } = buildRowsSvg(pageRows, globalRowStart);
+      bodyHtml += '<div class="locked-staves">' + makeSvg(content, height) + '</div>';
+    }
+
+    bodyHtml += FOOTER_HTML;
+    bodyHtml += '</div>';
+  });
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=540, initial-scale=0.72, user-scalable=yes"/>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #FFFFFF; font-family: sans-serif; }
+  .page { }
+  /* Centre the fixed-width SVG (500px) within the 540px viewport */
+  svg { display: block; margin: 0 auto; }
+  /* Metadata info block — dark theme */
+  .meta-block { background: #111118; padding: 12px 14px 10px; font-family: sans-serif; }
+  .meta-title { font-size: 14px; font-weight: 700; color: #FFFFFF; margin-bottom: 6px; }
+  .meta-row   { font-size: 12px; line-height: 1.8; color: #AAAAAA; }
+  .meta-lbl   { color: #666666; font-weight: 600; display: inline-block; min-width: 82px; }
+  .meta-sep   { height: 1px; background: #2D2D3E; margin-bottom: 10px; }
+  .footer { padding-top: 10px; border-top: 1px solid #2D2D3E; font-size: 9px;
+            color: #666666; text-align: center; margin-top: 8px; }
+  /* Locked staves: CSS blur makes notes completely unreadable */
+  .locked-staves {
+    filter: blur(10px);
+    -webkit-filter: blur(10px);
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
+    overflow: hidden;
+  }
+  /* Upgrade overlay — shown once at the top of the first locked page */
+  .upgrade-overlay {
+    background: #111118;
+    border: 1px solid #2D2D3E;
+    border-radius: 12px;
+    padding: 24px 20px 20px;
+    margin: 8px 0 12px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+  .upgrade-icon { font-size: 26px; }
+  .upgrade-heading {
+    color: #FFFFFF; font-size: 18px; font-weight: 700; font-family: sans-serif;
+  }
+  .upgrade-btn-primary {
+    width: 100%; background: #0EA5E9; color: #FFFFFF;
+    border: none; border-radius: 10px; padding: 13px 16px;
+    font-size: 14px; font-weight: 700; cursor: pointer; font-family: sans-serif;
+  }
+  .upgrade-btn-outline {
+    width: 100%; background: transparent; color: #0EA5E9;
+    border: 1.5px solid #0EA5E9; border-radius: 10px; padding: 12px 16px;
+    font-size: 14px; font-weight: 600; cursor: pointer; font-family: sans-serif;
+  }
+</style>
+</head>
+<body>
+${bodyHtml}
+<script>
 window.__NOTES = ${notesJson};
-window.__BPM   = ${bpm};
+window.__BPM   = ${BPM};
 var _pbCtx=null,_pbTimer=null,_pbTotal=0,_pbStart=0;
 var _NS={C:0,'C#':1,Db:1,D:2,'D#':3,Eb:3,E:4,F:5,'F#':6,Gb:6,G:7,'G#':8,Ab:8,A:9,'A#':10,Bb:10,B:11};
-
-// Convert pitch name (e.g. "C4", "D#5") to frequency in Hz.
-// Formula: freq = 440 * 2^((MIDI-69)/12), where MIDI = (octave+1)*12 + semitone.
 function _freq(p){
   var m=String(p).match(/^([A-G][#b]?)(-?[0-9]+)$/);
   if(!m)return 0;
@@ -803,8 +1092,6 @@ function _freq(p){
   if(s===undefined)return 0;
   return 440*Math.pow(2,((parseInt(m[2])+1)*12+s-69)/12);
 }
-
-// Play a single note as a sine-wave oscillator with a short ADSR envelope.
 function _tone(ctx,freq,t0,dur){
   if(freq<=0||dur<=0)return;
   var osc=ctx.createOscillator(),g=ctx.createGain();
@@ -817,9 +1104,8 @@ function _tone(ctx,freq,t0,dur){
   g.gain.linearRampToValueAtTime(0,t0+dur);
   osc.start(t0); osc.stop(t0+dur+0.01);
 }
-
 function _post(o){try{window.ReactNativeWebView.postMessage(JSON.stringify(o));}catch(e){}}
-
+function postNav(route){try{window.ReactNativeWebView.postMessage(JSON.stringify({type:'nav',route:route}));}catch(e){}}
 function _tick(){
   if(!_pbCtx||_pbCtx.state!=='running')return;
   var el=_pbCtx.currentTime-_pbStart;
@@ -827,18 +1113,13 @@ function _tick(){
   if(el<_pbTotal+0.3){_pbTimer=setTimeout(_tick,80);}
   else{_pbTimer=null;_post({type:'ended'});}
 }
-
 function _stopPb(){
   if(_pbTimer){clearTimeout(_pbTimer);_pbTimer=null;}
   if(_pbCtx){try{_pbCtx.close();}catch(e){}_pbCtx=null;}
 }
-
 function _schedulePb(){
-  // Use actual note start times (polyphonic) scaled by BPM.
-  // n.start is in seconds at tempo=120; bpmScale adjusts playback speed.
-  var ns=window.__NOTES||[], bpm=window.__BPM||120, bpmScale=120/bpm;
-  var t0=_pbCtx.currentTime+0.1;
-  var maxEnd=t0;
+  var ns=window.__NOTES||[],bpm=window.__BPM||120,bpmScale=120/bpm;
+  var t0=_pbCtx.currentTime+0.1,maxEnd=t0;
   for(var i=0;i<ns.length;i++){
     var n=ns[i];
     var noteStart=t0+(n.start||0)*bpmScale;
@@ -847,18 +1128,14 @@ function _schedulePb(){
     var noteEnd=noteStart+dur;
     if(noteEnd>maxEnd) maxEnd=noteEnd;
   }
-  _pbStart=t0;
-  _pbTotal=maxEnd-t0;
+  _pbStart=t0; _pbTotal=maxEnd-t0;
   _post({type:'totalTime',totalTime:_pbTotal});
   _pbTimer=setTimeout(_tick,80);
 }
-
 function handlePlaybackCommand(cmd){
   if(cmd.type==='play'){
     _stopPb();
     _pbCtx=new(window.AudioContext||window.webkitAudioContext)();
-    // AudioContext can start suspended on mobile (autoplay policy).
-    // resume() ensures it is running before we schedule any oscillators.
     _pbCtx.resume().then(function(){ _schedulePb(); });
   } else if(cmd.type==='pause'){
     if(_pbCtx&&_pbCtx.state==='running'){
@@ -872,14 +1149,12 @@ function handlePlaybackCommand(cmd){
       _post({type:'resumed'});
     }
   } else if(cmd.type==='stop'){
-    _stopPb();
-    _post({type:'stopped'});
+    _stopPb(); _post({type:'stopped'});
   }
 }
-</script>`;
-
-  html = html.replace('</body>', playbackBlock + '\n</body>');
-  return html;
+</script>
+</body>
+</html>`;
 }
 
 // ─── OSMD screen HTML ────────────────────────────────────────────────────────

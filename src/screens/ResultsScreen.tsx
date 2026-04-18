@@ -18,7 +18,7 @@ import * as Sharing from 'expo-sharing';
 import { supabase } from '../lib/supabase';
 import { useSubscription } from '../hooks/useSubscription';
 import { useAuth } from '../hooks/useAuth';
-import SheetMusicViewer, { buildPdfHtml, buildScreenHtml } from '../components/SheetMusicViewer';
+import SheetMusicViewer, { buildStaticPdfHtml, buildScreenHtml } from '../components/SheetMusicViewer';
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 const FORMATS = ['Score', 'Part', 'Lead Sheet', 'Tabs', 'Fake Book', 'Staff'];
@@ -118,12 +118,26 @@ export default function ResultsScreen() {
   );
   const { show: showToast, message: toastMessage, opacity: toastOpacity } = useToast();
 
-  const { tier, canTranspose, canBPM, canEdit } = useSubscription();
-  const { isGuest } = useAuth();
-  // Tiers that can download clean PDFs: advancedPro, virtuosos, payAsYouGo
-  const canDownloadPdf = tier !== 'free' && tier !== 'freeGuest';
-  // Tiers that get a watermark-free share PDF (same set)
-  const isPro = canDownloadPdf;
+  const { tier, canTranspose: rawCanTranspose, canBPM: rawCanBPM, canEdit: rawCanEdit } = useSubscription();
+  // Derive guest status from the Supabase session, not from the in-memory isGuest flag.
+  // The explicit isGuest flag is only set when the user taps "Continue as Guest" on the
+  // login screen, so it is unreliable for users who reach Results via other paths
+  // (history replay, hot-reload, deep link, etc.). session is authoritative: if it is
+  // null after auth has loaded, the user is definitively unauthenticated.
+  const { session, loading: authLoading } = useAuth();
+  // While auth is still resolving treat as authenticated so authed users don't see a
+  // flash of locked content. Once resolved, no session → guest.
+  const isGuest = !authLoading && !session;
+  // TODO: REMOVE BEFORE PRODUCTION — test user bypass
+  const isTestUser = session?.user?.email === 'gyuhfsaaer@gmail.com';
+  // Paid tiers get watermark-free PDFs and no page locks
+  const isPro = isTestUser || (tier !== 'free' && tier !== 'freeGuest');
+  // Guest users see only the first GUEST_PAGE_LIMIT pages clearly; authenticated see all
+  const GUEST_PAGE_LIMIT = 2;
+  const lockedFromPage = isGuest && !isTestUser ? GUEST_PAGE_LIMIT : null;
+  const canTranspose = isTestUser || rawCanTranspose;
+  const canBPM = isTestUser || rawCanBPM;
+  const canEdit = isTestUser || rawCanEdit;
 
   const [activeFormat, setActiveFormat] = useState('Score');
   const [transposeOffset, setTransposeOffset] = useState(0);
@@ -148,17 +162,47 @@ export default function ResultsScreen() {
     [notes, transposeOffset]
   );
 
-  // Always build SVG-based preview — this is the same renderer used for PDF export,
-  // so in-app display and PDF look identical. OSMD/CDN is not used for in-app display.
+  // Build SVG-based preview. Guest users see pages 1-2 clearly; pages 3+ are
+  // CSS-blurred in the WebView with an inline upgrade overlay. Authenticated
+  // users (free or paid) see all pages clearly.
   const previewHtml = useMemo(
-    () => buildScreenHtml(displayNotes, {
-      trackName:  trackRecord?.track_name ?? 'Sample Track',
-      instrument: trackRecord?.instrument ?? 'Unknown',
-      format:     activeFormat,
-      bpm,
-      watermark:  !isPro,
-    }),
-    [displayNotes, trackRecord, activeFormat, bpm, isPro]
+    () => {
+      const PER_PAGE   = 48; // 6 rows × 8 notes per row
+      const totalPages = Math.max(1, Math.ceil(displayNotes.length / PER_PAGE));
+      console.log('[ResultsScreen] User tier:', { isGuest, tier, isPro, authLoading, hasSession: !!session });
+      console.log('[ResultsScreen] Total notes:', displayNotes.length, '→ ~', totalPages, 'page(s)');
+      console.log('[ResultsScreen] lockedFromPage:', lockedFromPage,
+        lockedFromPage !== null
+          ? `→ pages ${lockedFromPage + 1}+ will be CSS-blurred`
+          : '→ no blur (authenticated)');
+      const metaUsername = isGuest
+        ? null
+        : (session?.user?.user_metadata?.full_name || session?.user?.email || null);
+      const metaDurSecs  = Number(durationSeconds ?? trackRecord?.duration_seconds ?? 0);
+      const metaDuration = metaDurSecs > 0
+        ? `${Math.floor(metaDurSecs / 60)}:${String(Math.floor(metaDurSecs % 60)).padStart(2, '0')}`
+        : null;
+      const metaDateTime = trackRecord?.created_at
+        ? new Date(trackRecord.created_at).toLocaleString('en-GB', {
+            day: '2-digit', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit', hour12: true,
+          })
+        : null;
+
+      return buildScreenHtml(displayNotes, {
+        trackName:  trackRecord?.track_name ?? 'Sample Track',
+        instrument: trackRecord?.instrument ?? 'Unknown',
+        format:     activeFormat,
+        bpm,
+        watermark:  !isPro,
+        lockedFromPage,
+        username:   metaUsername,
+        fileName:   trackRecord?.file_name ?? trackRecord?.track_name ?? null,
+        duration:   metaDuration,
+        dateTime:   metaDateTime,
+      });
+    },
+    [displayNotes, trackRecord, activeFormat, bpm, isPro, lockedFromPage, session, isGuest, durationSeconds]
   );
 
   // Persist transpose & BPM changes to Supabase (skip first render)
@@ -218,6 +262,13 @@ export default function ResultsScreen() {
       } else if (msg.type === 'stopped') {
         setPlaybackState('idle');
         setCurrentTime(0);
+      } else if (msg.type === 'nav') {
+        // Upgrade overlay buttons inside the WebView post navigation requests
+        if (msg.route === '/') {
+          router.replace('/');
+        } else if (msg.route) {
+          router.push(msg.route);
+        }
       }
     } catch (e) {}
   }
@@ -251,6 +302,19 @@ export default function ResultsScreen() {
   }, [historyId]);
 
   function pdfMeta() {
+    const pdfUsername = isGuest
+      ? null
+      : (session?.user?.user_metadata?.full_name || session?.user?.email || null);
+    const pdfDurSecs = Number(durationSeconds ?? trackRecord?.duration_seconds ?? 0);
+    const pdfDur     = pdfDurSecs > 0
+      ? `${Math.floor(pdfDurSecs / 60)}:${String(Math.floor(pdfDurSecs % 60)).padStart(2, '0')}`
+      : null;
+    const pdfDateTime = trackRecord?.created_at
+      ? new Date(trackRecord.created_at).toLocaleString('en-GB', {
+          day: '2-digit', month: 'short', year: 'numeric',
+          hour: '2-digit', minute: '2-digit', hour12: true,
+        })
+      : null;
     return {
       trackName:  trackRecord?.track_name  ?? 'Sample Track',
       instrument: trackRecord?.instrument  ?? 'Unknown',
@@ -258,12 +322,18 @@ export default function ResultsScreen() {
       bpm,
       date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
       watermark:  !isPro,
+      // Guest exports are capped at 2 pages; authenticated users get all pages
+      maxPages:   isGuest ? GUEST_PAGE_LIMIT : undefined,
+      username:   pdfUsername,
+      fileName:   trackRecord?.file_name ?? trackRecord?.track_name ?? null,
+      duration:   pdfDur,
+      dateTime:   pdfDateTime,
     };
   }
 
   async function generatePdf(notes: typeof displayNotes): Promise<string> {
     const trimmedNotes = notes.length > 200 ? notes.slice(0, 200) : notes;
-    const html = buildPdfHtml(trimmedNotes, pdfMeta());
+    const html = buildStaticPdfHtml(trimmedNotes, pdfMeta());
 
     console.log('PDF SHARE: Starting PDF generation');
     console.log('PDF SHARE: Number of notes:', trimmedNotes.length);
@@ -290,6 +360,9 @@ export default function ResultsScreen() {
 
   async function handleShare() {
     setShareLoading(true);
+    if (isGuest) {
+      showToast(`Sharing first ${GUEST_PAGE_LIMIT} pages — sign up to share all pages`);
+    }
     try {
       const uri = await generatePdf(displayNotes);
       console.log('[ResultsScreen] share PDF uri:', uri);
@@ -302,10 +375,6 @@ export default function ResultsScreen() {
   }
 
   async function handleDownloadPdf() {
-    if (!canDownloadPdf) {
-      router.push('/subscription');
-      return;
-    }
     setPdfLoading(true);
     try {
       const uri = await generatePdf(displayNotes);
@@ -576,36 +645,28 @@ export default function ResultsScreen() {
         </View>
 
         {/* ── Sheet Music Viewer ── */}
-        <View style={styles.viewerContainer}>
-          <SheetMusicViewer ref={webviewRef} musicxml={musicxml ?? null} previewHtml={previewHtml} notes={displayNotes} bpm={bpm} onMessage={handleWebViewMessage} />
+        {/* Guest users see pages 1-2 clearly; pages 3+ are blurred inside the
+            WebView with an inline upgrade overlay rendered by buildScreenHtml. */}
+        <View style={styles.viewerWrapper}>
+          <View style={styles.viewerContainer}>
+            <SheetMusicViewer ref={webviewRef} musicxml={musicxml ?? null} previewHtml={previewHtml} notes={displayNotes} bpm={bpm} onMessage={handleWebViewMessage} />
+          </View>
         </View>
 
-        {/* ── Contextual Banner ── */}
+        {/* ── Contextual Banner (guest sign-up nudge only) ── */}
         {tier === 'freeGuest' ? (
           <View style={[styles.upgradeBanner, styles.guestBanner]}>
             <View style={styles.upgradeLeft}>
               <Ionicons name="person-add-outline" size={14} color="#0EA5E9" style={{ marginRight: 6 }} />
               <Text style={styles.guestBannerText} numberOfLines={2}>
-                Sign up free — unlock 180s audio &amp; save your results
+                Sign up free — unlock all pages &amp; save your results
               </Text>
             </View>
             <TouchableOpacity onPress={() => router.replace('/')}>
               <Text style={styles.guestBannerLink}>Sign Up</Text>
             </TouchableOpacity>
           </View>
-        ) : (
-          <View style={styles.upgradeBanner}>
-            <View style={styles.upgradeLeft}>
-              <MaterialIcons name="lock-outline" size={14} color="#F59E0B" style={{ marginRight: 6 }} />
-              <Text style={styles.upgradeText} numberOfLines={1}>
-                Upgrade to Pro for full-length output and clean downloads
-              </Text>
-            </View>
-            <TouchableOpacity onPress={() => router.push('/subscription')}>
-              <Text style={styles.upgradeLink}>View Plans</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+        ) : null}
 
         {/* ── Bottom Action Bar ── */}
         <View style={styles.actionBar}>
@@ -624,7 +685,7 @@ export default function ResultsScreen() {
             <Text style={styles.actionLabel}>Share</Text>
           </TouchableOpacity>
 
-          {/* Download PDF — free tier redirects to subscription */}
+          {/* Download PDF */}
           <TouchableOpacity
             style={styles.actionBtn}
             onPress={handleDownloadPdf}
@@ -634,14 +695,7 @@ export default function ResultsScreen() {
             {pdfLoading ? (
               <ActivityIndicator size="small" color="#0EA5E9" />
             ) : (
-              <View>
-                <Feather name="download" size={20} color="#9CA3AF" />
-                {!canDownloadPdf && (
-                  <View style={styles.lockBadge}>
-                    <MaterialIcons name="lock" size={8} color="#F59E0B" />
-                  </View>
-                )}
-              </View>
+              <Feather name="download" size={20} color="#9CA3AF" />
             )}
             <Text style={styles.actionLabel}>PDF</Text>
           </TouchableOpacity>
@@ -987,7 +1041,7 @@ const styles = StyleSheet.create({
   },
 
   // Viewer
-  viewerContainer: {
+  viewerWrapper: {
     flex: 1,
     marginHorizontal: 16,
     marginBottom: 8,
@@ -995,6 +1049,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: '#2D2D3E',
+  },
+  viewerContainer: {
+    flex: 1,
   },
 
   // Upgrade banner
@@ -1037,14 +1094,6 @@ const styles = StyleSheet.create({
   actionLabel: { color: '#6B7280', fontSize: 11, fontWeight: '500' },
   actionLabelActive: { color: '#0EA5E9' },
   actionLabelFavorited: { color: '#DC143C' },
-  lockBadge: {
-    position: 'absolute',
-    bottom: -3,
-    right: -5,
-    backgroundColor: '#111118',
-    borderRadius: 6,
-    padding: 1,
-  },
   pdfOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.65)',
