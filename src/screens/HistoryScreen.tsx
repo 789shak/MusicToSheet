@@ -302,11 +302,10 @@ export default function HistoryScreen() {
       )
     : tabFiltered;
 
-  const TABS: { key: ActiveTab | 'metronome'; label: string; icon?: string }[] = [
+  const TABS: { key: ActiveTab; label: string }[] = [
     { key: 'history',   label: 'History' },
     { key: 'saved',     label: 'Saved' },
     { key: 'favorites', label: 'Favorites' },
-    { key: 'metronome', label: 'Metronome' },
   ];
 
   if (loading) {
@@ -354,13 +353,7 @@ export default function HistoryScreen() {
           <TouchableOpacity
             key={t.key}
             style={styles.tabBtn}
-            onPress={() => {
-              if (t.key === 'metronome') {
-                router.push('/metronome');
-              } else {
-                setActiveTab(t.key as ActiveTab);
-              }
-            }}
+            onPress={() => setActiveTab(t.key)}
             activeOpacity={0.7}
           >
             <Text style={[styles.tabLabel, activeTab === t.key && styles.tabLabelActive]}>
