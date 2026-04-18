@@ -18,7 +18,6 @@ import { useRouter } from 'expo-router';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
-import * as Sharing from 'expo-sharing';
 import { readAsStringAsync } from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { Audio } from 'expo-av';
@@ -204,25 +203,31 @@ export default function UploadScreen() {
   }
 
   async function cleanNoise() {
-    let remotePath: string | null = null;
-    try {
+    // Use the current file/recording if one exists, otherwise open the picker
+    let source: PickedFile | null = file;
+
+    if (!source) {
       const result = await DocumentPicker.getDocumentAsync({ type: ['audio/*'], copyToCacheDirectory: true });
       if (result.canceled) return;
-      const picked = result.assets[0];
+      const asset = result.assets[0];
+      source = { name: asset.name, uri: asset.uri, size: asset.size ?? null, mimeType: asset.mimeType ?? null };
+    }
 
+    let remotePath: string | null = null;
+    try {
       setCleaningNoise(true);
 
       const { data: { session } } = await supabase.auth.getSession();
       const uid = session?.user?.id;
-      const ext = picked.name.split('.').pop() ?? 'mp3';
+      const ext = source.name.split('.').pop() ?? 'mp3';
       remotePath = uid
-        ? `${uid}/noise-cleaner_${Date.now()}_${picked.name}`
-        : `guest/noise-cleaner_${Date.now()}_${picked.name}`;
+        ? `${uid}/noise-cleaner_${Date.now()}_${source.name}`
+        : `guest/noise-cleaner_${Date.now()}_${source.name}`;
 
-      const base64 = await readAsStringAsync(picked.uri, { encoding: 'base64' });
+      const base64 = await readAsStringAsync(source.uri, { encoding: 'base64' });
       const { error: uploadError } = await supabase.storage
         .from('audio-uploads')
-        .upload(remotePath, decode(base64), { contentType: picked.mimeType ?? `audio/${ext}`, upsert: true });
+        .upload(remotePath, decode(base64), { contentType: source.mimeType ?? `audio/${ext}`, upsert: true });
       if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
 
       const { data: signedData, error: signedError } = await supabase.storage
@@ -240,14 +245,16 @@ export default function UploadScreen() {
       const json = await response.json();
       if (!json.audio_base64) throw new Error(json.error ?? 'Server returned no audio data.');
 
+      // Write cleaned file to cache and replace the current file in state
       const fmt: string = json.format ?? 'mp3';
+      const cleanedName = `cleaned_${source.name.replace(/\.[^.]+$/, '')}.${fmt}`;
       const outPath = FileSystem.cacheDirectory + `cleaned_${Date.now()}.${fmt}`;
       await FileSystem.writeAsStringAsync(outPath, json.audio_base64, { encoding: FileSystem.EncodingType.Base64 });
 
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) await Sharing.shareAsync(outPath, { mimeType: 'audio/mpeg', dialogTitle: 'Save cleaned audio' });
+      // Replace current file with cleaned version — ready for conversion
+      setFile({ name: cleanedName, uri: outPath, size: null, mimeType: 'audio/mpeg' });
 
-      Alert.alert('Success', 'Audio cleaned successfully!');
+      Alert.alert('✓ Noise cleaned!', 'Ready to convert. Tap "Convert to Sheet Music" to continue.');
     } catch (e: any) {
       Alert.alert('Error', e?.message ?? 'Could not clean audio.');
     } finally {
