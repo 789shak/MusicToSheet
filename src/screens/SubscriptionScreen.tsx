@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getOfferings, purchasePackage, restorePurchases } from '../lib/revenuecat';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-type BillingCycle = 'monthly' | 'annual';
+type BillingCycle = 'monthly' | 'quarterly' | 'annual';
 
 // ─── Billing Toggle ───────────────────────────────────────────────────────────
 function BillingToggle({
@@ -24,22 +24,30 @@ function BillingToggle({
   cycle: BillingCycle;
   onChange: (c: BillingCycle) => void;
 }) {
+  const options: { value: BillingCycle; label: string; badge?: string }[] = [
+    { value: 'monthly',   label: 'Monthly' },
+    { value: 'quarterly', label: '3 Months', badge: 'Save 25%' },
+    { value: 'annual',    label: 'Annual',   badge: 'Save 50%' },
+  ];
+
   return (
     <View style={toggle.row}>
-      <Pressable onPress={() => onChange('monthly')}>
-        <Text style={[toggle.label, cycle === 'monthly' && toggle.labelActive]}>Monthly</Text>
-      </Pressable>
-
-      <Pressable style={[toggle.track, cycle === 'annual' && toggle.trackOn]} onPress={() => onChange(cycle === 'monthly' ? 'annual' : 'monthly')}>
-        <View style={[toggle.thumb, cycle === 'annual' && toggle.thumbOn]} />
-      </Pressable>
-
-      <Pressable onPress={() => onChange('annual')}>
-        <Text style={[toggle.label, cycle === 'annual' && toggle.labelActive]}>
-          Annual{' '}
-          <Text style={[toggle.saveBadge, cycle === 'annual' && toggle.saveBadgeActive]}>Save 50%</Text>
-        </Text>
-      </Pressable>
+      {options.map((opt) => (
+        <Pressable
+          key={opt.value}
+          style={[toggle.pill, cycle === opt.value && toggle.pillActive]}
+          onPress={() => onChange(opt.value)}
+        >
+          <Text style={[toggle.pillLabel, cycle === opt.value && toggle.pillLabelActive]}>
+            {opt.label}
+          </Text>
+          {opt.badge ? (
+            <Text style={[toggle.pillBadge, cycle === opt.value && toggle.pillBadgeActive]}>
+              {opt.badge}
+            </Text>
+          ) : null}
+        </Pressable>
+      ))}
     </View>
   );
 }
@@ -49,48 +57,39 @@ const toggle = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
+    gap: 8,
     marginBottom: 28,
   },
-  label: {
-    color: '#6B7280',
-    fontSize: 14,
-    fontWeight: '500',
+  pill: {
+    alignItems: 'center',
+    backgroundColor: '#1C1C27',
+    borderWidth: 1,
+    borderColor: '#2D2D3E',
+    borderRadius: 100,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
-  labelActive: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  saveBadge: {
-    color: '#0EA5E9',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  saveBadgeActive: {
-    color: '#34D399',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  track: {
-    width: 44,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#2D2D3E',
-    justifyContent: 'center',
-    paddingHorizontal: 3,
-  },
-  trackOn: {
+  pillActive: {
     backgroundColor: '#0EA5E9',
+    borderColor: '#0EA5E9',
   },
-  thumb: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#FFFFFF',
-    alignSelf: 'flex-start',
+  pillLabel: {
+    color: '#6B7280',
+    fontSize: 13,
+    fontWeight: '600',
   },
-  thumbOn: {
-    alignSelf: 'flex-end',
+  pillLabelActive: {
+    color: '#FFFFFF',
+  },
+  pillBadge: {
+    color: '#4B5563',
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 1,
+  },
+  pillBadgeActive: {
+    color: '#FFFFFF',
+    opacity: 0.85,
   },
 });
 
@@ -229,7 +228,20 @@ export default function SubscriptionScreen() {
             </View>
           </View>
 
-          {cycle === 'annual' ? (
+          {cycle === 'quarterly' ? (
+            <>
+              <View style={styles.annualPriceRow}>
+                <Text style={styles.price}>$11.24<Text style={styles.priceSub}> /mo</Text></Text>
+                <Text style={styles.priceStrike}>$14.99/mo</Text>
+              </View>
+              <View style={styles.annualInfoRow}>
+                <Text style={styles.billedNote}>billed $33.72 every 3 months</Text>
+                <View style={styles.saveBadgeGreen}>
+                  <Text style={styles.saveBadgeGreenText}>Save 25%</Text>
+                </View>
+              </View>
+            </>
+          ) : cycle === 'annual' ? (
             <>
               <View style={styles.annualPriceRow}>
                 <Text style={styles.price}>$7.49<Text style={styles.priceSub}> /mo</Text></Text>
@@ -255,14 +267,16 @@ export default function SubscriptionScreen() {
 
           <TouchableOpacity
             style={styles.btnTurquoise}
-            onPress={() => handlePurchase(cycle === 'monthly' ? 'pro_monthly' : 'pro_annual')}
+            onPress={() => handlePurchase(
+              cycle === 'annual' ? 'pro_annual' : cycle === 'quarterly' ? 'pro_quarterly' : 'pro_monthly'
+            )}
             activeOpacity={0.85}
             disabled={!!purchasing}
           >
-            {purchasing === 'pro_monthly' || purchasing === 'pro_annual'
+            {purchasing === 'pro_monthly' || purchasing === 'pro_quarterly' || purchasing === 'pro_annual'
               ? <ActivityIndicator size="small" color="#FFFFFF" />
               : <Text style={styles.btnTurquoiseText}>
-                  {cycle === 'annual' ? 'Subscribe · Best Value' : 'Subscribe'}
+                  {cycle === 'monthly' ? 'Subscribe' : 'Subscribe · Best Value'}
                 </Text>
             }
           </TouchableOpacity>
@@ -274,7 +288,20 @@ export default function SubscriptionScreen() {
         <View style={[styles.card, styles.cardGoldInner]}>
           <Text style={styles.planNameGold}>Virtuosos</Text>
 
-          {cycle === 'annual' ? (
+          {cycle === 'quarterly' ? (
+            <>
+              <View style={styles.annualPriceRow}>
+                <Text style={styles.priceGold}>$14.99<Text style={styles.priceSubGold}> /mo</Text></Text>
+                <Text style={styles.priceStrikeGold}>$19.99/mo</Text>
+              </View>
+              <View style={styles.annualInfoRow}>
+                <Text style={styles.billedNote}>billed $44.97 every 3 months</Text>
+                <View style={styles.saveBadgeGreen}>
+                  <Text style={styles.saveBadgeGreenText}>Save 25%</Text>
+                </View>
+              </View>
+            </>
+          ) : cycle === 'annual' ? (
             <>
               <View style={styles.annualPriceRow}>
                 <Text style={styles.priceGold}>$9.99<Text style={styles.priceSubGold}> /mo</Text></Text>
@@ -302,14 +329,16 @@ export default function SubscriptionScreen() {
 
           <TouchableOpacity
             style={styles.btnGold}
-            onPress={() => handlePurchase(cycle === 'monthly' ? 'virtuosos_monthly' : 'virtuosos_annual')}
+            onPress={() => handlePurchase(
+              cycle === 'annual' ? 'virtuosos_annual' : cycle === 'quarterly' ? 'virtuosos_quarterly' : 'virtuosos_monthly'
+            )}
             activeOpacity={0.85}
             disabled={!!purchasing}
           >
-            {purchasing === 'virtuosos_monthly' || purchasing === 'virtuosos_annual'
+            {purchasing === 'virtuosos_monthly' || purchasing === 'virtuosos_quarterly' || purchasing === 'virtuosos_annual'
               ? <ActivityIndicator size="small" color="#111118" />
               : <Text style={styles.btnGoldText}>
-                  {cycle === 'annual' ? 'Subscribe · Best Value' : 'Subscribe'}
+                  {cycle === 'monthly' ? 'Subscribe' : 'Subscribe · Best Value'}
                 </Text>
             }
           </TouchableOpacity>
