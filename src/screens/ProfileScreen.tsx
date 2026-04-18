@@ -227,7 +227,6 @@ export default function ProfileScreen() {
   const [saveError,    setSaveError]    = useState('');
 
   const [fullName,  setFullName]  = useState('');
-  const [phone,     setPhone]     = useState('');
   const [country,   setCountry]   = useState('');
   const [instagram, setInstagram] = useState('');
   const [twitter,   setTwitter]   = useState('');
@@ -266,7 +265,6 @@ export default function ProfileScreen() {
 
       if (!error && data) {
         setFullName(data.full_name ?? '');
-        setPhone(data.phone ?? '');
         setCountry(data.country ?? '');
         setInstagram(data.social_instagram ?? '');
         setTwitter(data.social_twitter ?? '');
@@ -349,7 +347,6 @@ export default function ProfileScreen() {
       id:               user.id,
       email:            userEmail,
       full_name:        fullName,
-      phone:            phone || null,
       country:          country || null,
       social_instagram: instagram || null,
       social_twitter:   twitter   || null,
@@ -440,17 +437,6 @@ export default function ProfileScreen() {
               />
               <Feather name="lock" size={15} color="#4B5563" style={styles.lockIcon} />
             </View>
-          </Field>
-
-          <Field label="Phone">
-            <TextInput
-              style={[styles.input, styles.inputText]}
-              placeholder="+1 (555) 000-0000"
-              placeholderTextColor="#6B7280"
-              value={phone}
-              onChangeText={setPhone}
-              keyboardType="phone-pad"
-            />
           </Field>
 
           <Field label="Country">
