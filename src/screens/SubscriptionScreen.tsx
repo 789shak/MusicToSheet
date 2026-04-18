@@ -193,7 +193,9 @@ export default function SubscriptionScreen() {
         <Feature text="No sign-up: up to 60 sec audio, watermarked" />
         <Feature text="Sign up free: up to 180 sec audio, watermarked" />
         <Feature text="5 sheets per month (signed in)" />
-        <Feature text="No recording" muted />
+        <Feature text="Free Metronome access" />
+        <Feature text="Free recording up to 10 minutes" />
+        <Feature text="PDF with watermark — play & listen only" />
         <Feature text="No clean download" muted />
         <Feature text="No transpose, BPM, or note editing" muted />
       </View>
@@ -203,9 +205,9 @@ export default function SubscriptionScreen() {
         <Text style={styles.planName}>Pay As You Go</Text>
         <Text style={styles.price}>$1.99 <Text style={styles.priceSub}>/ track</Text></Text>
         <View style={styles.divider} />
-        <Feature text="Up to 300 seconds output" />
-        <Feature text="3 attempts per track" />
-        <Feature text="Download PDF/JPG (clean)" />
+        <Feature text="Up to 600 seconds output" />
+        <Feature text="5 attempts per track" />
+        <Feature text="Clean PDF without watermark" />
         <Feature text="Transpose, BPM & note editing" />
         <Feature text="No subscription needed" />
         <TouchableOpacity
@@ -245,12 +247,11 @@ export default function SubscriptionScreen() {
           )}
 
           <View style={styles.divider} />
-          <Feature text="20 min max output" />
-          <Feature text="75 sheets per month" />
+          <Feature text="Up to 15 minutes output" />
+          <Feature text="60 sheets per month" />
           <Feature text="2× priority processing" />
-          <Feature text="Download PDF/JPG (clean)" />
+          <Feature text="Clean PDF download" />
           <Feature text="Transpose, BPM & note editing" />
-          <Feature text="Record vocals (up to 20 min)" />
 
           <TouchableOpacity
             style={styles.btnTurquoise}
@@ -296,7 +297,8 @@ export default function SubscriptionScreen() {
           <Feature text="5× priority processing" />
           <Feature text="Download PDF/JPG (clean)" />
           <Feature text="Transpose, BPM & note editing" />
-          <Feature text="Unlimited recording" />
+          <Feature text="30 minutes max recording" />
+          <Feature text="Every feature unlocked" />
 
           <TouchableOpacity
             style={styles.btnGold}

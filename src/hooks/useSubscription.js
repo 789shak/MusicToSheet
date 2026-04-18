@@ -5,11 +5,11 @@ import { useAuth } from './useAuth';
 
 // ─── Tier Configuration ────────────────────────────────────────────────────────
 const TIER_CONFIG = {
-  // Guest (not signed in): 60 s input, watermarked results
+  // Guest (not signed in): full audio processed, first 60 s shown in preview
   freeGuest: {
     label:                 'Free (Guest)',
     maxFileSizeMB:         10,
-    maxAudioInputSeconds:  60,
+    maxAudioInputSeconds:  Infinity,
     maxOutputSeconds:      60,
     watermarked:           true,
     canRecord:             false,
@@ -23,14 +23,14 @@ const TIER_CONFIG = {
     sheetsPerMonth:        0,
     maxRecordMinutes:      0,
   },
-  // Signed-in free: 180 s input, watermarked results
+  // Signed-in free: full audio processed, first 180 s shown in preview
   free: {
     label:                 'Free',
     maxFileSizeMB:         20,
-    maxAudioInputSeconds:  180,
+    maxAudioInputSeconds:  Infinity,
     maxOutputSeconds:      180,
     watermarked:           true,
-    canRecord:             false,
+    canRecord:             true,
     canDownload:           false,
     maxAttempts:           2,
     priorityProcessing:    1,
@@ -39,13 +39,13 @@ const TIER_CONFIG = {
     canEdit:               false,
     canPlayOnly:           true,
     sheetsPerMonth:        5,
-    maxRecordMinutes:      0,
+    maxRecordMinutes:      10,
   },
   advancedPro: {
     label:                 'Advanced Pro',
     maxFileSizeMB:         40,
     maxAudioInputSeconds:  Infinity,
-    maxOutputSeconds:      1200,
+    maxOutputSeconds:      900,
     watermarked:           false,
     canRecord:             true,
     canDownload:           true,
@@ -55,14 +55,14 @@ const TIER_CONFIG = {
     canBPM:                true,
     canEdit:               true,
     canPlayOnly:           false,
-    sheetsPerMonth:        75,
+    sheetsPerMonth:        60,
     maxRecordMinutes:      20,
   },
   virtuosos: {
     label:                 'Virtuosos',
     maxFileSizeMB:         50,
     maxAudioInputSeconds:  Infinity,
-    maxOutputSeconds:      1200,
+    maxOutputSeconds:      Infinity,
     watermarked:           false,
     canRecord:             true,
     canDownload:           true,
@@ -73,17 +73,17 @@ const TIER_CONFIG = {
     canEdit:               true,
     canPlayOnly:           false,
     sheetsPerMonth:        100,
-    maxRecordMinutes:      Infinity,
+    maxRecordMinutes:      30,
   },
   payAsYouGo: {
     label:                 'Pay As You Go',
     maxFileSizeMB:         40,
     maxAudioInputSeconds:  Infinity,
-    maxOutputSeconds:      1200,
+    maxOutputSeconds:      600,
     watermarked:           false,
     canRecord:             false,
     canDownload:           true,
-    maxAttempts:           3,
+    maxAttempts:           5,
     priorityProcessing:    1,
     canTranspose:          true,
     canBPM:                true,
@@ -104,12 +104,6 @@ export function useSubscription() {
       // Unauthenticated users get the guest free tier (60 s, watermarked).
       if (!session) {
         setCurrentTier('freeGuest');
-        return;
-      }
-
-      // TODO: Remove before final production build
-      if (session?.user?.email === 'shakes789@gmail.com') {
-        setCurrentTier('virtuosos');
         return;
       }
 
