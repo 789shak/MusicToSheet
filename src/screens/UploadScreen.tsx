@@ -17,6 +17,8 @@ import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import { readAsStringAsync } from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { Audio } from 'expo-av';
@@ -179,6 +181,9 @@ export default function UploadScreen() {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
 
+  // ── Noise cleaning state ───────────────────────────────────────────────────
+  const [cleaningNoise, setCleaningNoise] = useState(false);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -196,6 +201,59 @@ export default function UploadScreen() {
       ])
     );
     pulseLoop.current.start();
+  }
+
+  async function cleanNoise() {
+    let remotePath: string | null = null;
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: ['audio/*'], copyToCacheDirectory: true });
+      if (result.canceled) return;
+      const picked = result.assets[0];
+
+      setCleaningNoise(true);
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id;
+      const ext = picked.name.split('.').pop() ?? 'mp3';
+      remotePath = uid
+        ? `${uid}/noise-cleaner_${Date.now()}_${picked.name}`
+        : `guest/noise-cleaner_${Date.now()}_${picked.name}`;
+
+      const base64 = await readAsStringAsync(picked.uri, { encoding: 'base64' });
+      const { error: uploadError } = await supabase.storage
+        .from('audio-uploads')
+        .upload(remotePath, decode(base64), { contentType: picked.mimeType ?? `audio/${ext}`, upsert: true });
+      if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+
+      const { data: signedData, error: signedError } = await supabase.storage
+        .from('audio-uploads')
+        .createSignedUrl(remotePath, 3600);
+      if (signedError || !signedData?.signedUrl) throw new Error('Could not create signed URL.');
+
+      const response = await fetch('https://musictosheet.onrender.com/clean-audio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audio_url: signedData.signedUrl, prop_decrease: 0.8 }),
+      });
+      if (!response.ok) { const t = await response.text(); throw new Error(`Server error ${response.status}: ${t}`); }
+
+      const json = await response.json();
+      if (!json.audio_base64) throw new Error(json.error ?? 'Server returned no audio data.');
+
+      const fmt: string = json.format ?? 'mp3';
+      const outPath = FileSystem.cacheDirectory + `cleaned_${Date.now()}.${fmt}`;
+      await FileSystem.writeAsStringAsync(outPath, json.audio_base64, { encoding: FileSystem.EncodingType.Base64 });
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) await Sharing.shareAsync(outPath, { mimeType: 'audio/mpeg', dialogTitle: 'Save cleaned audio' });
+
+      Alert.alert('Success', 'Audio cleaned successfully!');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'Could not clean audio.');
+    } finally {
+      setCleaningNoise(false);
+      if (remotePath) supabase.storage.from('audio-uploads').remove([remotePath]).catch(() => {});
+    }
   }
 
   async function startRecording() {
@@ -588,6 +646,30 @@ export default function UploadScreen() {
             </TouchableOpacity>
           )}
 
+          {/* Clean Noise */}
+          <Text style={[styles.sectionLabel, { marginTop: 10 }]}>Clean Noise</Text>
+          <TouchableOpacity
+            style={styles.cleanNoiseBtn}
+            onPress={cleanNoise}
+            disabled={cleaningNoise}
+            activeOpacity={0.8}
+          >
+            {cleaningNoise ? (
+              <>
+                <ActivityIndicator size="small" color="#A78BFA" />
+                <Text style={styles.cleanNoiseBtnText}>Cleaning audio…</Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="ear-outline" size={22} color="#A78BFA" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cleanNoiseBtnText}>Clean Noise</Text>
+                  <Text style={styles.cleanNoiseBtnSub}>Remove background noise from audio</Text>
+                </View>
+              </>
+            )}
+          </TouchableOpacity>
+
           {/* Pro/Virtuosos — recording UI */}
           {['advancedPro', 'virtuosos'].includes(tier) && (
             <>
@@ -956,6 +1038,29 @@ const styles = StyleSheet.create({
     color: '#F59E0B',
     fontSize: 12,
     fontWeight: '600',
+  },
+
+  // Clean Noise button
+  cleanNoiseBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#1C1C27',
+    borderWidth: 1,
+    borderColor: '#A78BFA40',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+  },
+  cleanNoiseBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  cleanNoiseBtnSub: {
+    color: '#6B7280',
+    fontSize: 11,
+    marginTop: 1,
   },
 
   // Pro recording — idle button
