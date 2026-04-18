@@ -17,8 +17,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
-import { readAsStringAsync } from 'expo-file-system/legacy';
+import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { Audio } from 'expo-av';
 import { BottomTabBar } from '../components/BottomTabBar';
@@ -224,7 +223,7 @@ export default function UploadScreen() {
         ? `${uid}/noise-cleaner_${Date.now()}_${source.name}`
         : `guest/noise-cleaner_${Date.now()}_${source.name}`;
 
-      const base64 = await readAsStringAsync(source.uri, { encoding: 'base64' });
+      const base64 = await FileSystem.readAsStringAsync(source.uri, { encoding: 'base64' });
       const { error: uploadError } = await supabase.storage
         .from('audio-uploads')
         .upload(remotePath, decode(base64), { contentType: source.mimeType ?? `audio/${ext}`, upsert: true });
@@ -249,7 +248,7 @@ export default function UploadScreen() {
       const fmt: string = json.format ?? 'mp3';
       const cleanedName = `cleaned_${source.name.replace(/\.[^.]+$/, '')}.${fmt}`;
       const outPath = FileSystem.cacheDirectory + `cleaned_${Date.now()}.${fmt}`;
-      await FileSystem.writeAsStringAsync(outPath, json.audio_base64, { encoding: FileSystem.EncodingType.Base64 });
+      await FileSystem.writeAsStringAsync(outPath, json.audio_base64, { encoding: 'base64' });
 
       // Replace current file with cleaned version — ready for conversion
       setFile({ name: cleanedName, uri: outPath, size: null, mimeType: 'audio/mpeg' });
@@ -446,7 +445,7 @@ export default function UploadScreen() {
       fakeAnimRef.current.start();
 
       console.log('File URI:', file.uri);
-      const base64 = await readAsStringAsync(file.uri, { encoding: 'base64' });
+      const base64 = await FileSystem.readAsStringAsync(file.uri, { encoding: 'base64' });
       console.log('Base64 length:', base64.length);
 
       const { data, error } = await supabase.storage
