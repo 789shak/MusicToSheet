@@ -47,7 +47,10 @@ export default function NoiseCleanerScreen() {
     try {
       // Step 1: Upload to Supabase using base64-arraybuffer (same pattern as main upload flow)
       const ext = file.name.split('.').pop() ?? 'mp3';
-      remotePath = `noise-cleaner/${Date.now()}_${file.name}`;
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id;
+      if (!uid) throw new Error('You must be signed in to use Noise Cleaner.');
+      remotePath = `${uid}/noise-cleaner_${Date.now()}_${file.name}`;
 
       const base64 = await readAsStringAsync(file.uri, { encoding: 'base64' });
       const { error: uploadError } = await supabase.storage
