@@ -19,7 +19,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
-import * as MediaLibrary from 'expo-media-library';
+import * as Sharing from 'expo-sharing';
 import { decode } from 'base64-arraybuffer';
 import { Audio } from 'expo-av';
 import { BottomTabBar } from '../components/BottomTabBar';
@@ -331,20 +331,27 @@ export default function UploadScreen() {
 
   async function saveCleanedAudio() {
     if (!cleanedFileUri) return;
+
+    // Free / guest tier — prompt upgrade instead of downloading
+    if (tier === 'free' || tier === 'freeGuest') {
+      Alert.alert(
+        'Premium Feature',
+        'The files of your tracks/vocals are not saved in the app by default as it is not included in the free tier.',
+        [
+          { text: 'Upgrade', style: 'default', onPress: () => router.push('/subscription') },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+      return;
+    }
+
     try {
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission required', 'Storage permission is required to save files.');
-        return;
-      }
-      // Copy to a permanent location with a friendly filename
-      const ext = cleanedFileUri.split('.').pop() ?? 'mp3';
-      const destPath = FileSystem.documentDirectory + `cleaned_audio_${Date.now()}.${ext}`;
-      await FileSystem.copyAsync({ from: cleanedFileUri, to: destPath });
-      await MediaLibrary.createAssetAsync(destPath);
-      Alert.alert('Saved!', 'Saved to your device!');
+      const filename = `MusicToSheet_Cleaned_${Date.now()}.mp3`;
+      const destination = FileSystem.documentDirectory + filename;
+      await FileSystem.copyAsync({ from: cleanedFileUri, to: destination });
+      await Sharing.shareAsync(destination, { mimeType: 'audio/mpeg', dialogTitle: 'Save Cleaned Audio' });
     } catch (e: any) {
-      Alert.alert('Save failed', e?.message ?? 'Could not save file.');
+      Alert.alert('Save failed', e?.message ?? 'Could not share file.');
     }
   }
 
