@@ -578,53 +578,61 @@ async def process_with_stems(body: ProcessRequest):
 
 
 # ─── Clean Audio Endpoint ──────────────────────────────────────────────────────
-class CleanAudioRequest(BaseModel):
-    audio_url: str
-    prop_decrease: float = 0.75
+from fastapi import Request
+from fastapi.responses import JSONResponse
+import base64 as _base64
 
 @app.post("/clean-audio")
-async def clean_audio(body: CleanAudioRequest):
-    uid = uuid.uuid4().hex
-    tmp_path = f"/tmp/{uid}_input"
-    wav_path = f"/tmp/{uid}_clean.wav"
-    out_path = f"/tmp/{uid}_cleaned.wav"
-
+async def clean_audio(request: Request):
     try:
-        print(f"[clean-audio] Downloading: {body.audio_url[:80]}")
-        file_size = await download_audio(body.audio_url, tmp_path)
-        if file_size < 1000:
-            raise Exception(f"Downloaded file too small ({file_size} bytes)")
+        data = await request.json()
+        audio_url = data.get("audio_url")
+        if not audio_url:
+            return JSONResponse({"error": "No audio_url provided"}, status_code=400)
 
-        print("[clean-audio] Converting to WAV with ffmpeg...")
-        result = subprocess.run(
-            ['ffmpeg', '-i', tmp_path, '-ar', '22050', '-ac', '1', '-sample_fmt', 's16', wav_path, '-y'],
-            capture_output=True, text=True,
+        file_id = uuid.uuid4().hex
+        input_path = f"/tmp/{file_id}_input.mp3"
+        wav_path   = f"/tmp/{file_id}_clean.wav"
+        output_path = f"/tmp/{file_id}_cleaned.mp3"
+
+        print(f"[clean] Step 1: Downloading audio from {audio_url[:80]}...")
+        async with httpx.AsyncClient(follow_redirects=True, timeout=120) as client:
+            resp = await client.get(audio_url)
+            with open(input_path, 'wb') as f:
+                f.write(resp.content)
+
+        print("[clean] Step 2: Converting to WAV...")
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", input_path, "-ac", "1", "-ar", "22050", wav_path],
+            capture_output=True,
         )
-        if result.returncode != 0:
-            raise Exception(f"ffmpeg failed: {result.stderr}")
 
-        print("[clean-audio] Applying noise reduction...")
-        y, sr = sf.read(wav_path)
-        reduced = nr.reduce_noise(y=y, sr=sr, prop_decrease=body.prop_decrease)
-        sf.write(out_path, reduced, sr)
-        del y, reduced
+        print("[clean] Step 3: Applying noise reduction...")
+        audio_data, sample_rate = sf.read(wav_path)
+        reduced = nr.reduce_noise(y=audio_data, sr=sample_rate, prop_decrease=0.8)
+        sf.write(wav_path, reduced, sample_rate)
+        del audio_data, reduced
         gc.collect()
 
-        import base64
-        with open(out_path, 'rb') as f:
-            audio_bytes = f.read()
+        print("[clean] Step 4: Converting back to MP3...")
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", wav_path, "-b:a", "192k", output_path],
+            capture_output=True,
+        )
 
-        audio_b64 = base64.b64encode(audio_bytes).decode('ascii')
-        print(f"[clean-audio] Done. Output size: {len(audio_bytes)} bytes")
-        return {"status": "success", "audio_base64": audio_b64, "content_type": "audio/wav"}
+        print("[clean] Step 5: Encoding to base64...")
+        with open(output_path, 'rb') as f:
+            audio_base64 = _base64.b64encode(f.read()).decode()
 
-    except HTTPException:
-        raise
+        print(f"[clean] Done. Cleaned audio size: {len(audio_base64)} chars base64")
+        return JSONResponse({"status": "success", "audio_base64": audio_base64, "format": "mp3"})
+
     except Exception as e:
-        print(f"[clean-audio] Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"[clean] Error: {e}")
+        print(f"[clean] Full error: {traceback.format_exc()}")
+        return JSONResponse({"error": str(e)}, status_code=500)
 
     finally:
-        for f in [tmp_path, wav_path, out_path]:
-            if f and os.path.exists(f):
-                os.remove(f)
+        for p in [input_path, wav_path, output_path]:
+            if p and os.path.exists(p):
+                os.remove(p)

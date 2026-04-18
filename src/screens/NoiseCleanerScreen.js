@@ -86,10 +86,11 @@ export default function NoiseCleanerScreen() {
       }
 
       const json = await response.json();
-      if (!json.audio_base64) throw new Error('Server returned no audio data.');
+      if (!json.audio_base64) throw new Error(json.error ?? 'Server returned no audio data.');
 
-      // Step 4: Write base64 WAV to cache and share
-      const outPath = FileSystem.cacheDirectory + `cleaned_${Date.now()}.wav`;
+      // Step 4: Write base64 MP3 to cache and share
+      const fmt = json.format ?? 'mp3';
+      const outPath = FileSystem.cacheDirectory + `cleaned_${Date.now()}.${fmt}`;
       await FileSystem.writeAsStringAsync(outPath, json.audio_base64, {
         encoding: FileSystem.EncodingType.Base64,
       });
@@ -114,7 +115,7 @@ export default function NoiseCleanerScreen() {
       Alert.alert('Not available', 'Sharing is not available on this device.');
       return;
     }
-    await Sharing.shareAsync(cleanedUri, { mimeType: 'audio/wav', dialogTitle: 'Save cleaned audio' });
+    await Sharing.shareAsync(cleanedUri, { mimeType: 'audio/mpeg', dialogTitle: 'Save cleaned audio' });
   }
 
   const isBusy = status === 'uploading' || status === 'cleaning';
