@@ -19,6 +19,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as MediaLibrary from 'expo-media-library';
 import { decode } from 'base64-arraybuffer';
 import { Audio } from 'expo-av';
 import { BottomTabBar } from '../components/BottomTabBar';
@@ -326,6 +327,25 @@ export default function UploadScreen() {
     cleanedSoundRef.current = null;
     setIsPlayingCleaned(false);
     setUseCleanedEffect(cleaned);
+  }
+
+  async function saveCleanedAudio() {
+    if (!cleanedFileUri) return;
+    try {
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission required', 'Storage permission is required to save files.');
+        return;
+      }
+      // Copy to a permanent location with a friendly filename
+      const ext = cleanedFileUri.split('.').pop() ?? 'mp3';
+      const destPath = FileSystem.documentDirectory + `cleaned_audio_${Date.now()}.${ext}`;
+      await FileSystem.copyAsync({ from: cleanedFileUri, to: destPath });
+      await MediaLibrary.createAssetAsync(destPath);
+      Alert.alert('Saved!', 'Saved to your device!');
+    } catch (e: any) {
+      Alert.alert('Save failed', e?.message ?? 'Could not save file.');
+    }
   }
 
   async function startRecording() {
@@ -801,15 +821,22 @@ export default function UploadScreen() {
           {/* Playback preview after successful noise cleaning */}
           {cleanedFileUri ? (
             <View style={styles.cleanedPreviewRow}>
+              {/* Play/Pause */}
               <TouchableOpacity onPress={toggleCleanedPlayback} style={styles.playBtn} activeOpacity={0.8}>
                 <Ionicons name={isPlayingCleaned ? 'pause' : 'play'} size={18} color="#0EA5E9" />
               </TouchableOpacity>
-              <Text style={styles.cleanedPreviewLabel}>
-                {useCleanedEffect ? 'Cleaned Audio Preview' : 'Original Audio Preview'}
-              </Text>
-              {cleanedDuration ? (
-                <Text style={styles.cleanedPreviewDuration}>{cleanedDuration}</Text>
-              ) : null}
+
+              {/* Label + duration */}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cleanedPreviewLabel}>
+                  {useCleanedEffect ? 'Cleaned' : 'Original'}
+                </Text>
+                {cleanedDuration ? (
+                  <Text style={styles.cleanedPreviewDuration}>{cleanedDuration}</Text>
+                ) : null}
+              </View>
+
+              {/* Effect toggle */}
               <View style={styles.effectToggleWrap}>
                 <Text style={styles.effectToggleLabel}>Effect</Text>
                 <Switch
@@ -820,6 +847,12 @@ export default function UploadScreen() {
                   style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
                 />
               </View>
+
+              {/* Save to device */}
+              <TouchableOpacity onPress={saveCleanedAudio} style={styles.saveBtn} activeOpacity={0.8}>
+                <Ionicons name="download-outline" size={16} color="#0EA5E9" />
+                <Text style={styles.saveBtnText}>Save</Text>
+              </TouchableOpacity>
             </View>
           ) : null}
         </View>
@@ -1217,6 +1250,23 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     fontSize: 11,
     fontWeight: '500',
+  },
+  saveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#0EA5E915',
+    borderWidth: 1,
+    borderColor: '#0EA5E940',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginLeft: 6,
+  },
+  saveBtnText: {
+    color: '#0EA5E9',
+    fontSize: 12,
+    fontWeight: '600',
   },
 
   // Pro recording — idle button
