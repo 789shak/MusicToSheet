@@ -1,5 +1,35 @@
 const API_URL = 'https://musictosheet.onrender.com';
 
+/**
+ * POST /process — send an audio file as multipart/form-data.
+ * Used for guest users who have no Supabase session; zero Supabase calls.
+ * @param {{ fileUri: string, mimeType: string, fileName: string, instrument: string, outputFormat: string }} params
+ * @returns {Promise<object>} same shape as processAudio response
+ */
+export async function processAudioFile({ fileUri, mimeType, fileName, instrument, outputFormat }) {
+  console.log('[api] POST /process (multipart)', { fileName, instrument, outputFormat });
+
+  const form = new FormData();
+  form.append('file', { uri: fileUri, type: mimeType ?? 'audio/mpeg', name: fileName ?? 'audio.mp3' });
+  form.append('instrument', instrument ?? '');
+  form.append('output_format', outputFormat ?? '');
+
+  const response = await fetch(`${API_URL}/process`, {
+    method: 'POST',
+    body: form,
+    // Do NOT set Content-Type header — fetch sets it automatically with the correct boundary
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Server error ${response.status}: ${text}`);
+  }
+
+  const data = await response.json();
+  console.log('[api] /process (multipart) response:', data);
+  return data;
+}
+
 // Base URL for constructing Supabase Storage public links
 export const SUPABASE_STORAGE_URL =
   'https://wlyjrotvjxemzgagpulj.supabase.co/storage/v1/object/public';

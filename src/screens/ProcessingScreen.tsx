@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
-import { processAudio, processAudioWithStems } from '../lib/api';
+import { processAudio, processAudioWithStems, processAudioFile } from '../lib/api';
 import { useSubscription } from '../hooks/useSubscription';
 import {
   computeTrackHash,
@@ -138,10 +138,12 @@ const row = StyleSheet.create({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ProcessingScreen() {
   const router = useRouter();
-  const { filePath, fileName, sourceType, linkUrl, instrument, outputFormat, rightsDeclaration } =
+  const { filePath, fileName, fileUri, fileMime, sourceType, linkUrl, instrument, outputFormat, rightsDeclaration } =
     useLocalSearchParams<{
       filePath?: string;
       fileName?: string;
+      fileUri?: string;
+      fileMime?: string;
       sourceType?: string;
       linkUrl?: string;
       instrument?: string;
@@ -149,7 +151,7 @@ export default function ProcessingScreen() {
       rightsDeclaration?: string;
     }>();
 
-  console.log('[ProcessingScreen] received params', { filePath, fileName, sourceType, linkUrl, instrument, outputFormat, rightsDeclaration });
+  console.log('[ProcessingScreen] received params', { filePath, fileName, fileUri, fileMime, sourceType, linkUrl, instrument, outputFormat, rightsDeclaration });
 
   const { tier } = useSubscription();
   // Capture tier in a ref so the one-shot useEffect closure always reads the latest value
@@ -208,7 +210,6 @@ export default function ProcessingScreen() {
         const { data: { session } } = await supabase.auth.getSession();
         const uid = session?.user?.id;
 
-        // REMOVED: test bypass (shakes789@gmail.com → virtuosos)
         // Use tierRef which is kept current by useSubscription.
         const currentTier = tierRef.current;
 
@@ -217,54 +218,77 @@ export default function ProcessingScreen() {
 
         // ── 1. Rate-limit checks (before touching the server) ─────────────────
         if (uid) {
-          const [rateResult, trackResult] = await Promise.all([
-            checkRateLimits(uid, currentTier),
-            checkPerTrackLimits(uid, trackHash, currentTier),
-          ]);
+          console.log(`[ProcessingScreen] running rate-limit checks — tier: ${currentTier} | uid: ${uid} | trackHash: ${trackHash}`);
+
+          // Guest users have no per-track limit — checkPerTrackLimits handles
+          // the freeGuest exemption internally, but we skip it here for clarity.
+          const checks =
+            currentTier === 'freeGuest'
+              ? [checkRateLimits(uid, currentTier)]
+              : [checkRateLimits(uid, currentTier), checkPerTrackLimits(uid, trackHash, currentTier)];
+
+          const [rateResult, trackResult] = await Promise.all(checks);
 
           if (!rateResult.allowed) {
-            throw new Error(rateResult.message || 'Daily conversion limit reached. Please try again tomorrow.');
+            throw new Error(
+              rateResult.message ||
+              "You've reached the free limit. Sign up free for more attempts, or upgrade to Pro for unlimited conversions."
+            );
           }
 
-          if (!trackResult.allowed) {
+          if (trackResult && !trackResult.allowed) {
             throw new Error(
-              `You've used all ${trackResult.maxAttempts} attempt${trackResult.maxAttempts === 1 ? '' : 's'} for this track on your current plan.`
+              "You've reached the free limit. Sign up free for more attempts, or upgrade to Pro for unlimited conversions."
             );
           }
 
           console.log(`[ProcessingScreen] rate check OK — ${rateResult.remaining} conversions remaining today`);
         }
 
-        // ── 2. Build audio URL ────────────────────────────────────────────────
-        let audioUrl = linkUrl ?? '';
-        if (sourceType !== 'link' && filePath) {
-          const { data: signedData, error: signedError } = await supabase.storage
-            .from('audio-uploads')
-            .createSignedUrl(filePath, 3600);
-          if (signedError || !signedData?.signedUrl) {
-            throw new Error(`Could not create signed URL: ${signedError?.message ?? 'unknown'}`);
-          }
-          audioUrl = signedData.signedUrl;
-        }
-
-        console.log('[ProcessingScreen] calling processAudioWithStems with audioUrl:', audioUrl);
-
-        // ── 3. Call server ────────────────────────────────────────────────────
+        // ── 2. Call server ────────────────────────────────────────────────────
         let result: any;
-        try {
-          result = await processAudioWithStems({
-            audioUrl,
+
+        if (fileUri) {
+          // Guest path — ZERO Supabase calls.
+          // Send the local file directly to /process as multipart form-data.
+          console.log('[ProcessingScreen] guest path — sending file directly to /process (no Supabase)');
+          result = await processAudioFile({
+            fileUri,
+            mimeType: fileMime ?? 'audio/mpeg',
+            fileName: fileName ?? 'audio.mp3',
             instrument: instrument ?? '',
             outputFormat: outputFormat ?? '',
           });
-          console.log('[ProcessingScreen] stems detected:', result?.stems_detected, 'stem used:', result?.stem_used);
-        } catch (stemsErr: any) {
-          console.log('[ProcessingScreen] stem separation failed, falling back to /process:', stemsErr?.message);
-          result = await processAudio({
-            audioUrl,
-            instrument: instrument ?? '',
-            outputFormat: outputFormat ?? '',
-          });
+        } else {
+          // Authenticated path: create a signed URL from Supabase Storage, then call /process-with-stems (falls back to /process)
+          let audioUrl = linkUrl ?? '';
+          if (sourceType !== 'link' && filePath) {
+            const { data: signedData, error: signedError } = await supabase.storage
+              .from('audio-uploads')
+              .createSignedUrl(filePath, 3600);
+            if (signedError || !signedData?.signedUrl) {
+              throw new Error(`Could not create signed URL: ${signedError?.message ?? 'unknown'}`);
+            }
+            audioUrl = signedData.signedUrl;
+          }
+
+          console.log('[ProcessingScreen] calling processAudioWithStems with audioUrl:', audioUrl);
+
+          try {
+            result = await processAudioWithStems({
+              audioUrl,
+              instrument: instrument ?? '',
+              outputFormat: outputFormat ?? '',
+            });
+            console.log('[ProcessingScreen] stems detected:', result?.stems_detected, 'stem used:', result?.stem_used);
+          } catch (stemsErr: any) {
+            console.log('[ProcessingScreen] stem separation failed, falling back to /process:', stemsErr?.message);
+            result = await processAudio({
+              audioUrl,
+              instrument: instrument ?? '',
+              outputFormat: outputFormat ?? '',
+            });
+          }
         }
 
         if (cancelled) return;

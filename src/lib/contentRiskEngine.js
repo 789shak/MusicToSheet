@@ -1,14 +1,22 @@
 import { supabase } from './supabase';
 
+// ─── Dev bypass ───────────────────────────────────────────────────────────────
+// Set to true in development to skip all rate limiting for easier testing.
+// This flag is automatically false in production builds via __DEV__.
+const DEV_BYPASS_RATE_LIMITS = __DEV__ && false; // flip to `true` to bypass during local testing
+
 // ─── Limits ───────────────────────────────────────────────────────────────────
 
 const DAILY_LIMITS = {
+  freeGuest:   10, // device-session limit for unauthenticated guests (generous for dev/testing)
   free:        5,
   advancedPro: 20,
   virtuosos:   50,
   payAsYouGo:  5,
 };
 
+// Per-track limits. freeGuest is intentionally absent — guests have no
+// persistent account, so repeating the same track should not be penalised.
 const TRACK_LIMITS = {
   free:        2,
   advancedPro: 6,
@@ -17,6 +25,7 @@ const TRACK_LIMITS = {
 };
 
 const UPGRADE_HINTS = {
+  freeGuest:   'Sign up free for more daily conversions, or upgrade to Pro for unlimited access.',
   free:        'Upgrade to Pro for up to 20 conversions per day.',
   advancedPro: 'Upgrade to Virtuosos for up to 50 conversions per day.',
   virtuosos:   '',
@@ -67,9 +76,16 @@ export async function logConversion(userId, trackHash, trackName, instrument, so
 // ─── b. checkRateLimits ───────────────────────────────────────────────────────
 /**
  * Check how many conversions this user has done in the last 24 hours.
- * @returns {{ allowed: boolean, remaining: number, message: string }}
+ * @param {string} userId
+ * @param {string} tier
+ * @returns {Promise<{ allowed: boolean, remaining: number, message: string }>}
  */
 export async function checkRateLimits(userId, tier) {
+  if (DEV_BYPASS_RATE_LIMITS) {
+    console.log(`[ContentRiskEngine] DEV_BYPASS active — skipping daily rate limit (tier: ${tier}, userId: ${userId})`);
+    return { allowed: true, remaining: 999, message: '' };
+  }
+
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const maxPerDay = DAILY_LIMITS[tier] ?? DAILY_LIMITS.free;
 
@@ -81,6 +97,7 @@ export async function checkRateLimits(userId, tier) {
 
   if (error) {
     // On DB error, allow through — don't block users due to our own failures
+    console.warn(`[ContentRiskEngine] DB error during daily limit check for ${userId}:`, error.message);
     return { allowed: true, remaining: maxPerDay, message: '' };
   }
 
@@ -88,9 +105,12 @@ export async function checkRateLimits(userId, tier) {
   const remaining = Math.max(0, maxPerDay - used);
   const allowed = used < maxPerDay;
 
+  console.log(`[ContentRiskEngine] daily limit check — tier: ${tier} | userId: ${userId} | used: ${used}/${maxPerDay} | allowed: ${allowed}`);
+
+  const hint = UPGRADE_HINTS[tier] ?? '';
   const message = allowed
     ? ''
-    : `Daily limit reached (${maxPerDay}/day on your plan). ${UPGRADE_HINTS[tier] ?? ''}`.trim();
+    : `You've reached the free limit. Sign up free for more attempts, or upgrade to Pro for unlimited conversions.${hint ? ' ' + hint : ''}`;
 
   return { allowed, remaining, message };
 }
@@ -98,9 +118,25 @@ export async function checkRateLimits(userId, tier) {
 // ─── c. checkPerTrackLimits ───────────────────────────────────────────────────
 /**
  * Check how many times this user has processed this specific track.
- * @returns {{ allowed: boolean, attemptsUsed: number, maxAttempts: number }}
+ * Guest users (freeGuest tier) are exempt — no per-track limit applies.
+ * @param {string} userId
+ * @param {string} trackHash
+ * @param {string} tier
+ * @returns {Promise<{ allowed: boolean, attemptsUsed: number, maxAttempts: number }>}
  */
 export async function checkPerTrackLimits(userId, trackHash, tier) {
+  // Guests have no persistent account — per-track tracking is meaningless and
+  // would block legitimate re-uploads after app restarts.
+  if (tier === 'freeGuest') {
+    console.log(`[ContentRiskEngine] per-track check skipped — guest users have no per-track limit (userId: ${userId})`);
+    return { allowed: true, attemptsUsed: 0, maxAttempts: Infinity };
+  }
+
+  if (DEV_BYPASS_RATE_LIMITS) {
+    console.log(`[ContentRiskEngine] DEV_BYPASS active — skipping per-track limit (tier: ${tier}, trackHash: ${trackHash})`);
+    return { allowed: true, attemptsUsed: 0, maxAttempts: Infinity };
+  }
+
   const maxAttempts = TRACK_LIMITS[tier] ?? TRACK_LIMITS.free;
 
   if (maxAttempts === Infinity) {
@@ -114,20 +150,49 @@ export async function checkPerTrackLimits(userId, trackHash, tier) {
     .eq('track_hash', trackHash);
 
   if (error) {
+    console.warn(`[ContentRiskEngine] DB error during per-track check for ${userId}/${trackHash}:`, error.message);
     return { allowed: true, attemptsUsed: 0, maxAttempts };
   }
 
   const attemptsUsed = count ?? 0;
   const allowed = attemptsUsed < maxAttempts;
 
+  console.log(`[ContentRiskEngine] per-track check — tier: ${tier} | trackHash: ${trackHash} | used: ${attemptsUsed}/${maxAttempts} | allowed: ${allowed}`);
+
   return { allowed, attemptsUsed, maxAttempts };
 }
 
-// ─── d. detectAnomalies ───────────────────────────────────────────────────────
+// ─── d. resetRateLimits (DEV ONLY) ───────────────────────────────────────────
+/**
+ * Delete all processing log rows for a user, resetting their rate limit counters.
+ * Only callable in development builds. Throws in production.
+ * @param {string} userId
+ * @returns {Promise<{ deleted: number }>}
+ */
+export async function resetRateLimits(userId) {
+  if (!__DEV__) {
+    throw new Error('[ContentRiskEngine] resetRateLimits is only available in development builds.');
+  }
+
+  const { count, error } = await supabase
+    .from('track_processing_log')
+    .delete({ count: 'exact' })
+    .eq('user_id', userId);
+
+  if (error) {
+    throw new Error(`[ContentRiskEngine] resetRateLimits failed: ${error.message}`);
+  }
+
+  const deleted = count ?? 0;
+  console.log(`[ContentRiskEngine] DEV RESET — deleted ${deleted} log rows for userId: ${userId}`);
+  return { deleted };
+}
+
+// ─── f. detectAnomalies ───────────────────────────────────────────────────────
 /**
  * Silently inspect the last 7 days of activity and flag unusual patterns.
  * Intended to be called in the background — never blocks the user flow.
- * @returns {{ flagged: boolean, reasons: string[] }}
+ * @returns {Promise<{ flagged: boolean, reasons: string[] }>}
  */
 export async function detectAnomalies(userId) {
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();

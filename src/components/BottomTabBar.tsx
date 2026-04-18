@@ -22,7 +22,7 @@ export function BottomTabBar({ active }: { active: TabKey }) {
           <TouchableOpacity
             key={t.key}
             style={styles.item}
-            onPress={() => t.push ? router.push(t.route) : router.replace(t.route)}
+            onPress={() => t.push ? router.push(t.route as any) : router.replace(t.route as any)}
             activeOpacity={0.7}
           >
             <Ionicons

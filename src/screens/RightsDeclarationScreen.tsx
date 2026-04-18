@@ -141,9 +141,11 @@ const cb = StyleSheet.create({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function RightsDeclarationScreen() {
   const router = useRouter();
-  const { filePath, fileName, sourceType, linkUrl, instrument, outputFormat } = useLocalSearchParams<{
+  const { filePath, fileName, fileUri, fileMime, sourceType, linkUrl, instrument, outputFormat } = useLocalSearchParams<{
     filePath?: string;
     fileName?: string;
+    fileUri?: string;
+    fileMime?: string;
     sourceType?: string;
     linkUrl?: string;
     instrument?: string;
@@ -157,12 +159,14 @@ export default function RightsDeclarationScreen() {
 
   function handleProceed() {
     if (!canProceed) return;
-    console.log('[RightsDeclaration] proceeding to processing', { filePath, fileName, sourceType, linkUrl, instrument, outputFormat, rightsDeclaration: selectedRight });
+    console.log('[RightsDeclaration] proceeding to processing', { filePath, fileName, fileUri, fileMime, sourceType, linkUrl, instrument, outputFormat, rightsDeclaration: selectedRight });
     router.push({
       pathname: '/processing',
       params: {
         filePath: filePath ?? '',
         fileName: fileName ?? '',
+        fileUri: fileUri ?? '',
+        fileMime: fileMime ?? '',
         sourceType: sourceType ?? '',
         linkUrl: linkUrl ?? '',
         instrument: instrument ?? '',

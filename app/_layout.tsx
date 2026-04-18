@@ -104,6 +104,7 @@ function RootLayoutInner() {
         <Stack.Screen name="settings" options={{ headerShown: false }} />
         <Stack.Screen name="profile" options={{ headerShown: false }} />
         <Stack.Screen name="delete-account" options={{ title: 'Delete Account' }} />
+        <Stack.Screen name="metronome" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style="light" />
     </>
