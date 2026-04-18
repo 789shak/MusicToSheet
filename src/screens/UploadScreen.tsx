@@ -11,6 +11,7 @@ import {
   Alert,
   ActivityIndicator,
   Animated,
+  Image,
 } from 'react-native';
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'expo-router';
@@ -22,6 +23,7 @@ import { Audio } from 'expo-av';
 import { BottomTabBar } from '../components/BottomTabBar';
 import { supabase } from '../lib/supabase';
 import { useSubscription } from '../hooks/useSubscription';
+import { useAuth } from '../hooks/useAuth';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type PickedFile = { name: string; uri: string; size: number | null; mimeType: string | null };
@@ -98,7 +100,7 @@ const dd = StyleSheet.create({
     borderColor: '#2D2D3E',
     borderRadius: 12,
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 9,
   },
   placeholder: { color: '#6B7280', fontSize: 15 },
   valueText: { color: '#FFFFFF', fontSize: 15 },
@@ -151,6 +153,7 @@ const OUTPUT_FORMATS = [
 export default function UploadScreen() {
   const router = useRouter();
   const { maxFileSizeMB, tier } = useSubscription();
+  const { isGuest } = useAuth();
 
   const [file, setFile] = useState<PickedFile | null>(null);
   const [link, setLink] = useState('');
@@ -302,7 +305,7 @@ export default function UploadScreen() {
   async function performConvert() {
     setUploadError('');
 
-    // Link path — no upload needed
+    // ── Link path — no upload needed ─────────────────────────────────────────
     if (!file && link.trim().length > 0) {
       console.log('[UploadScreen] navigating to rights-declaration via link', { linkUrl: link.trim(), instrument, outputFormat });
       router.push({
@@ -319,9 +322,38 @@ export default function UploadScreen() {
       return;
     }
 
-    // File path — upload to Supabase Storage
     if (!file) return;
 
+    // ── Guest path — skip Supabase entirely, pass local URI to ProcessingScreen ─
+    if (isGuest) {
+      try {
+        setUploading(true);
+        console.log('[UploadScreen] guest mode — skipping Supabase, passing fileUri to processing');
+        // Navigate directly to rights-declaration with the local file URI.
+        // RightsDeclarationScreen passes it through to ProcessingScreen untouched.
+        router.push({
+          pathname: '/rights-declaration',
+          params: {
+            filePath:    '',
+            fileUri:     file.uri,
+            fileName:    file.name,
+            fileMime:    file.mimeType ?? 'audio/mpeg',
+            sourceType:  'upload',
+            linkUrl:     '',
+            instrument,
+            outputFormat,
+          },
+        });
+      } catch (e: any) {
+        console.log('[UploadScreen] guest convert error:', e);
+        setUploadError(e?.message ?? 'Could not start processing. Please try again.');
+      } finally {
+        setUploading(false);
+      }
+      return;
+    }
+
+    // ── Authenticated path — upload to Supabase Storage ──────────────────────
     try {
       setUploading(true);
       setUploadComplete(false);
@@ -332,8 +364,6 @@ export default function UploadScreen() {
       const uid = session?.user?.id;
 
       const ext = file.name.split('.').pop() ?? 'audio';
-      // Authenticated users get their own namespaced folder; guests use a shared
-      // guest prefix so bucket policies can apply different retention rules.
       const storagePath = uid
         ? `${uid}/${Date.now()}_${file.name}`
         : `guest/${Date.now()}_${file.name}`;
@@ -479,7 +509,7 @@ export default function UploadScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLogo}>
-          <Ionicons name="musical-note" size={20} color="#0EA5E9" />
+          <Image source={require('../../assets/icon.png')} style={{ width: 32, height: 32, borderRadius: 6 }} />
           <Text style={styles.headerTitle}>Music-To-Sheet</Text>
         </View>
       </View>
@@ -514,7 +544,7 @@ export default function UploadScreen() {
             </View>
           ) : (
             <TouchableOpacity style={styles.uploadArea} onPress={pickFile} activeOpacity={0.7}>
-              <Feather name="upload-cloud" size={28} color="#0EA5E9" style={{ marginBottom: 8 }} />
+              <Feather name="upload-cloud" size={24} color="#0EA5E9" style={{ marginBottom: 4 }} />
               <Text style={styles.uploadText}>Tap to upload audio file</Text>
               <Text style={styles.uploadSubtext}>MP3, WAV, M4A, FLAC, AAC</Text>
             </TouchableOpacity>
@@ -522,7 +552,7 @@ export default function UploadScreen() {
           <Text style={styles.fileSizeHint}>Max file size: {maxFileSizeMB}MB</Text>
 
           {/* Paste Link */}
-          <Text style={[styles.sectionLabel, { marginTop: 16 }]}>Paste Link</Text>
+          <Text style={[styles.sectionLabel, { marginTop: 10 }]}>Paste Link</Text>
           <TextInput
             style={styles.input}
             placeholder="Paste audio link here (Direct Link Only)"
@@ -538,7 +568,7 @@ export default function UploadScreen() {
           </Text>
 
           {/* Record */}
-          <Text style={[styles.sectionLabel, { marginTop: 16 }]}>Record Vocals</Text>
+          <Text style={[styles.sectionLabel, { marginTop: 10 }]}>Record Vocals</Text>
 
           {/* Free tier — locked, tapping navigates to subscription */}
           {!['advancedPro', 'virtuosos'].includes(tier) && (
@@ -600,7 +630,7 @@ export default function UploadScreen() {
         </View>
 
         {/* ── OUTPUT BOX ── */}
-        <View style={[styles.fieldset, { marginTop: 20 }]}>
+        <View style={[styles.fieldset, { marginTop: 12 }]}>
           <View style={styles.fieldsetLegendWrap}>
             <Text style={styles.fieldsetLegend}>Output</Text>
           </View>
@@ -615,7 +645,7 @@ export default function UploadScreen() {
           />
 
           {/* Output Format */}
-          <Text style={[styles.sectionLabel, { marginTop: 16 }]}>Output Format</Text>
+          <Text style={[styles.sectionLabel, { marginTop: 10 }]}>Output Format</Text>
           <Dropdown
             label="Output Format"
             options={OUTPUT_FORMATS}
@@ -754,8 +784,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: 34,
-    paddingBottom: 8,
+    paddingTop: 27,
+    paddingBottom: 6,
     backgroundColor: '#111118',
     borderBottomWidth: 1,
     borderBottomColor: '#1C1C27',
@@ -763,11 +793,11 @@ const styles = StyleSheet.create({
   headerLogo: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
   headerTitle: {
     color: '#0EA5E9',
-    fontSize: 16,
+    fontSize: 19,
     fontWeight: '700',
   },
   headerActions: {
@@ -782,8 +812,8 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 32,
+    paddingTop: 14,
+    paddingBottom: 16,
   },
 
   // Section labels
@@ -793,7 +823,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.8,
-    marginBottom: 10,
+    marginBottom: 6,
   },
 
   // Fieldset container
@@ -801,8 +831,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#0EA5E9',
     borderRadius: 14,
-    padding: 16,
-    paddingTop: 22,
+    padding: 14,
+    paddingTop: 18,
     position: 'relative',
   },
   fieldsetLegendWrap: {
@@ -826,7 +856,7 @@ const styles = StyleSheet.create({
     borderColor: '#2D2D3E',
     borderStyle: 'dashed',
     borderRadius: 12,
-    paddingVertical: 27,
+    paddingVertical: 14,
     alignItems: 'center',
     backgroundColor: '#1C1C27',
   },
@@ -843,7 +873,7 @@ const styles = StyleSheet.create({
   fileSizeHint: {
     color: '#4B5563',
     fontSize: 11,
-    marginTop: 6,
+    marginTop: 3,
     textAlign: 'center',
   },
 
@@ -877,14 +907,14 @@ const styles = StyleSheet.create({
     borderColor: '#2D2D3E',
     borderRadius: 12,
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 9,
     color: '#FFFFFF',
     fontSize: 15,
   },
   linkHint: {
     color: '#4B5563',
     fontSize: 11,
-    marginTop: 6,
+    marginTop: 3,
     lineHeight: 16,
   },
 
@@ -902,7 +932,7 @@ const styles = StyleSheet.create({
     borderColor: '#2D2D3E',
     borderRadius: 12,
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 9,
     gap: 10,
     opacity: 0.5,
   },
@@ -936,7 +966,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#DC143C',
     borderRadius: 12,
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 9,
   },
   recordBtnActiveText: {
     color: '#FFFFFF',
@@ -1033,9 +1063,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#0EA5E9',
     borderRadius: 14,
-    paddingVertical: 16,
-    marginTop: 26,
-    marginBottom: 12,
+    paddingVertical: 11,
+    marginTop: 14,
+    marginBottom: 8,
   },
   convertBtnDisabled: {
     backgroundColor: '#1C1C27',
