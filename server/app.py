@@ -610,12 +610,13 @@ async def clean_audio(body: CleanAudioRequest):
         del y, reduced
         gc.collect()
 
+        import base64
         with open(out_path, 'rb') as f:
             audio_bytes = f.read()
 
-        from fastapi.responses import Response
+        audio_b64 = base64.b64encode(audio_bytes).decode('ascii')
         print(f"[clean-audio] Done. Output size: {len(audio_bytes)} bytes")
-        return Response(content=audio_bytes, media_type="audio/wav")
+        return {"status": "success", "audio_base64": audio_b64, "content_type": "audio/wav"}
 
     except HTTPException:
         raise

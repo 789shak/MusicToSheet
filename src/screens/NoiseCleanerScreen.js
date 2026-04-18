@@ -6,6 +6,8 @@ import { useRouter } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
+import { readAsStringAsync } from 'expo-file-system/legacy';
+import { decode } from 'base64-arraybuffer';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 
@@ -25,12 +27,11 @@ export default function NoiseCleanerScreen() {
         copyToCacheDirectory: true,
       });
       if (result.canceled) return;
-      const asset = result.assets[0];
-      setFile(asset);
+      setFile(result.assets[0]);
       setStatus('idle');
       setCleanedUri(null);
       setErrorMsg('');
-    } catch (e) {
+    } catch {
       Alert.alert('Error', 'Could not pick file.');
     }
   }
@@ -41,31 +42,39 @@ export default function NoiseCleanerScreen() {
     setErrorMsg('');
     setCleanedUri(null);
 
-    try {
-      // Upload to Supabase so server can fetch it via URL
-      const ext = file.name.split('.').pop() ?? 'mp3';
-      const remotePath = `noise-cleaner/${Date.now()}_${file.name}`;
-      const { data: session } = await supabase.auth.getSession();
+    let remotePath = null;
 
+    try {
+      // Step 1: Upload to Supabase using base64-arraybuffer (same pattern as main upload flow)
+      const ext = file.name.split('.').pop() ?? 'mp3';
+      remotePath = `noise-cleaner/${Date.now()}_${file.name}`;
+
+      const base64 = await readAsStringAsync(file.uri, { encoding: 'base64' });
       const { error: uploadError } = await supabase.storage
         .from('audio-uploads')
-        .upload(remotePath, { uri: file.uri, type: file.mimeType ?? 'audio/mpeg', name: file.name }, {
-          contentType: file.mimeType ?? 'audio/mpeg',
+        .upload(remotePath, decode(base64), {
+          contentType: file.mimeType ?? `audio/${ext}`,
+          upsert: true,
         });
 
       if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
 
-      const { data: urlData } = supabase.storage
+      // Step 2: Create a signed URL (60 min TTL) so server can download it
+      const { data: signedData, error: signedError } = await supabase.storage
         .from('audio-uploads')
-        .getPublicUrl(remotePath);
+        .createSignedUrl(remotePath, 3600);
 
-      const audioUrl = urlData.publicUrl;
+      if (signedError || !signedData?.signedUrl) {
+        throw new Error('Could not create signed URL for server access.');
+      }
+
       setStatus('cleaning');
 
+      // Step 3: Send signed URL to server — server returns JSON with base64 WAV
       const response = await fetch(`${API_URL}/clean-audio`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audio_url: audioUrl, prop_decrease: 0.75 }),
+        body: JSON.stringify({ audio_url: signedData.signedUrl, prop_decrease: 0.75 }),
       });
 
       if (!response.ok) {
@@ -73,31 +82,25 @@ export default function NoiseCleanerScreen() {
         throw new Error(`Server error ${response.status}: ${text}`);
       }
 
-      const blob = await response.blob();
-      const reader = new FileReader();
+      const json = await response.json();
+      if (!json.audio_base64) throw new Error('Server returned no audio data.');
 
-      const base64 = await new Promise((resolve, reject) => {
-        reader.onloadend = () => {
-          const base64data = reader.result.split(',')[1];
-          resolve(base64data);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-
+      // Step 4: Write base64 WAV to cache and share
       const outPath = FileSystem.cacheDirectory + `cleaned_${Date.now()}.wav`;
-      await FileSystem.writeAsStringAsync(outPath, base64, {
+      await FileSystem.writeAsStringAsync(outPath, json.audio_base64, {
         encoding: FileSystem.EncodingType.Base64,
       });
-
-      // Clean up Supabase upload
-      await supabase.storage.from('audio-uploads').remove([remotePath]);
 
       setCleanedUri(outPath);
       setStatus('done');
     } catch (e) {
       setErrorMsg(e.message ?? 'Something went wrong.');
       setStatus('error');
+    } finally {
+      // Clean up the Supabase upload regardless of outcome
+      if (remotePath) {
+        supabase.storage.from('audio-uploads').remove([remotePath]).catch(() => {});
+      }
     }
   }
 
@@ -105,7 +108,7 @@ export default function NoiseCleanerScreen() {
     if (!cleanedUri) return;
     const canShare = await Sharing.isAvailableAsync();
     if (!canShare) {
-      Alert.alert('Sharing not available on this device.');
+      Alert.alert('Not available', 'Sharing is not available on this device.');
       return;
     }
     await Sharing.shareAsync(cleanedUri, { mimeType: 'audio/wav', dialogTitle: 'Save cleaned audio' });
@@ -131,38 +134,35 @@ export default function NoiseCleanerScreen() {
           Upload a recording and we'll strip out background hiss, hum, and ambient noise.
         </Text>
 
-        {/* File picker */}
         <TouchableOpacity style={styles.pickBtn} onPress={pickFile} disabled={isBusy}>
           <Ionicons name="document-attach-outline" size={18} color="#FFFFFF" />
-          <Text style={styles.pickBtnText}>
+          <Text style={styles.pickBtnText} numberOfLines={1}>
             {file ? file.name : 'Choose audio file'}
           </Text>
         </TouchableOpacity>
 
         {file && (
-          <Text style={styles.fileHint} numberOfLines={1}>
-            {(file.size / 1024 / 1024).toFixed(1)} MB · {file.mimeType}
+          <Text style={styles.fileHint}>
+            {file.size ? (file.size / 1024 / 1024).toFixed(1) + ' MB · ' : ''}{file.mimeType ?? ''}
           </Text>
         )}
 
-        {/* Status messages */}
         {status === 'uploading' && (
           <View style={styles.statusRow}>
             <ActivityIndicator color="#0EA5E9" size="small" />
-            <Text style={styles.statusText}>Uploading…</Text>
+            <Text style={styles.statusText}>Uploading to server…</Text>
           </View>
         )}
         {status === 'cleaning' && (
           <View style={styles.statusRow}>
             <ActivityIndicator color="#A78BFA" size="small" />
-            <Text style={styles.statusText}>Cleaning noise…</Text>
+            <Text style={styles.statusText}>Cleaning noise… this may take a moment</Text>
           </View>
         )}
         {status === 'error' && (
           <Text style={styles.errorText}>{errorMsg}</Text>
         )}
 
-        {/* Clean button */}
         {file && status !== 'done' && (
           <TouchableOpacity
             style={[styles.cleanBtn, (!file || isBusy) && styles.cleanBtnDisabled]}
@@ -180,7 +180,6 @@ export default function NoiseCleanerScreen() {
           </TouchableOpacity>
         )}
 
-        {/* Done state */}
         {status === 'done' && cleanedUri && (
           <View style={styles.doneCard}>
             <Ionicons name="checkmark-circle" size={32} color="#34D399" />
@@ -254,7 +253,7 @@ const styles = StyleSheet.create({
   fileHint: { color: '#6B7280', fontSize: 12, marginBottom: 20, alignSelf: 'flex-start' },
 
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 12 },
-  statusText: { color: '#9CA3AF', fontSize: 14 },
+  statusText: { color: '#9CA3AF', fontSize: 14, flexShrink: 1 },
 
   errorText: { color: '#F87171', fontSize: 13, textAlign: 'center', marginTop: 12 },
 
