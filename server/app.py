@@ -7,6 +7,8 @@ import gc
 import numpy as np
 import httpx
 import librosa
+import soundfile as sf
+import noisereduce as nr
 import pretty_midi
 import replicate
 from basic_pitch.inference import predict
@@ -374,6 +376,15 @@ async def process_audio(body: ProcessRequest):
             raise Exception(f"ffmpeg failed with code {result.returncode}: {result.stderr}")
         print(f"[process] Converted to WAV: {wav_path}")
 
+        # Step 2b: Noise reduction
+        print("[process] Step 2b: Applying noise reduction...")
+        _nr_y, _nr_sr = sf.read(wav_path)
+        _nr_reduced = nr.reduce_noise(y=_nr_y, sr=_nr_sr, prop_decrease=0.75)
+        sf.write(wav_path, _nr_reduced, _nr_sr)
+        del _nr_y, _nr_reduced
+        gc.collect()
+        print("[process] Noise reduction complete")
+
         # Step 3: Load WAV with librosa for duration
         print("[process] Step 3: Loading WAV with librosa...")
         y, sr = librosa.load(wav_path, sr=22050, mono=True, duration=60.0)
@@ -505,6 +516,15 @@ async def process_with_stems(body: ProcessRequest):
             raise Exception(f"ffmpeg failed: {result.stderr}")
         print(f"[stems] Converted to WAV: {wav_path}")
 
+        # Step 6b: Noise reduction
+        print("[stems] Step 6b: Applying noise reduction...")
+        _nr_y, _nr_sr = sf.read(wav_path)
+        _nr_reduced = nr.reduce_noise(y=_nr_y, sr=_nr_sr, prop_decrease=0.75)
+        sf.write(wav_path, _nr_reduced, _nr_sr)
+        del _nr_y, _nr_reduced
+        gc.collect()
+        print("[stems] Noise reduction complete")
+
         # Step 7: Load WAV with librosa for duration
         print("[stems] Step 7: Loading WAV with librosa...")
         y, sr = librosa.load(wav_path, sr=22050, mono=True, duration=60.0)
@@ -555,3 +575,55 @@ async def process_with_stems(body: ProcessRequest):
             if f and os.path.exists(f):
                 os.remove(f)
                 print(f"[stems] Deleted temp file: {f}")
+
+
+# ─── Clean Audio Endpoint ──────────────────────────────────────────────────────
+class CleanAudioRequest(BaseModel):
+    audio_url: str
+    prop_decrease: float = 0.75
+
+@app.post("/clean-audio")
+async def clean_audio(body: CleanAudioRequest):
+    uid = uuid.uuid4().hex
+    tmp_path = f"/tmp/{uid}_input"
+    wav_path = f"/tmp/{uid}_clean.wav"
+    out_path = f"/tmp/{uid}_cleaned.wav"
+
+    try:
+        print(f"[clean-audio] Downloading: {body.audio_url[:80]}")
+        file_size = await download_audio(body.audio_url, tmp_path)
+        if file_size < 1000:
+            raise Exception(f"Downloaded file too small ({file_size} bytes)")
+
+        print("[clean-audio] Converting to WAV with ffmpeg...")
+        result = subprocess.run(
+            ['ffmpeg', '-i', tmp_path, '-ar', '22050', '-ac', '1', '-sample_fmt', 's16', wav_path, '-y'],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            raise Exception(f"ffmpeg failed: {result.stderr}")
+
+        print("[clean-audio] Applying noise reduction...")
+        y, sr = sf.read(wav_path)
+        reduced = nr.reduce_noise(y=y, sr=sr, prop_decrease=body.prop_decrease)
+        sf.write(out_path, reduced, sr)
+        del y, reduced
+        gc.collect()
+
+        with open(out_path, 'rb') as f:
+            audio_bytes = f.read()
+
+        from fastapi.responses import Response
+        print(f"[clean-audio] Done. Output size: {len(audio_bytes)} bytes")
+        return Response(content=audio_bytes, media_type="audio/wav")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[clean-audio] Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    finally:
+        for f in [tmp_path, wav_path, out_path]:
+            if f and os.path.exists(f):
+                os.remove(f)
