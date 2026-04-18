@@ -181,6 +181,10 @@ export default function UploadScreen() {
 
   // ── Noise cleaning state ───────────────────────────────────────────────────
   const [cleaningNoise, setCleaningNoise] = useState(false);
+  const [cleanedFileUri, setCleanedFileUri] = useState<string | null>(null);
+  const [cleanedDuration, setCleanedDuration] = useState('');
+  const [isPlayingCleaned, setIsPlayingCleaned] = useState(false);
+  const cleanedSoundRef = useRef<Audio.Sound | null>(null);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -188,6 +192,7 @@ export default function UploadScreen() {
       if (timerRef.current) clearInterval(timerRef.current);
       if (recordingRef.current) recordingRef.current.stopAndUnloadAsync().catch(() => {});
       pulseLoop.current?.stop();
+      cleanedSoundRef.current?.unloadAsync().catch(() => {});
     };
   }, []);
 
@@ -253,12 +258,53 @@ export default function UploadScreen() {
       // Replace current file with cleaned version — ready for conversion
       setFile({ name: cleanedName, uri: outPath, size: null, mimeType: 'audio/mpeg' });
 
-      Alert.alert('✓ Noise cleaned!', 'Ready to convert. Tap "Convert to Sheet Music" to continue.');
+      // Load briefly to get duration for the preview row
+      const { sound: previewSound, status: previewStatus } = await Audio.Sound.createAsync(
+        { uri: outPath },
+        { shouldPlay: false }
+      );
+      const durationMs = previewStatus.isLoaded ? (previewStatus.durationMillis ?? 0) : 0;
+      await previewSound.unloadAsync();
+      const totalSec = Math.round(durationMs / 1000);
+      const dm = Math.floor(totalSec / 60).toString().padStart(2, '0');
+      const ds = (totalSec % 60).toString().padStart(2, '0');
+      setCleanedDuration(totalSec > 0 ? `${dm}:${ds}` : '');
+
+      // Unload any previous preview sound and set new URI
+      await cleanedSoundRef.current?.unloadAsync().catch(() => {});
+      cleanedSoundRef.current = null;
+      setIsPlayingCleaned(false);
+      setCleanedFileUri(outPath);
     } catch (e: any) {
       Alert.alert('Error', e?.message ?? 'Could not clean audio.');
     } finally {
       setCleaningNoise(false);
       if (remotePath) supabase.storage.from('audio-uploads').remove([remotePath]).catch(() => {});
+    }
+  }
+
+  async function toggleCleanedPlayback() {
+    try {
+      if (!cleanedFileUri) return;
+      if (isPlayingCleaned && cleanedSoundRef.current) {
+        await cleanedSoundRef.current.pauseAsync();
+        setIsPlayingCleaned(false);
+        return;
+      }
+      if (!cleanedSoundRef.current) {
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+        const { sound } = await Audio.Sound.createAsync({ uri: cleanedFileUri });
+        cleanedSoundRef.current = sound;
+        sound.setOnPlaybackStatusUpdate((status) => {
+          if (status.isLoaded && status.didJustFinish) {
+            setIsPlayingCleaned(false);
+          }
+        });
+      }
+      await cleanedSoundRef.current.playAsync();
+      setIsPlayingCleaned(true);
+    } catch (e: any) {
+      Alert.alert('Playback error', e?.message ?? 'Could not play audio.');
     }
   }
 
@@ -280,6 +326,11 @@ export default function UploadScreen() {
       setRecordSeconds(0);
       setFile(null);
       setLink('');
+      setCleanedFileUri(null);
+      setCleanedDuration('');
+      setIsPlayingCleaned(false);
+      await cleanedSoundRef.current?.unloadAsync().catch(() => {});
+      cleanedSoundRef.current = null;
 
       timerRef.current = setInterval(() => {
         setRecordSeconds((s) => {
@@ -602,7 +653,15 @@ export default function UploadScreen() {
                   <Text style={styles.fileSize}>{formatBytes(file.size)}</Text>
                 ) : null}
               </View>
-              <TouchableOpacity onPress={() => { setFile(null); setUploadError(''); }} hitSlop={8}>
+              <TouchableOpacity onPress={() => {
+                setFile(null);
+                setUploadError('');
+                setCleanedFileUri(null);
+                setCleanedDuration('');
+                setIsPlayingCleaned(false);
+                cleanedSoundRef.current?.unloadAsync().catch(() => {});
+                cleanedSoundRef.current = null;
+              }} hitSlop={8}>
                 <Ionicons name="close-circle" size={20} color="#6B7280" />
               </TouchableOpacity>
             </View>
@@ -652,30 +711,6 @@ export default function UploadScreen() {
             </TouchableOpacity>
           )}
 
-          {/* Clean Noise */}
-          <Text style={[styles.sectionLabel, { marginTop: 10 }]}>Clean Noise</Text>
-          <TouchableOpacity
-            style={styles.cleanNoiseBtn}
-            onPress={cleanNoise}
-            disabled={cleaningNoise}
-            activeOpacity={0.8}
-          >
-            {cleaningNoise ? (
-              <>
-                <ActivityIndicator size="small" color="#A78BFA" />
-                <Text style={styles.cleanNoiseBtnText}>Cleaning audio…</Text>
-              </>
-            ) : (
-              <>
-                <Ionicons name="ear-outline" size={22} color="#A78BFA" />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.cleanNoiseBtnText}>Clean Noise</Text>
-                  <Text style={styles.cleanNoiseBtnSub}>Remove background noise from audio</Text>
-                </View>
-              </>
-            )}
-          </TouchableOpacity>
-
           {/* Pro/Virtuosos — recording UI */}
           {['advancedPro', 'virtuosos'].includes(tier) && (
             <>
@@ -715,6 +750,42 @@ export default function UploadScreen() {
               )}
             </>
           )}
+
+          {/* Clean Noise — compact sub-action below record button */}
+          <TouchableOpacity
+            style={styles.cleanNoiseBtn}
+            onPress={cleanNoise}
+            disabled={cleaningNoise}
+            activeOpacity={0.8}
+          >
+            {cleaningNoise ? (
+              <>
+                <ActivityIndicator size="small" color="#A78BFA" />
+                <Text style={styles.cleanNoiseBtnText}>Cleaning audio…</Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="ear-outline" size={18} color="#A78BFA" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cleanNoiseBtnText}>Clean Noise</Text>
+                  <Text style={styles.cleanNoiseBtnSub}>Remove background noise</Text>
+                </View>
+              </>
+            )}
+          </TouchableOpacity>
+
+          {/* Playback preview after successful noise cleaning */}
+          {cleanedFileUri ? (
+            <View style={styles.cleanedPreviewRow}>
+              <TouchableOpacity onPress={toggleCleanedPlayback} style={styles.playBtn} activeOpacity={0.8}>
+                <Ionicons name={isPlayingCleaned ? 'pause' : 'play'} size={18} color="#0EA5E9" />
+              </TouchableOpacity>
+              <Text style={styles.cleanedPreviewLabel}>Cleaned Audio Preview</Text>
+              {cleanedDuration ? (
+                <Text style={styles.cleanedPreviewDuration}>{cleanedDuration}</Text>
+              ) : null}
+            </View>
+          ) : null}
         </View>
 
         {/* ── OUTPUT BOX ── */}
@@ -1046,27 +1117,60 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Clean Noise button
+  // Clean Noise button (compact, sub-action below record)
   cleanNoiseBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
     backgroundColor: '#1C1C27',
     borderWidth: 1,
-    borderColor: '#A78BFA40',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 9,
+    borderColor: '#A78BFA30',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    marginTop: 8,
   },
   cleanNoiseBtnText: {
-    color: '#FFFFFF',
-    fontSize: 14,
+    color: '#D1D5DB',
+    fontSize: 13,
     fontWeight: '600',
   },
   cleanNoiseBtnSub: {
     color: '#6B7280',
     fontSize: 11,
     marginTop: 1,
+  },
+
+  // Cleaned audio playback preview row
+  cleanedPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#0A1A24',
+    borderWidth: 1,
+    borderColor: '#0EA5E930',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 6,
+  },
+  playBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#0EA5E915',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cleanedPreviewLabel: {
+    flex: 1,
+    color: '#D1D5DB',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  cleanedPreviewDuration: {
+    color: '#6B7280',
+    fontSize: 12,
   },
 
   // Pro recording — idle button
