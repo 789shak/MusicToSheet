@@ -336,8 +336,8 @@ export default function ResultsScreen() {
     const html = buildStaticPdfHtml(trimmedNotes, pdfMeta());
 
     console.log('PDF SHARE: Starting PDF generation');
-    console.log('PDF SHARE: Number of notes:', trimmedNotes.length);
-    console.log('PDF SHARE: HTML length:', html.length);
+    console.log('STATIC PDF notes count:', trimmedNotes.length);
+    console.log('STATIC PDF HTML size:', html.length, 'chars');
 
     const pdfPromise = Print.printToFileAsync({ html });
     const timeoutPromise = new Promise<never>((_, reject) =>
