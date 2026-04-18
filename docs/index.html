@@ -334,9 +334,21 @@ nav {
 
 /* ===== SECTION COMMON ===== */
 section {
-  padding: 120px 20px;
+  padding: 60px 20px;
   max-width: 1200px;
   margin: 0 auto;
+  position: relative;
+}
+
+section + section::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--turquoise), transparent);
 }
 
 .section-tag {
@@ -694,7 +706,7 @@ section {
 /* ===== CTA ===== */
 .cta-section {
   text-align: center;
-  padding: 120px 20px;
+  padding: 60px 20px;
   position: relative;
 }
 
@@ -786,7 +798,7 @@ footer {
   .footer-grid { grid-template-columns: 1fr 1fr; }
   .stats { gap: 30px; }
   .hero h1 { letter-spacing: -1px; }
-  section { padding: 80px 20px; }
+  section { padding: 40px 20px; }
 }
 
 @media (max-width: 480px) {
