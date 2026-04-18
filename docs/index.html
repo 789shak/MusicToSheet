@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Music-To-Sheet — Audio to Sheet Music, Instantly</title>
   <meta name="description" content="Music-To-Sheet converts your audio recordings into readable sheet music using AI. Coming soon to iOS and Android." />
+  <link rel="icon" type="image/png" href="images/logo.png">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -48,6 +49,8 @@
       text-decoration: none;
     }
     .nav-logo svg { flex-shrink: 0; }
+    .site-logo { height: 40px; width: auto; display: block; }
+    @media (max-width: 600px) { .site-logo { height: 32px; } }
     .nav-links { display: flex; gap: 24px; font-size: 14px; color: var(--muted); }
     .nav-links a { color: var(--muted); }
     .nav-links a:hover { color: var(--text); text-decoration: none; }
@@ -169,10 +172,7 @@
   <!-- Nav -->
   <nav>
     <a class="nav-logo" href="index.html">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0EA5E9" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
-      </svg>
-      Music-To-Sheet
+      <img src="images/logo.png" alt="Music-To-Sheet" class="site-logo">
     </a>
     <div class="nav-links">
       <a href="terms.html">Terms</a>
