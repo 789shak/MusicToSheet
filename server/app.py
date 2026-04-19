@@ -18,8 +18,11 @@ from pydantic import BaseModel
 app = FastAPI(title="Music-To-Sheet API")
 
 # ─── Schema ───────────────────────────────────────────────────────────────────
+from typing import Optional
+
 class ProcessRequest(BaseModel):
-    audio_url: str
+    audio_url: Optional[str] = None
+    temp_file_id: Optional[str] = None
     instrument: str
     output_format: str
 
@@ -345,27 +348,52 @@ def root():
     return {"status": "Music-To-Sheet API is running"}
 
 
+# ─── /upload-temp (guest file upload) ────────────────────────────────────────
+@app.post("/upload-temp")
+async def upload_temp(file: UploadFile = File(...)):
+    """Accept a multipart audio upload, save to /tmp, return a temp_file_id."""
+    ext = os.path.splitext(file.filename or 'audio.mp3')[1].lower() or '.mp3'
+    temp_id = str(uuid.uuid4())
+    tmp_path = f"/tmp/{temp_id}{ext}"
+    contents = await file.read()
+    with open(tmp_path, 'wb') as f:
+        f.write(contents)
+    print(f"[upload-temp] Saved {len(contents)} bytes → {tmp_path}")
+    return {"temp_file_id": temp_id, "ext": ext}
+
+
 @app.post("/process")
 async def process_audio(body: ProcessRequest):
     tmp_path = None
     wav_path = None
     try:
-        # Step 1: Download audio
-        print("[process] Step 1: Downloading audio...")
-        print(f"[process] Downloading from URL: {body.audio_url[:100]}...")
-
-        original_name = body.audio_url.split("?")[0].split("/")[-1]
-        ext = os.path.splitext(original_name)[1].lower() or ".mp3"
+        # Step 1: Resolve audio source — URL download OR pre-uploaded temp file
         uid = str(uuid.uuid4())
-        tmp_path = f"/tmp/{uid}{ext}"
         wav_path = f"/tmp/{uid}.wav"
 
-        file_size = await download_audio(body.audio_url, tmp_path)
-        print(f"[process] Downloaded file size: {file_size} bytes")
-        if file_size < 1000:
-            raise Exception(f"Downloaded file too small ({file_size} bytes) — likely failed download")
-
-        print(f"[process] Saved to temp file: {tmp_path}")
+        if body.temp_file_id:
+            # Guest path: file already on disk from /upload-temp
+            print(f"[process] Using temp file: {body.temp_file_id}")
+            # Find the file with this ID prefix (any extension)
+            import glob as _glob
+            matches = _glob.glob(f"/tmp/{body.temp_file_id}.*")
+            if not matches:
+                raise Exception(f"Temp file not found: {body.temp_file_id}")
+            tmp_path = matches[0]
+            print(f"[process] Found temp file: {tmp_path}")
+        elif body.audio_url:
+            print("[process] Step 1: Downloading audio...")
+            print(f"[process] Downloading from URL: {body.audio_url[:100]}...")
+            original_name = body.audio_url.split("?")[0].split("/")[-1]
+            ext = os.path.splitext(original_name)[1].lower() or ".mp3"
+            tmp_path = f"/tmp/{uid}{ext}"
+            file_size = await download_audio(body.audio_url, tmp_path)
+            print(f"[process] Downloaded file size: {file_size} bytes")
+            if file_size < 1000:
+                raise Exception(f"Downloaded file too small ({file_size} bytes) — likely failed download")
+            print(f"[process] Saved to temp file: {tmp_path}")
+        else:
+            raise HTTPException(status_code=400, detail="Provide either audio_url or temp_file_id")
 
         # Step 2: Convert to WAV via ffmpeg
         print("[process] Step 2: Converting to WAV with ffmpeg...")
@@ -444,70 +472,6 @@ async def process_audio(body: ProcessRequest):
             if f and os.path.exists(f):
                 os.remove(f)
                 print(f"[process] Deleted temp file: {f}")
-
-
-# ─── /process-file (guest multipart upload) ──────────────────────────────────
-@app.post("/process-file")
-async def process_audio_file(
-    file: UploadFile = File(...),
-    instrument: str = Form(''),
-    output_format: str = Form(''),
-):
-    tmp_path = None
-    wav_path = None
-    try:
-        ext = os.path.splitext(file.filename or 'audio.mp3')[1].lower() or '.mp3'
-        uid = str(uuid.uuid4())
-        tmp_path = f"/tmp/{uid}{ext}"
-        wav_path = f"/tmp/{uid}.wav"
-
-        # Save uploaded bytes to temp file
-        contents = await file.read()
-        with open(tmp_path, 'wb') as f:
-            f.write(contents)
-        print(f"[process-file] Saved {len(contents)} bytes to {tmp_path}")
-
-        # Reuse same pipeline as /process from Step 2 onward
-        result = subprocess.run(
-            ['ffmpeg', '-i', tmp_path, '-t', '60', '-ar', '22050', '-ac', '1', '-sample_fmt', 's16', wav_path, '-y'],
-            capture_output=True, text=True,
-        )
-        if result.returncode != 0:
-            raise Exception(f"ffmpeg failed: {result.stderr}")
-        print(f"[process-file] Converted to WAV: {wav_path}")
-
-        _nr_y, _nr_sr = sf.read(wav_path)
-        _nr_reduced = nr.reduce_noise(y=_nr_y, sr=_nr_sr, prop_decrease=0.6, stationary=False, n_fft=2048, freq_mask_smooth_hz=500)
-        sf.write(wav_path, _nr_reduced, _nr_sr)
-        del _nr_y, _nr_reduced
-        gc.collect()
-
-        y, sr = librosa.load(wav_path, sr=22050, mono=True, duration=60.0)
-        duration_seconds = float(librosa.get_duration(y=y, sr=sr))
-        del y
-        gc.collect()
-
-        notes, midi_data, note_events = detect_notes_with_basic_pitch(wav_path)
-        musicxml_content = generate_musicxml(notes, midi_data, instrument, output_format)
-
-        return {
-            "notes": notes,
-            "duration_seconds": duration_seconds,
-            "musicxml": musicxml_content,
-            "stems_detected": False,
-            "stem_used": None,
-        }
-
-    except Exception as e:
-        print(f"[process-file] ERROR: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-    finally:
-        for f in [tmp_path, wav_path]:
-            if f and os.path.exists(f):
-                os.remove(f)
-                print(f"[process-file] Deleted temp file: {f}")
 
 
 # ─── /process-with-stems ──────────────────────────────────────────────────────

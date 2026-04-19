@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
-import { processAudio, processAudioWithStems, processAudioFile } from '../lib/api';
+import { processAudio, processAudioWithStems, uploadTempFile } from '../lib/api';
 import { useSubscription } from '../hooks/useSubscription';
 import {
   computeTrackHash,
@@ -366,12 +366,15 @@ export default function ProcessingScreen() {
         let result: any;
 
         if (fileUri) {
-          // Guest local file — send directly to server as multipart (no Supabase auth needed)
-          console.log('[ProcessingScreen] guest path — sending file to /process-file');
-          result = await withTimeout(processAudioFile({
-            fileUri,
-            mimeType: fileMime ?? 'audio/mpeg',
-            fileName: fileName ?? 'audio.mp3',
+          // Guest local file — upload to server /upload-temp, then call /process with temp_file_id
+          console.log('[ProcessingScreen] guest path — uploading to /upload-temp');
+          const { temp_file_id } = await withTimeout(
+            uploadTempFile({ fileUri, mimeType: fileMime ?? 'audio/mpeg', fileName: fileName ?? 'audio.mp3' }),
+            60_000 // 60s for upload
+          );
+          console.log('[ProcessingScreen] temp_file_id:', temp_file_id);
+          result = await withTimeout(processAudio({
+            tempFileId: temp_file_id,
             instrument: instrument ?? '',
             outputFormat: outputFormat ?? '',
           }), SERVER_TIMEOUT_MS);
