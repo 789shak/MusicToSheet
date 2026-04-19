@@ -323,7 +323,7 @@ export default function NoiseCleanerScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
         </TouchableOpacity>
-
+        <Text style={styles.headerTitle}>DeNoise</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
