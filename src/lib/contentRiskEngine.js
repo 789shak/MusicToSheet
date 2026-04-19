@@ -18,7 +18,7 @@ const DAILY_LIMITS = {
 // Per-track limits. freeGuest is intentionally absent — guests have no
 // persistent account, so repeating the same track should not be penalised.
 const TRACK_LIMITS = {
-  free:        2,
+  free:        5,
   advancedPro: 6,
   virtuosos:   Infinity,
   payAsYouGo:  3,

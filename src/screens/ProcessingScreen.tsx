@@ -232,13 +232,13 @@ export default function ProcessingScreen() {
           if (!rateResult.allowed) {
             throw new Error(
               rateResult.message ||
-              "You've reached the free limit. Sign up free for more attempts, or upgrade to Pro for unlimited conversions."
+              "Daily limit reached (5/day). Try again tomorrow or upgrade."
             );
           }
 
           if (trackResult && !trackResult.allowed) {
             throw new Error(
-              "You've reached the free limit. Sign up free for more attempts, or upgrade to Pro for unlimited conversions."
+              "Track attempt limit reached (5 attempts). Try a different track or upgrade."
             );
           }
 
@@ -370,7 +370,7 @@ export default function ProcessingScreen() {
       } catch (e: any) {
         if (cancelled) return;
         console.log('[ProcessingScreen] error:', e);
-        setError(e?.message ?? 'Something went wrong. Please try again.');
+        setError(e?.message || 'Processing failed. Please try again.');
       } finally {
         clearTimeout(t1);
         clearTimeout(t2);
