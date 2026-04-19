@@ -12,7 +12,7 @@ import noisereduce as nr
 import pretty_midi
 import replicate
 from basic_pitch.inference import predict
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 
 app = FastAPI(title="Music-To-Sheet API")
@@ -444,6 +444,70 @@ async def process_audio(body: ProcessRequest):
             if f and os.path.exists(f):
                 os.remove(f)
                 print(f"[process] Deleted temp file: {f}")
+
+
+# ─── /process-file (guest multipart upload) ──────────────────────────────────
+@app.post("/process-file")
+async def process_audio_file(
+    file: UploadFile = File(...),
+    instrument: str = Form(''),
+    output_format: str = Form(''),
+):
+    tmp_path = None
+    wav_path = None
+    try:
+        ext = os.path.splitext(file.filename or 'audio.mp3')[1].lower() or '.mp3'
+        uid = str(uuid.uuid4())
+        tmp_path = f"/tmp/{uid}{ext}"
+        wav_path = f"/tmp/{uid}.wav"
+
+        # Save uploaded bytes to temp file
+        contents = await file.read()
+        with open(tmp_path, 'wb') as f:
+            f.write(contents)
+        print(f"[process-file] Saved {len(contents)} bytes to {tmp_path}")
+
+        # Reuse same pipeline as /process from Step 2 onward
+        result = subprocess.run(
+            ['ffmpeg', '-i', tmp_path, '-t', '60', '-ar', '22050', '-ac', '1', '-sample_fmt', 's16', wav_path, '-y'],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            raise Exception(f"ffmpeg failed: {result.stderr}")
+        print(f"[process-file] Converted to WAV: {wav_path}")
+
+        _nr_y, _nr_sr = sf.read(wav_path)
+        _nr_reduced = nr.reduce_noise(y=_nr_y, sr=_nr_sr, prop_decrease=0.6, stationary=False, n_fft=2048, freq_mask_smooth_hz=500)
+        sf.write(wav_path, _nr_reduced, _nr_sr)
+        del _nr_y, _nr_reduced
+        gc.collect()
+
+        y, sr = librosa.load(wav_path, sr=22050, mono=True, duration=60.0)
+        duration_seconds = float(librosa.get_duration(y=y, sr=sr))
+        del y
+        gc.collect()
+
+        notes, midi_data, note_events = detect_notes_with_basic_pitch(wav_path)
+        musicxml_content = generate_musicxml(notes, midi_data, instrument, output_format)
+
+        return {
+            "notes": notes,
+            "duration_seconds": duration_seconds,
+            "musicxml": musicxml_content,
+            "stems_detected": False,
+            "stem_used": None,
+        }
+
+    except Exception as e:
+        print(f"[process-file] ERROR: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+    finally:
+        for f in [tmp_path, wav_path]:
+            if f and os.path.exists(f):
+                os.remove(f)
+                print(f"[process-file] Deleted temp file: {f}")
 
 
 # ─── /process-with-stems ──────────────────────────────────────────────────────

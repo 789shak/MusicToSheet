@@ -37,7 +37,8 @@ const STAGES = [
 const SLOW_WARNING_MS = 8_000;
 
 // Maximum time to wait for the server before showing a timeout error
-const SERVER_TIMEOUT_MS = 120_000;
+// Demucs (30-60s) + Basic Pitch (10-20s) + music21 (5-10s) = up to 90s; use 180s for safety
+const SERVER_TIMEOUT_MS = 180_000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
@@ -365,9 +366,8 @@ export default function ProcessingScreen() {
         let result: any;
 
         if (fileUri) {
-          // Guest path — ZERO Supabase calls.
-          // Send the local file directly to /process as multipart form-data.
-          console.log('[ProcessingScreen] guest path — sending file directly to /process (no Supabase)');
+          // Guest local file — send directly to server as multipart (no Supabase auth needed)
+          console.log('[ProcessingScreen] guest path — sending file to /process-file');
           result = await withTimeout(processAudioFile({
             fileUri,
             mimeType: fileMime ?? 'audio/mpeg',
@@ -376,7 +376,7 @@ export default function ProcessingScreen() {
             outputFormat: outputFormat ?? '',
           }), SERVER_TIMEOUT_MS);
         } else {
-          // Authenticated path: create a signed URL from Supabase Storage, then call /process-with-stems (falls back to /process)
+          // Authenticated path — get signed URL from Supabase, then call server with JSON
           let audioUrl = linkUrl ?? '';
           if (sourceType !== 'link' && filePath) {
             const { data: signedData, error: signedError } = await supabase.storage
@@ -514,10 +514,10 @@ export default function ProcessingScreen() {
             goBack
           );
 
-        } else if (msg === '__TIMEOUT__') {
+        } else if (msg === '__TIMEOUT__' || e?.name === 'AbortError' || msg.toLowerCase().includes('aborted')) {
           showErrorAlert(
             'Server Timeout',
-            'Processing is taking longer than expected. Please try again.',
+            'Processing is taking longer than expected (over 3 minutes). Please try again.',
             goBack
           );
 
