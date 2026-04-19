@@ -177,6 +177,17 @@ const dd = StyleSheet.create({
 });
 
 
+// ─── File validation constants ────────────────────────────────────────────────
+const SUPPORTED_EXTENSIONS = ['mp3', 'wav', 'm4a', 'aac', 'flac'];
+const SUPPORTED_MIMES = [
+  'audio/mpeg', 'audio/mp3',
+  'audio/wav', 'audio/x-wav',
+  'audio/m4a', 'audio/x-m4a', 'audio/mp4',
+  'audio/aac', 'audio/x-aac',
+  'audio/flac', 'audio/x-flac',
+];
+const MAX_FILE_SIZE_MB = 50;
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 const INSTRUMENTS = [
   'Piano', 'Guitar', 'Bass', 'Violin', 'Cello',
@@ -500,11 +511,34 @@ export default function UploadScreen() {
       });
       if (!result.canceled && result.assets?.length > 0) {
         const asset = result.assets[0];
-        const fileSizeMB = (asset.size ?? 0) / (1024 * 1024);
 
+        // ── Format check ──
+        const ext = (asset.name.split('.').pop() ?? '').toLowerCase();
+        const mime = (asset.mimeType ?? '').toLowerCase();
+        if (!SUPPORTED_EXTENSIONS.includes(ext) && !SUPPORTED_MIMES.includes(mime)) {
+          Alert.alert(
+            'Unsupported Format',
+            'Unsupported file format. Please upload MP3, WAV, M4A, AAC, or FLAC files.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+
+        // ── Absolute 50 MB hard cap ──
+        const fileSizeMB = (asset.size ?? 0) / (1024 * 1024);
+        if (asset.size && fileSizeMB > MAX_FILE_SIZE_MB) {
+          Alert.alert(
+            'File Too Large',
+            `File too large (max ${MAX_FILE_SIZE_MB}MB). Try compressing your audio or trimming it.`,
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+
+        // ── Per-tier size cap ──
         if (asset.size && fileSizeMB > maxFileSizeMB) {
           Alert.alert(
-            'File too large',
+            'File Too Large',
             `Your plan allows up to ${maxFileSizeMB}MB. This file is ${fileSizeMB.toFixed(1)}MB.`,
             [
               { text: 'Cancel', style: 'cancel' },
@@ -624,7 +658,14 @@ export default function UploadScreen() {
 
       if (error) {
         console.log('Storage upload error:', error);
-        setUploadError(error.message);
+        fakeAnimRef.current?.stop();
+        fakeAnimRef.current = null;
+        progressAnim.removeListener(progressListenerId.current);
+        Alert.alert(
+          'Upload Failed',
+          'Upload failed. Please check your internet connection and try again.',
+          [{ text: 'OK' }]
+        );
         return;
       }
 
@@ -651,7 +692,11 @@ export default function UploadScreen() {
       fakeAnimRef.current = null;
       progressAnim.removeListener(progressListenerId.current);
       console.log('Upload exception:', e);
-      setUploadError(e?.message ?? 'Upload failed. Please try again.');
+      Alert.alert(
+        'Upload Failed',
+        'Upload failed. Please check your internet connection and try again.',
+        [{ text: 'OK' }]
+      );
     } finally {
       setUploading(false);
       setUploadProgress(0);

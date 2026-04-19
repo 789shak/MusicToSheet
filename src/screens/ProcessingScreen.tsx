@@ -5,9 +5,11 @@ import {
   TouchableOpacity,
   Animated,
   Image,
+  Alert,
 } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { processAudio, processAudioWithStems, processAudioFile } from '../lib/api';
@@ -34,6 +36,144 @@ const STAGES = [
 
 // Show a cold-start warning if the server hasn't replied within this many ms
 const SLOW_WARNING_MS = 8_000;
+
+// Maximum time to wait for the server before showing a timeout error
+const SERVER_TIMEOUT_MS = 120_000;
+
+// Duration limits per tier (seconds) — mirrors maxOutputSeconds in useSubscription
+const DURATION_LIMITS: Record<string, number> = {
+  freeGuest:   60,
+  free:        180,
+  payAsYouGo:  600,
+  advancedPro: 900,
+  virtuosos:   Infinity,
+};
+
+// Monthly sheet quotas per tier (for error messages only)
+const SHEETS_PER_MONTH: Record<string, number> = {
+  freeGuest:   0,
+  free:        5,
+  advancedPro: 60,
+  virtuosos:   100,
+  payAsYouGo:  Infinity,
+};
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error('__TIMEOUT__')), ms)
+    ),
+  ]);
+}
+
+function showErrorAlert(
+  title: string,
+  message: string,
+  onOK: () => void,
+  upgradeCallback?: () => void
+) {
+  const buttons: any[] = [];
+  if (upgradeCallback) {
+    buttons.push({ text: 'Upgrade', onPress: upgradeCallback });
+  }
+  buttons.push({ text: 'OK', onPress: onOK, style: upgradeCallback ? 'cancel' : 'default' });
+  Alert.alert(title, message, buttons, { cancelable: false });
+}
+
+function getDurationLimitAlert(tier: string) {
+  switch (tier) {
+    case 'freeGuest':
+      return {
+        title: 'Duration Limit',
+        msg: 'Your audio exceeds the 60-second free limit. Sign up free for 180 seconds, or upgrade for longer tracks.',
+        upgrade: true,
+      };
+    case 'free':
+      return {
+        title: 'Duration Limit',
+        msg: 'Your audio exceeds the 180-second limit. Upgrade to Pro for up to 15 minutes.',
+        upgrade: true,
+      };
+    case 'payAsYouGo':
+      return {
+        title: 'Duration Limit',
+        msg: 'Your audio exceeds the 600-second limit (10 minutes).',
+        upgrade: false,
+      };
+    case 'advancedPro':
+      return {
+        title: 'Duration Limit',
+        msg: 'Your audio exceeds the 15-minute limit. Upgrade to Virtuosos for unlimited length.',
+        upgrade: true,
+      };
+    default:
+      return { title: 'Duration Limit', msg: 'Your audio is too long for your current plan.', upgrade: true };
+  }
+}
+
+function getDailyLimitAlert(tier: string) {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const resetDate = tomorrow.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+  switch (tier) {
+    case 'free':
+      return {
+        title: 'Daily Limit Reached',
+        msg: "You've used all 5 free sheets this month. Upgrade to Pro for 60 sheets/month.",
+        upgrade: true,
+      };
+    case 'advancedPro':
+      return {
+        title: 'Daily Limit Reached',
+        msg: "You've used all 60 sheets this month. Upgrade to Virtuosos for 100 sheets/month.",
+        upgrade: true,
+      };
+    case 'virtuosos':
+      return {
+        title: 'Daily Limit Reached',
+        msg: `You've used all 100 sheets this month. Your limit resets on ${resetDate}.`,
+        upgrade: false,
+      };
+    case 'payAsYouGo':
+      return {
+        title: 'Daily Limit Reached',
+        msg: "You've reached your daily limit. Try again tomorrow or upgrade to Pro.",
+        upgrade: true,
+      };
+    default:
+      return { title: 'Daily Limit Reached', msg: "You've reached your daily limit. Try again tomorrow.", upgrade: false };
+  }
+}
+
+function getTrackLimitAlert(tier: string, used: number, max: number) {
+  switch (tier) {
+    case 'free':
+      return {
+        title: 'Track Limit Reached',
+        msg: `You've used all ${max} attempts for this track. Try a different track or upgrade.`,
+        upgrade: true,
+      };
+    case 'advancedPro':
+      return {
+        title: 'Track Limit Reached',
+        msg: `You've used ${used} of ${max} attempts for this track. Upgrade to Virtuosos for more attempts.`,
+        upgrade: true,
+      };
+    case 'payAsYouGo':
+      return {
+        title: 'Track Limit Reached',
+        msg: `You've used all ${max} attempts for this track. Try a different track or upgrade.`,
+        upgrade: true,
+      };
+    default:
+      return {
+        title: 'Track Limit Reached',
+        msg: `You've used all ${max} attempts for this track. Try a different track or upgrade.`,
+        upgrade: true,
+      };
+  }
+}
 
 // ─── Stage Row ────────────────────────────────────────────────────────────────
 function StageRow({
@@ -230,19 +370,37 @@ export default function ProcessingScreen() {
           const [rateResult, trackResult] = await Promise.all(checks);
 
           if (!rateResult.allowed) {
-            throw new Error(
-              rateResult.message ||
-              "Daily limit reached (5/day). Try again tomorrow or upgrade."
-            );
+            throw new Error(`__DAILY_LIMIT__:${currentTier}`);
           }
 
           if (trackResult && !trackResult.allowed) {
-            throw new Error(
-              "Track attempt limit reached (5 attempts). Try a different track or upgrade."
-            );
+            throw new Error(`__TRACK_LIMIT__:${currentTier}:${trackResult.attemptsUsed ?? 0}:${trackResult.maxAttempts ?? 5}`);
           }
 
           console.log(`[ProcessingScreen] rate check OK — ${rateResult.remaining} conversions remaining today`);
+        }
+
+        // ── 1b. Duration check (local files only) ─────────────────────────────
+        if (fileUri) {
+          const maxSec = DURATION_LIMITS[currentTier] ?? DURATION_LIMITS.free;
+          if (isFinite(maxSec)) {
+            let sound: Audio.Sound | null = null;
+            try {
+              const { sound: s, status } = await Audio.Sound.createAsync(
+                { uri: fileUri },
+                { shouldPlay: false }
+              );
+              sound = s;
+              if (status.isLoaded && status.durationMillis) {
+                const durationSec = status.durationMillis / 1000;
+                if (durationSec > maxSec) {
+                  throw new Error(`__DURATION_LIMIT__:${currentTier}`);
+                }
+              }
+            } finally {
+              await sound?.unloadAsync().catch(() => {});
+            }
+          }
         }
 
         // ── 2. Call server ────────────────────────────────────────────────────
@@ -252,13 +410,13 @@ export default function ProcessingScreen() {
           // Guest path — ZERO Supabase calls.
           // Send the local file directly to /process as multipart form-data.
           console.log('[ProcessingScreen] guest path — sending file directly to /process (no Supabase)');
-          result = await processAudioFile({
+          result = await withTimeout(processAudioFile({
             fileUri,
             mimeType: fileMime ?? 'audio/mpeg',
             fileName: fileName ?? 'audio.mp3',
             instrument: instrument ?? '',
             outputFormat: outputFormat ?? '',
-          });
+          }), SERVER_TIMEOUT_MS);
         } else {
           // Authenticated path: create a signed URL from Supabase Storage, then call /process-with-stems (falls back to /process)
           let audioUrl = linkUrl ?? '';
@@ -267,7 +425,7 @@ export default function ProcessingScreen() {
               .from('audio-uploads')
               .createSignedUrl(filePath, 3600);
             if (signedError || !signedData?.signedUrl) {
-              throw new Error(`Could not create signed URL: ${signedError?.message ?? 'unknown'}`);
+              throw new Error(`__UPLOAD_FAILED__:${signedError?.message ?? 'unknown'}`);
             }
             audioUrl = signedData.signedUrl;
           }
@@ -275,19 +433,20 @@ export default function ProcessingScreen() {
           console.log('[ProcessingScreen] calling processAudioWithStems with audioUrl:', audioUrl);
 
           try {
-            result = await processAudioWithStems({
+            result = await withTimeout(processAudioWithStems({
               audioUrl,
               instrument: instrument ?? '',
               outputFormat: outputFormat ?? '',
-            });
+            }), SERVER_TIMEOUT_MS);
             console.log('[ProcessingScreen] stems detected:', result?.stems_detected, 'stem used:', result?.stem_used);
           } catch (stemsErr: any) {
+            if (stemsErr?.message === '__TIMEOUT__') throw stemsErr;
             console.log('[ProcessingScreen] stem separation failed, falling back to /process:', stemsErr?.message);
-            result = await processAudio({
+            result = await withTimeout(processAudio({
               audioUrl,
               instrument: instrument ?? '',
               outputFormat: outputFormat ?? '',
-            });
+            }), SERVER_TIMEOUT_MS);
           }
         }
 
@@ -370,7 +529,62 @@ export default function ProcessingScreen() {
       } catch (e: any) {
         if (cancelled) return;
         console.log('[ProcessingScreen] error:', e);
-        setError(e?.message || 'Processing failed. Please try again.');
+
+        const msg: string = e?.message ?? '';
+        const goBack    = () => router.replace('/upload');
+        const goUpgrade = () => router.replace('/subscription');
+
+        if (msg.startsWith('__DURATION_LIMIT__:')) {
+          const tier = msg.replace('__DURATION_LIMIT__:', '');
+          const { title, msg: body, upgrade } = getDurationLimitAlert(tier);
+          showErrorAlert(title, body, goBack, upgrade ? goUpgrade : undefined);
+
+        } else if (msg.startsWith('__DAILY_LIMIT__:')) {
+          const tier = msg.replace('__DAILY_LIMIT__:', '');
+          const { title, msg: body, upgrade } = getDailyLimitAlert(tier);
+          showErrorAlert(title, body, goBack, upgrade ? goUpgrade : undefined);
+
+        } else if (msg.startsWith('__TRACK_LIMIT__:')) {
+          const [, tier, usedStr, maxStr] = msg.split(':');
+          const { title, msg: body, upgrade } = getTrackLimitAlert(tier, Number(usedStr), Number(maxStr));
+          showErrorAlert(title, body, goBack, upgrade ? goUpgrade : undefined);
+
+        } else if (msg.startsWith('__UPLOAD_FAILED__:')) {
+          showErrorAlert(
+            'Upload Error',
+            'Upload failed. Please check your internet connection and try again.',
+            goBack
+          );
+
+        } else if (msg === '__TIMEOUT__') {
+          showErrorAlert(
+            'Server Timeout',
+            'Processing is taking longer than expected. Please try again.',
+            goBack
+          );
+
+        } else if (/Server error 5\d\d/.test(msg)) {
+          showErrorAlert(
+            'Server Error',
+            'Our server encountered an error. Please try again in a moment.',
+            goBack
+          );
+
+        } else if (/Server error 4\d\d/.test(msg) && sourceType === 'link') {
+          showErrorAlert(
+            'Invalid Link',
+            'Invalid audio link. Please paste a direct link to an MP3 or WAV file. Streaming service links (YouTube, Spotify, SoundCloud) are not supported.',
+            goBack
+          );
+
+        } else {
+          showErrorAlert(
+            'Processing Error',
+            msg || 'Something went wrong. Please try again.',
+            goBack
+          );
+          setError(msg || 'Something went wrong. Please try again.');
+        }
       } finally {
         clearTimeout(t1);
         clearTimeout(t2);
@@ -404,7 +618,7 @@ export default function ProcessingScreen() {
     return (
       <View style={styles.root}>
         <Ionicons name="alert-circle-outline" size={52} color="#EF4444" style={{ marginBottom: 20 }} />
-        <Text style={styles.title}>Processing Failed</Text>
+        <Text style={styles.title}>Conversion Error</Text>
         <Text style={styles.errorMessage}>{error}</Text>
         <TouchableOpacity style={styles.retryBtn} onPress={handleTryAgain} activeOpacity={0.8}>
           <Text style={styles.retryBtnText}>Try Again</Text>
