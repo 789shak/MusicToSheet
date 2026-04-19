@@ -229,10 +229,23 @@ export default function UploadScreen() {
   // ── Metronome state ────────────────────────────────────────────────────────
   const [metronomeOn, setMetronomeOn] = useState(false);
   const [metronomeBpm, setMetronomeBpm] = useState(120);
+  const [metronomeInfoShown, setMetronomeInfoShown] = useState(false);
   const metronomeRef = useRef<WebView | null>(null);
 
   function postToMetronome(msg: object) {
     metronomeRef.current?.postMessage(JSON.stringify(msg));
+  }
+
+  function handleMetronomeToggle() {
+    if (!metronomeOn && !metronomeInfoShown) {
+      Alert.alert(
+        'Metronome Recording',
+        'Turning ON the Metronome while recording will not record the sound of Metronome. Only your vocals/sounds will be recorded.',
+        [{ text: 'Got it', onPress: () => { setMetronomeInfoShown(true); setMetronomeOn(true); } }]
+      );
+    } else {
+      setMetronomeOn(v => !v);
+    }
   }
 
   // Cleanup on unmount
@@ -872,7 +885,7 @@ export default function UploadScreen() {
             <View style={styles.metronomeRow}>
               <TouchableOpacity
                 style={[styles.metronomeToggle, metronomeOn && styles.metronomeToggleOn]}
-                onPress={() => setMetronomeOn(v => !v)}
+                onPress={handleMetronomeToggle}
                 activeOpacity={0.8}
               >
                 <Ionicons name="musical-notes-outline" size={15} color={metronomeOn ? '#0EA5E9' : '#6B7280'} />
