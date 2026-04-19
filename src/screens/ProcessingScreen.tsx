@@ -9,7 +9,6 @@ import {
 } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { processAudio, processAudioWithStems, processAudioFile } from '../lib/api';
@@ -39,24 +38,6 @@ const SLOW_WARNING_MS = 8_000;
 
 // Maximum time to wait for the server before showing a timeout error
 const SERVER_TIMEOUT_MS = 120_000;
-
-// Duration limits per tier (seconds) — mirrors maxOutputSeconds in useSubscription
-const DURATION_LIMITS: Record<string, number> = {
-  freeGuest:   60,
-  free:        180,
-  payAsYouGo:  600,
-  advancedPro: 900,
-  virtuosos:   Infinity,
-};
-
-// Monthly sheet quotas per tier (for error messages only)
-const SHEETS_PER_MONTH: Record<string, number> = {
-  freeGuest:   0,
-  free:        5,
-  advancedPro: 60,
-  virtuosos:   100,
-  payAsYouGo:  Infinity,
-};
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
@@ -378,29 +359,6 @@ export default function ProcessingScreen() {
           }
 
           console.log(`[ProcessingScreen] rate check OK — ${rateResult.remaining} conversions remaining today`);
-        }
-
-        // ── 1b. Duration check (local files only) ─────────────────────────────
-        if (fileUri) {
-          const maxSec = DURATION_LIMITS[currentTier] ?? DURATION_LIMITS.free;
-          if (isFinite(maxSec)) {
-            let sound: Audio.Sound | null = null;
-            try {
-              const { sound: s, status } = await Audio.Sound.createAsync(
-                { uri: fileUri },
-                { shouldPlay: false }
-              );
-              sound = s;
-              if (status.isLoaded && status.durationMillis) {
-                const durationSec = status.durationMillis / 1000;
-                if (durationSec > maxSec) {
-                  throw new Error(`__DURATION_LIMIT__:${currentTier}`);
-                }
-              }
-            } finally {
-              await sound?.unloadAsync().catch(() => {});
-            }
-          }
         }
 
         // ── 2. Call server ────────────────────────────────────────────────────

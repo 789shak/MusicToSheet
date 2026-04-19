@@ -645,26 +645,46 @@ export default function ResultsScreen() {
         </View>
 
         {/* ── Sheet Music Viewer ── */}
-        {/* Guest users see pages 1-2 clearly; pages 3+ are blurred inside the
-            WebView with an inline upgrade overlay rendered by buildScreenHtml. */}
         <View style={styles.viewerWrapper}>
           <View style={styles.viewerContainer}>
             <SheetMusicViewer ref={webviewRef} musicxml={musicxml ?? null} previewHtml={previewHtml} notes={displayNotes} bpm={bpm} onMessage={handleWebViewMessage} />
           </View>
+          {/* Fade hint at the bottom of the sheet for free users */}
+          {(tier === 'free' || tier === 'freeGuest') && (
+            <View style={styles.viewerFade} pointerEvents="none" />
+          )}
         </View>
 
-        {/* ── Contextual Banner (guest sign-up nudge only) ── */}
-        {tier === 'freeGuest' ? (
-          <View style={[styles.upgradeBanner, styles.guestBanner]}>
-            <View style={styles.upgradeLeft}>
-              <Ionicons name="person-add-outline" size={14} color="#0EA5E9" style={{ marginRight: 6 }} />
-              <Text style={styles.guestBannerText} numberOfLines={2}>
-                Sign up free — unlock all pages &amp; save your results
-              </Text>
+        {/* ── Upgrade Upsell Card (free + freeGuest only, never blocks) ── */}
+        {(tier === 'free' || tier === 'freeGuest') ? (
+          <View style={upsell.card}>
+            <Text style={upsell.title}>Want the full sheet music?</Text>
+            <Text style={upsell.subtitle}>
+              {tier === 'freeGuest'
+                ? 'Your free preview covers the first 60 seconds.'
+                : 'Your free preview covers the first 3 minutes.'}
+            </Text>
+            <View style={upsell.btnRow}>
+              <TouchableOpacity
+                style={upsell.btnPrimary}
+                onPress={() => router.push('/subscription')}
+                activeOpacity={0.85}
+              >
+                <Text style={upsell.btnPrimaryText}>Upgrade to Pro</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={upsell.btnSecondary}
+                onPress={() => router.push('/subscription')}
+                activeOpacity={0.85}
+              >
+                <Text style={upsell.btnSecondaryText}>Buy this track ($1.99)</Text>
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity onPress={() => router.replace('/')}>
-              <Text style={styles.guestBannerLink}>Sign Up</Text>
-            </TouchableOpacity>
+            {isGuest && (
+              <TouchableOpacity onPress={() => router.replace('/')}>
+                <Text style={upsell.signupLink}>Or sign up free for 180 seconds</Text>
+              </TouchableOpacity>
+            )}
           </View>
         ) : null}
 
@@ -1054,28 +1074,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // Upgrade banner
-  upgradeBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#1A1510',
-    borderTopWidth: 1,
-    borderColor: '#F59E0B30',
-    paddingHorizontal: 16,
-    paddingVertical: 9,
+  // Fade overlay at the bottom of the sheet music viewer (free tiers)
+  viewerFade: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 72,
+    backgroundColor: 'rgba(17, 17, 24, 0.82)',
   },
-  upgradeLeft: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  upgradeText: { color: '#9CA3AF', fontSize: 12, flex: 1 },
-  upgradeLink: { color: '#F59E0B', fontSize: 12, fontWeight: '700' },
-  guestBanner: { borderTopColor: '#0EA5E920', backgroundColor: '#0EA5E908' },
-  guestBannerText: { color: '#9CA3AF', fontSize: 12, flex: 1 },
-  guestBannerLink: { color: '#0EA5E9', fontSize: 12, fontWeight: '700' },
 
   // Action bar
   actionBar: {
@@ -1113,6 +1120,68 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '500',
+  },
+});
+
+// ─── Upgrade Upsell Card ────────────────────────────────────────────────────
+const upsell = StyleSheet.create({
+  card: {
+    backgroundColor: '#13131E',
+    borderTopWidth: 1,
+    borderTopColor: '#0EA5E930',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 10,
+    alignItems: 'center',
+    gap: 8,
+  },
+  title: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  subtitle: {
+    color: '#9CA3AF',
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 2,
+  },
+  btnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+  btnPrimary: {
+    flex: 1,
+    backgroundColor: '#0EA5E9',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  btnPrimaryText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  btnSecondary: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: '#0EA5E9',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  btnSecondaryText: {
+    color: '#0EA5E9',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  signupLink: {
+    color: '#6B7280',
+    fontSize: 12,
+    textDecorationLine: 'underline',
+    marginTop: 2,
   },
 });
 
