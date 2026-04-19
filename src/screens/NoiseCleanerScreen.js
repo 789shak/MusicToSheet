@@ -16,11 +16,46 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { decode } from 'base64-arraybuffer';
 import { Audio } from 'expo-av';
+import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useSubscription } from '../hooks/useSubscription';
 
 const API_URL = 'https://musictosheet.onrender.com';
+
+const METRONOME_HTML = `<!DOCTYPE html><html><head><style>*{margin:0;padding:0}html,body{width:100%;height:100%;background:transparent;overflow:hidden}</style></head><body><script>
+'use strict';
+var audioCtx=null,isPlaying=false,nextNoteTime=0,beatCount=0;
+var bpm=120,beatsPerMeasure=4,volume=0.8;
+var LOOKAHEAD_MS=25,SCHEDULE_AHEAD_SEC=0.1,schedulerTimer=null;
+function getCtx(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();return audioCtx;}
+function scheduleClick(bi,time){
+  var ctx=getCtx(),isDown=(bi%beatsPerMeasure)===0;
+  var osc=ctx.createOscillator(),gain=ctx.createGain();
+  osc.type='sine';osc.frequency.value=isDown?1500:1000;
+  gain.gain.setValueAtTime(volume,time);
+  gain.gain.exponentialRampToValueAtTime(0.0001,time+0.04);
+  osc.connect(gain);gain.connect(ctx.destination);
+  osc.start(time);osc.stop(time+0.04);
+}
+function scheduler(){
+  if(!isPlaying)return;
+  var ctx=getCtx(),interval=60.0/bpm;
+  while(nextNoteTime<ctx.currentTime+SCHEDULE_AHEAD_SEC){scheduleClick(beatCount,nextNoteTime);nextNoteTime+=interval;beatCount+=1;}
+  schedulerTimer=setTimeout(scheduler,LOOKAHEAD_MS);
+}
+function startM(p){
+  if(p.bpm)bpm=p.bpm;
+  if(p.timeSignature)beatsPerMeasure=parseInt((p.timeSignature||'4/4').split('/')[0],10)||4;
+  if(p.volume!=null)volume=p.volume;
+  isPlaying=true;beatCount=0;
+  var ctx=getCtx();nextNoteTime=ctx.currentTime+0.05;
+  if(ctx.state==='suspended'){ctx.resume().then(function(){scheduler();});}else{scheduler();}
+}
+function stopM(){isPlaying=false;if(schedulerTimer!==null){clearTimeout(schedulerTimer);schedulerTimer=null;}beatCount=0;}
+function handleMsg(e){var m;try{m=JSON.parse(e.data);}catch(x){return;}if(!m||!m.type)return;if(m.type==='start')startM(m);else if(m.type==='stop')stopM();else if(m.type==='setBpm'){bpm=m.bpm;}}
+document.addEventListener('message',handleMsg);window.addEventListener('message',handleMsg);
+<\/script></body></html>`;
 
 function formatTimer(s) {
   const m = Math.floor(s / 60).toString().padStart(2, '0');
@@ -54,6 +89,15 @@ export default function NoiseCleanerScreen() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [useCleanedEffect, setUseCleanedEffect] = useState(true);
   const soundRef = useRef(null);
+
+  // Metronome state
+  const [metronomeOn, setMetronomeOn] = useState(false);
+  const [metronomeBpm, setMetronomeBpm] = useState(120);
+  const metronomeRef = useRef(null);
+
+  function postToMetronome(msg) {
+    metronomeRef.current?.postMessage(JSON.stringify(msg));
+  }
 
   useEffect(() => {
     return () => {
@@ -108,6 +152,9 @@ export default function NoiseCleanerScreen() {
       }, 1000);
 
       startPulse();
+      if (metronomeOn) {
+        postToMetronome({ type: 'start', bpm: metronomeBpm, timeSignature: '4/4', volume: 0.8 });
+      }
     } catch (e) {
       Alert.alert('Could not start recording', e?.message ?? 'Unknown error');
     }
@@ -115,6 +162,7 @@ export default function NoiseCleanerScreen() {
 
   async function stopRecording() {
     try {
+      postToMetronome({ type: 'stop' });
       if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
       pulseLoop.current?.stop();
       pulseAnim.setValue(1);
@@ -318,6 +366,20 @@ export default function NoiseCleanerScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Hidden metronome audio engine */}
+      <View style={styles.metronomeHidden}>
+        <WebView
+          ref={metronomeRef}
+          source={{ html: METRONOME_HTML, baseUrl: '' }}
+          originWhitelist={['*']}
+          allowsInlineMediaPlayback
+          mediaPlaybackRequiresUserAction={false}
+          javaScriptEnabled
+          scrollEnabled={false}
+          style={{ width: 1, height: 1, backgroundColor: 'transparent' }}
+        />
+      </View>
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
@@ -341,7 +403,9 @@ export default function NoiseCleanerScreen() {
               <View style={styles.recDotInner} />
             </Animated.View>
             <Text style={styles.recTimer}>{formatTimer(recordSeconds)}</Text>
-            <Text style={styles.recHint}>Max 5:00 · tap Stop when done</Text>
+            <Text style={styles.recHint}>
+              {metronomeOn ? `♩ ${metronomeBpm} BPM · tap Stop when done` : 'Max 5:00 · tap Stop when done'}
+            </Text>
             <View style={styles.waveform}>
               {[6,12,18,10,20,14,8,16,12,18,6,14,10,20,8].map((h, i) => (
                 <View key={i} style={[styles.waveBar, { height: h }]} />
@@ -364,6 +428,47 @@ export default function NoiseCleanerScreen() {
               {file?.name?.startsWith('recording_') ? `Recorded: ${file.name}` : 'Tap to Record'}
             </Text>
           </TouchableOpacity>
+        )}
+
+        {/* ── METRONOME CONTROLS ── */}
+        {!isRecording && (
+          <View style={styles.metronomeRow}>
+            <TouchableOpacity
+              style={[styles.metronomeToggle, metronomeOn && styles.metronomeToggleOn]}
+              onPress={() => setMetronomeOn(v => !v)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="musical-notes-outline" size={15} color={metronomeOn ? '#0EA5E9' : '#6B7280'} />
+              <Text style={[styles.metronomeToggleText, metronomeOn && styles.metronomeToggleTextOn]}>
+                Metronome {metronomeOn ? 'ON' : 'OFF'}
+              </Text>
+            </TouchableOpacity>
+
+            {metronomeOn && (
+              <View style={styles.bpmStepper}>
+                <TouchableOpacity
+                  style={styles.bpmBtn}
+                  onPress={() => setMetronomeBpm(b => Math.max(60, b - 1))}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.bpmBtnText}>−</Text>
+                </TouchableOpacity>
+                <Text style={styles.bpmValue}>{metronomeBpm} BPM</Text>
+                <TouchableOpacity
+                  style={styles.bpmBtn}
+                  onPress={() => setMetronomeBpm(b => Math.min(200, b + 1))}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.bpmBtnText}>+</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
+        {metronomeOn && !isRecording && (
+          <Text style={styles.metronomeHint}>
+            Tip: Use earphones for best results when recording with metronome.
+          </Text>
         )}
 
         {/* ── UPLOAD FILE ── */}
@@ -679,4 +784,78 @@ const styles = StyleSheet.create({
   // Reset
   resetBtn: { marginTop: 16, alignSelf: 'center' },
   resetBtnText: { color: '#6B7280', fontSize: 13 },
+
+  // Metronome
+  metronomeHidden: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    opacity: 0,
+    pointerEvents: 'none',
+  },
+  metronomeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+    flexWrap: 'wrap',
+    width: '100%',
+  },
+  metronomeToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#1C1C28',
+    borderWidth: 1,
+    borderColor: '#2D2D3E',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  metronomeToggleOn: {
+    borderColor: '#0EA5E960',
+    backgroundColor: '#0EA5E910',
+  },
+  metronomeToggleText: {
+    color: '#6B7280',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  metronomeToggleTextOn: {
+    color: '#0EA5E9',
+  },
+  bpmStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1C1C28',
+    borderWidth: 1,
+    borderColor: '#2D2D3E',
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  bpmBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bpmBtnText: {
+    color: '#0EA5E9',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  bpmValue: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+    paddingHorizontal: 8,
+    minWidth: 60,
+    textAlign: 'center',
+  },
+  metronomeHint: {
+    color: '#6B7280',
+    fontSize: 11,
+    marginTop: 4,
+    lineHeight: 15,
+  },
 });
