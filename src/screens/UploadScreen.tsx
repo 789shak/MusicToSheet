@@ -663,12 +663,11 @@ export default function UploadScreen() {
   async function handleConvert() {
     if (!canConvert) return;
 
-    // Free and guest tiers get watermarked results at no charge — proceed directly.
-    // The watermark is applied in ResultsScreen based on the subscription tier.
-    // Pay-gate is only relevant when a paid per-track purchase is needed (i.e. the
-    // user is on the free tier but explicitly wants a clean (unwatermarked) result
-    // — that flow is surfaced in ResultsScreen via the download button).
-    if (tier !== 'free' && tier !== 'freeGuest') {
+    // Subscription tiers (virtuosos, advancedPro) cover unlimited conversions — never gate them.
+    // Free/guest users get watermarked results at no charge — proceed directly.
+    // Pay-gate only applies to payAsYouGo users who need an unused per-track credit.
+    // TODO: Remove before final production build
+    if (tier === 'payAsYouGo') {
       const hashInput = link.trim() || `${file?.name}_${file?.size ?? 0}`;
       const hash = computeTrackHash(hashInput);
 
