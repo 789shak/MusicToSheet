@@ -802,7 +802,7 @@ export default function UploadScreen() {
             </>
           )}
 
-          {/* Clean Noise — compact sub-action below record button */}
+          {/* Clean BG Noise — compact sub-action below record button */}
           <TouchableOpacity
             style={styles.cleanNoiseBtn}
             onPress={cleanNoise}
@@ -818,7 +818,7 @@ export default function UploadScreen() {
               <>
                 <Ionicons name="ear-outline" size={18} color="#A78BFA" />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.cleanNoiseBtnText}>Clean Noise</Text>
+                  <Text style={styles.cleanNoiseBtnText}>Clean BG Noise</Text>
                   <Text style={styles.cleanNoiseBtnSub}>Remove background noise</Text>
                 </View>
               </>
@@ -1193,7 +1193,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Clean Noise button (compact, sub-action below record)
+  // Clean BG Noise button (compact, sub-action below record)
   cleanNoiseBtn: {
     flexDirection: 'row',
     alignItems: 'center',
