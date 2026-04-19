@@ -331,10 +331,6 @@ export default function NoiseCleanerScreen() {
         <View style={styles.iconWrap}>
           <Ionicons name="mic-off" size={40} color="#A78BFA" />
         </View>
-        <Text style={styles.title}>Clean BG Noise</Text>
-        <Text style={styles.subtitle}>
-          Record or upload audio, then strip out background hiss, hum, and ambient noise.
-        </Text>
 
         {/* ── RECORD SECTION ── */}
         <Text style={styles.sectionLabel}>Tap to Record</Text>
