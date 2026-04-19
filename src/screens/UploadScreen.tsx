@@ -802,7 +802,7 @@ export default function UploadScreen() {
             </>
           )}
 
-          {/* Clean BG Noise — compact sub-action below record button */}
+          {/* DeNoise — compact sub-action below record button */}
           <TouchableOpacity
             style={styles.cleanNoiseBtn}
             onPress={cleanNoise}
@@ -818,7 +818,7 @@ export default function UploadScreen() {
               <>
                 <Ionicons name="ear-outline" size={18} color="#A78BFA" />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.cleanNoiseBtnText}>Clean BG Noise</Text>
+                  <Text style={styles.cleanNoiseBtnText}>DeNoise</Text>
                   <Text style={styles.cleanNoiseBtnSub}>Remove background noise</Text>
                 </View>
               </>
@@ -931,7 +931,7 @@ export default function UploadScreen() {
               <Ionicons
                 name="musical-notes"
                 size={18}
-                color={canConvert ? '#FFFFFF' : '#4B5563'}
+                color={canConvert ? '#0EA5E9' : '#4B5563'}
                 style={{ marginRight: 8 }}
               />
               <Text style={[styles.convertBtnText, !canConvert && styles.convertBtnTextDisabled]}>
@@ -1193,7 +1193,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Clean BG Noise button (compact, sub-action below record)
+  // DeNoise button (compact, sub-action below record)
   cleanNoiseBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1379,7 +1379,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#0EA5E9',
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderColor: '#0EA5E9',
     borderRadius: 14,
     paddingVertical: 11,
     marginTop: 14,
@@ -1404,7 +1406,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0EA5E9',
   },
   convertBtnText: {
-    color: '#FFFFFF',
+    color: '#0EA5E9',
     fontSize: 16,
     fontWeight: '700',
   },

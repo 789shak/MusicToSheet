@@ -17,7 +17,7 @@ const CARDS = [
   },
   {
     key: 'noise-cleaner',
-    title: 'Noise Cleaner',
+    title: 'DeNoise',
     description: 'Remove background noise from recordings before transcription',
     icon: 'mic-off',
     iconColor: '#A78BFA',

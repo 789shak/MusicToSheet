@@ -323,7 +323,7 @@ export default function NoiseCleanerScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Noise Cleaner</Text>
+        <Text style={styles.headerTitle}>DeNoise</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
@@ -410,7 +410,7 @@ export default function NoiseCleanerScreen() {
             ) : (
               <>
                 <Ionicons name="ear-outline" size={18} color="#FFFFFF" />
-                <Text style={styles.cleanBtnText}>Clean BG Noise</Text>
+                <Text style={styles.cleanBtnText}>DeNoise</Text>
               </>
             )}
           </TouchableOpacity>
@@ -604,7 +604,7 @@ const styles = StyleSheet.create({
   statusText: { color: '#9CA3AF', fontSize: 14, flexShrink: 1 },
   errorText: { color: '#F87171', fontSize: 13, textAlign: 'center', marginTop: 12 },
 
-  // Clean BG Noise button
+  // DeNoise button
   cleanBtn: {
     flexDirection: 'row',
     alignItems: 'center',
