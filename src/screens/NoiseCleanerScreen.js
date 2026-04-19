@@ -12,9 +12,8 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import { readAsStringAsync } from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
@@ -178,7 +177,7 @@ export default function NoiseCleanerScreen() {
         ? `${uid}/noise-cleaner_${Date.now()}_${file.name}`
         : `guest/noise-cleaner_${Date.now()}_${file.name}`;
 
-      const base64 = await readAsStringAsync(file.uri, { encoding: 'base64' });
+      const base64 = await FileSystem.readAsStringAsync(file.uri, { encoding: 'base64' });
       const { error: uploadError } = await supabase.storage
         .from('audio-uploads')
         .upload(remotePath, decode(base64), {
@@ -210,7 +209,7 @@ export default function NoiseCleanerScreen() {
       const fmt = json.format ?? 'mp3';
       const outPath = FileSystem.cacheDirectory + `cleaned_${Date.now()}.${fmt}`;
       await FileSystem.writeAsStringAsync(outPath, json.audio_base64, {
-        encoding: FileSystem.EncodingType.Base64,
+        encoding: 'base64',
       });
 
       // Get duration for preview row
