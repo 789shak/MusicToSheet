@@ -314,9 +314,13 @@ def generate_musicxml(
         print(f"[musicxml] Transposed notes — first 5 pitches: {[n['pitch'] for n in transposed_notes[:5]]}")
 
         # Step 8: Export MusicXML
-        new_score.write('musicxml', fp=musicxml_path)
-        with open(musicxml_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+        try:
+            new_score.write('musicxml', fp=musicxml_path)
+            with open(musicxml_path, 'r', encoding='utf-8', errors='replace') as f:
+                content = f.read()
+        except Exception as e:
+            print(f"[musicxml] MusicXML write/read error: {e}")
+            content = ""
 
         print(f"[musicxml] MusicXML generated — {len(content):,} chars")
         print(f"[musicxml] Key: {detected_key}, Time: 4/4, Tempo: {bpm} bpm")
