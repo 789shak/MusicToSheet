@@ -371,6 +371,7 @@ async def process_audio(body: ProcessRequest):
         uid = str(uuid.uuid4())
         wav_path = f"/tmp/{uid}.wav"
 
+        original_name = "audio"
         if body.temp_file_id:
             # Guest path: file already on disk from /upload-temp
             print(f"[process] Using temp file: {body.temp_file_id}")
@@ -482,9 +483,12 @@ async def process_with_stems(body: ProcessRequest):
     stem_path = None
     stem_wav_path = None
     try:
+        if not body.audio_url:
+            raise HTTPException(status_code=400, detail="process-with-stems requires audio_url")
+
         # Step 1: Download original audio
         print("[stems] Step 1: Downloading audio...")
-        original_name = body.audio_url.split("?")[0].split("/")[-1]
+        original_name = body.audio_url.split("?")[0].split("/")[-1] or "audio"
         ext = os.path.splitext(original_name)[1].lower() or ".mp3"
         uid = str(uuid.uuid4())
         tmp_path = f"/tmp/{uid}{ext}"
