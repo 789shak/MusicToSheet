@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import * as WebBrowser from 'expo-web-browser';
-import { makeRedirectUri } from 'expo-auth-session';
+import * as AuthSession from 'expo-auth-session';
 import { supabase } from '../lib/supabase';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -55,8 +55,8 @@ export function AuthProvider({ children }) {
   }
 
   async function signInWithGoogle() {
-    const redirectUrl = makeRedirectUri({ scheme: 'musictosheet', useProxy: true });
-    console.log('[OAuth] Google redirect URL (proxy):', redirectUrl);
+    const redirectUrl = AuthSession.makeRedirectUri({ scheme: 'musictosheet', path: 'auth/callback' });
+    console.log('[OAuth] Google redirect URL:', redirectUrl);
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -95,8 +95,8 @@ export function AuthProvider({ children }) {
   }
 
   async function signInWithMicrosoft() {
-    const redirectUrl = makeRedirectUri({ scheme: 'musictosheet', useProxy: true });
-    console.log('[OAuth] Microsoft redirect URL (proxy):', redirectUrl);
+    const redirectUrl = AuthSession.makeRedirectUri({ scheme: 'musictosheet', path: 'auth/callback' });
+    console.log('[OAuth] Microsoft redirect URL:', redirectUrl);
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'azure',
