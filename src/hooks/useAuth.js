@@ -1,6 +1,16 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import * as Linking from 'expo-linking';
+import Constants from 'expo-constants';
 import { supabase } from '../lib/supabase';
+
+function getRedirectUrl() {
+  const isExpoGo = Constants.appOwnership === 'expo';
+  const url = isExpoGo
+    ? Linking.createURL('auth/callback')
+    : 'musictosheet://auth/callback';
+  console.log('[OAuth] Using redirect:', url, isExpoGo ? '(Expo Go)' : '(standalone)');
+  return url;
+}
 
 const AuthContext = createContext(null);
 
@@ -52,8 +62,7 @@ export function AuthProvider({ children }) {
   }
 
   async function signInWithGoogle() {
-    const redirectUrl = 'musictosheet://auth/callback';
-    console.log('[OAuth] Google redirect URL:', redirectUrl);
+    const redirectUrl = getRedirectUrl();
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -73,8 +82,7 @@ export function AuthProvider({ children }) {
   }
 
   async function signInWithMicrosoft() {
-    const redirectUrl = 'musictosheet://auth/callback';
-    console.log('[OAuth] Microsoft redirect URL:', redirectUrl);
+    const redirectUrl = getRedirectUrl();
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'azure',
