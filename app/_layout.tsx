@@ -30,20 +30,20 @@ function AuthGate() {
       const segs = segments as string[];
       const onLoginScreen = segs.length === 0 || segs[0] === 'index';
       if (session && onLoginScreen) {
-        // Already logged in — skip login and go straight to subscription
-        router.replace('/subscription');
+        // Already logged in — go straight to upload
+        router.replace('/upload');
       }
       // If not logged in, stay on login screen (index) — no redirect needed
       return;
     }
 
-    // ── Case 2: Session arrives (login) or disappears (logout) ───────────
+    // ── Case 2: Session arrives (login/signup) or disappears (logout) ────
     // After initial routing is done, react to session changes.
     const segs = segments as string[];
     const onLoginScreen = segs.length === 0 || segs[0] === 'index';
     if (session && onLoginScreen) {
       // onAuthStateChange fired and committed to context — safe to navigate now
-      router.replace('/subscription');
+      router.replace('/upload');
     } else if (!session && !isGuest && !onLoginScreen) {
       // Only redirect to login if this is a genuine sign-out, not guest mode.
       router.replace('/');

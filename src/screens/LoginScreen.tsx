@@ -195,12 +195,12 @@ export default function LoginScreen() {
           disabled={loading}
         />
         <SocialButton
-          icon={<Ionicons name="logo-apple" size={20} color="#FFFFFF" />}
-          label="Continue with Apple"
+          icon={<Ionicons name="logo-apple" size={20} color="#6B7280" />}
+          label="Continue with Apple (Coming Soon)"
           buttonStyle={styles.btnApple}
-          textStyle={styles.btnAppleText}
-          onPress={() => handleSocialLogin(signInWithApple, 'Apple')}
-          disabled={loading}
+          textStyle={styles.btnAppleComingSoon}
+          onPress={() => {}}
+          disabled={true}
         />
         <SocialButton
           icon={<FontAwesome name="windows" size={20} color="#FFFFFF" />}
@@ -387,6 +387,9 @@ const styles = StyleSheet.create({
   },
   btnAppleText: {
     color: '#FFFFFF',
+  },
+  btnAppleComingSoon: {
+    color: '#4B5563',
   },
 
   // Microsoft
