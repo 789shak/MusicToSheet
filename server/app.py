@@ -35,7 +35,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # ─── CORS ─────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://musictosheet.com", "http://localhost:3000"],
+    allow_origins=["https://musictosheet.com", "http://localhost:3000", "*"],
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
@@ -82,8 +82,14 @@ def _check_abuse(ip: str, track_key: str = "") -> None:
 
 # ─── Input Validation Helpers ─────────────────────────────────────────────────
 def _validate_url(url: Optional[str]) -> None:
-    if url and not url.lower().startswith(("http://", "https://")):
-        raise HTTPException(status_code=400, detail="audio_url must start with http:// or https://")
+    if not url:
+        return
+    low = url.lower()
+    if low.startswith(("http://", "https://")):
+        return
+    if low.startswith("file:///tmp/"):
+        return  # Safe: server-local temp files only
+    raise HTTPException(status_code=400, detail="audio_url must be http://, https://, or a server temp file:// path")
 
 def _validate_file_size(path: str, label: str = "File") -> None:
     size = os.path.getsize(path)
@@ -442,7 +448,13 @@ async def upload_temp(request: Request, file: UploadFile = File(...), _=Depends(
     with open(tmp_path, 'wb') as f:
         f.write(contents)
     print(f"[upload-temp] Saved {len(contents)} bytes → {tmp_path}")
-    return {"temp_file_id": temp_id, "ext": ext}
+    return {
+        "status": "success",
+        "temp_file_id": temp_id,
+        "ext": ext,
+        "audio_url": f"file://{tmp_path}",
+        "original_name": file.filename or f"audio{ext}",
+    }
 
 
 @app.post("/process")
@@ -473,6 +485,16 @@ async def process_audio(request: Request, body: ProcessRequest, _=Depends(verify
             _validate_file_size(tmp_path, "Uploaded file")
             print(f"[process] [{ip}] Found temp file: {tmp_path}")
             _check_abuse(ip, body.temp_file_id)
+        elif body.audio_url and body.audio_url.lower().startswith("file:///tmp/"):
+            # Web demo path: /upload-temp returned a file:// URL
+            local_path = body.audio_url[7:]  # strip "file://"
+            if not os.path.exists(local_path):
+                raise Exception(f"Temp file not found: {local_path}")
+            tmp_path = local_path
+            original_name = os.path.basename(local_path)
+            _validate_file_size(tmp_path, "Uploaded file")
+            print(f"[process] [{ip}] Using local file:// path: {tmp_path}")
+            _check_abuse(ip, local_path)
         elif body.audio_url:
             print(f"[process] [{ip}] Downloading from URL: {body.audio_url[:100]}...")
             original_name = body.audio_url.split("?")[0].split("/")[-1]
