@@ -55,8 +55,8 @@ export function AuthProvider({ children }) {
   }
 
   async function signInWithGoogle() {
-    const redirectUrl = makeRedirectUri({ scheme: 'musictosheet' });
-    console.log('[OAuth] Google redirect URL:', redirectUrl);
+    const redirectUrl = makeRedirectUri({ scheme: 'musictosheet', useProxy: true });
+    console.log('[OAuth] Google redirect URL (proxy):', redirectUrl);
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -95,8 +95,8 @@ export function AuthProvider({ children }) {
   }
 
   async function signInWithMicrosoft() {
-    const redirectUrl = makeRedirectUri({ scheme: 'musictosheet' });
-    console.log('[OAuth] Microsoft redirect URL:', redirectUrl);
+    const redirectUrl = makeRedirectUri({ scheme: 'musictosheet', useProxy: true });
+    console.log('[OAuth] Microsoft redirect URL (proxy):', redirectUrl);
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'azure',
