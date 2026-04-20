@@ -10,3 +10,4 @@ replicate
 basic-pitch
 music21
 noisereduce
+slowapi

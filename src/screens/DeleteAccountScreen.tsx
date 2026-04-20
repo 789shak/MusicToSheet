@@ -144,20 +144,51 @@ export default function DeleteAccountScreen() {
           onPress: async () => {
             if (!user) return;
             setLoading(true);
-            // Delete the profile row (cascades to related data via FK constraints)
-            const { error } = await supabase
-              .from('profiles')
-              .delete()
-              .eq('id', user.id);
-            setLoading(false);
-            if (error) {
-              Alert.alert('Error', error.message);
-              return;
+            try {
+              const uid = user.id;
+
+              // 1. Delete all user data from every table
+              await Promise.all([
+                supabase.from('conversion_history').delete().eq('user_id', uid),
+                supabase.from('track_processing_log').delete().eq('user_id', uid),
+                supabase.from('audit_log').delete().eq('user_id', uid),
+                supabase.from('favorites').delete().eq('user_id', uid),
+                supabase.from('saved_items').delete().eq('user_id', uid),
+              ]);
+
+              // 2. Delete user's audio files from storage
+              const { data: audioFiles } = await supabase.storage
+                .from('audio-uploads')
+                .list(uid);
+              if (audioFiles && audioFiles.length > 0) {
+                const paths = audioFiles.map((f) => `${uid}/${f.name}`);
+                await supabase.storage.from('audio-uploads').remove(paths);
+              }
+
+              // 3. Delete avatar from storage
+              const { data: avatarFiles } = await supabase.storage
+                .from('avatars')
+                .list(uid);
+              if (avatarFiles && avatarFiles.length > 0) {
+                const paths = avatarFiles.map((f) => `${uid}/${f.name}`);
+                await supabase.storage.from('avatars').remove(paths);
+              }
+
+              // 4. Delete profile row (FK cascade removes any remaining linked rows)
+              const { error: profileError } = await supabase
+                .from('profiles')
+                .delete()
+                .eq('id', uid);
+              if (profileError) throw profileError;
+
+              // 5. Sign out (auth user deletion requires an Edge Function with service key)
+              await signOut();
+              router.replace('/');
+            } catch (e: any) {
+              Alert.alert('Error', e?.message ?? 'Failed to delete account. Please try again.');
+            } finally {
+              setLoading(false);
             }
-            // Sign out — full auth user deletion requires a server-side function
-            // (Supabase admin.deleteUser) which should be called via an Edge Function
-            await signOut();
-            router.replace('/');
           },
         },
       ]

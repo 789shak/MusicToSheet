@@ -1,4 +1,6 @@
 const API_URL = 'https://musictosheet.onrender.com';
+const API_KEY = 'b7faacf6c9daa1271b763c462dce1f85340db90fe564ddeeba81f14ac132e246';
+const AUTH_HEADERS = { 'X-API-Key': API_KEY, 'Content-Type': 'application/json' };
 
 /**
  * POST /process — send an audio file as multipart/form-data.
@@ -22,6 +24,7 @@ export async function uploadTempFile({ fileUri, mimeType, fileName }) {
   try {
     const response = await fetch(`${API_URL}/upload-temp`, {
       method: 'POST',
+      headers: { 'X-API-Key': API_KEY },
       body: form,
       signal: controller.signal,
     });
@@ -67,7 +70,7 @@ export async function processAudio({ audioUrl, tempFileId, instrument, outputFor
   try {
     const response = await fetch(`${API_URL}/process`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: AUTH_HEADERS,
       body: JSON.stringify({
         audio_url: audioUrl ?? null,
         temp_file_id: tempFileId ?? null,
@@ -105,7 +108,7 @@ export async function processAudioWithStems({ audioUrl, instrument, outputFormat
   try {
     const response = await fetch(`${API_URL}/process-with-stems`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: AUTH_HEADERS,
       body: JSON.stringify({ audio_url: audioUrl, instrument, output_format: outputFormat }),
       signal: controller.signal,
     });

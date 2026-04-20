@@ -4,6 +4,11 @@ import asyncio
 import traceback
 import subprocess
 import gc
+import time
+import base64 as _base64
+from collections import defaultdict
+from typing import Optional
+
 import numpy as np
 import httpx
 import librosa
@@ -12,14 +17,89 @@ import noisereduce as nr
 import pretty_midi
 import replicate
 from basic_pitch.inference import predict
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
-from pydantic import BaseModel
 
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, Depends
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+# ─── App + Rate Limiter ───────────────────────────────────────────────────────
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="Music-To-Sheet API")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# ─── CORS ─────────────────────────────────────────────────────────────────────
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
+
+# ─── Security Headers ─────────────────────────────────────────────────────────
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    return response
+
+# ─── API Key Auth ─────────────────────────────────────────────────────────────
+_API_SECRET_KEY = os.environ.get("API_SECRET_KEY", "")
+
+def verify_api_key(request: Request):
+    if not _API_SECRET_KEY:
+        return  # Not configured — dev mode, skip
+    key = request.headers.get("X-API-Key", "")
+    if key != _API_SECRET_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+# ─── Limits ───────────────────────────────────────────────────────────────────
+MAX_FILE_SIZE_BYTES  = 50 * 1024 * 1024   # 50 MB
+MAX_AUDIO_DURATION_S = 1800               # 30 minutes hard cap (all tiers)
+
+# ─── Abuse Detection (in-memory; resets on restart) ───────────────────────────
+_ip_weekly_log: dict  = defaultdict(list)   # ip  → [timestamps]
+_track_attempts: dict = defaultdict(int)    # (ip, url_prefix) → count
+
+def _check_abuse(ip: str, track_key: str = "") -> None:
+    now      = time.time()
+    week_ago = now - 7 * 24 * 3600
+    _ip_weekly_log[ip] = [t for t in _ip_weekly_log[ip] if t > week_ago]
+    if len(_ip_weekly_log[ip]) >= 100:
+        raise HTTPException(status_code=429, detail="Weekly conversion limit exceeded")
+    if track_key:
+        k = (ip, track_key[:80])
+        _track_attempts[k] += 1
+        if _track_attempts[k] > 10:
+            raise HTTPException(status_code=429, detail="Per-track attempt limit exceeded")
+    _ip_weekly_log[ip].append(now)
+
+# ─── Input Validation Helpers ─────────────────────────────────────────────────
+def _validate_url(url: Optional[str]) -> None:
+    if url and not url.lower().startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="audio_url must start with http:// or https://")
+
+def _validate_file_size(path: str, label: str = "File") -> None:
+    size = os.path.getsize(path)
+    if size > MAX_FILE_SIZE_BYTES:
+        raise HTTPException(status_code=413, detail=f"{label} exceeds 50 MB limit ({size // (1024*1024)} MB)")
+
+def _validate_duration(wav_path: str) -> float:
+    y, sr = librosa.load(wav_path, sr=None, mono=True, duration=MAX_AUDIO_DURATION_S + 10)
+    dur = float(librosa.get_duration(y=y, sr=sr))
+    del y
+    gc.collect()
+    if dur > MAX_AUDIO_DURATION_S:
+        raise HTTPException(status_code=400, detail=f"Audio exceeds 30-minute limit ({dur/60:.1f} min)")
+    return dur
 
 # ─── Schema ───────────────────────────────────────────────────────────────────
-from typing import Optional
-
 class ProcessRequest(BaseModel):
     audio_url: Optional[str] = None
     temp_file_id: Optional[str] = None
@@ -350,12 +430,15 @@ def root():
 
 # ─── /upload-temp (guest file upload) ────────────────────────────────────────
 @app.post("/upload-temp")
-async def upload_temp(file: UploadFile = File(...)):
+@limiter.limit("20/hour")
+async def upload_temp(request: Request, file: UploadFile = File(...), _=Depends(verify_api_key)):
     """Accept a multipart audio upload, save to /tmp, return a temp_file_id."""
     ext = os.path.splitext(file.filename or 'audio.mp3')[1].lower() or '.mp3'
     temp_id = str(uuid.uuid4())
     tmp_path = f"/tmp/{temp_id}{ext}"
     contents = await file.read()
+    if len(contents) > MAX_FILE_SIZE_BYTES:
+        raise HTTPException(status_code=413, detail="File exceeds 50 MB limit")
     with open(tmp_path, 'wb') as f:
         f.write(contents)
     print(f"[upload-temp] Saved {len(contents)} bytes → {tmp_path}")
@@ -363,10 +446,17 @@ async def upload_temp(file: UploadFile = File(...)):
 
 
 @app.post("/process")
-async def process_audio(body: ProcessRequest):
+@limiter.limit("30/hour")
+async def process_audio(request: Request, body: ProcessRequest, _=Depends(verify_api_key)):
     tmp_path = None
     wav_path = None
+    ip = get_remote_address(request)
     try:
+        # ── Input validation ──────────────────────────────────────────────────
+        _validate_url(body.audio_url)
+        body.instrument   = (body.instrument   or "")[:64].strip()
+        body.output_format = (body.output_format or "")[:32].strip()
+
         # Step 1: Resolve audio source — URL download OR pre-uploaded temp file
         uid = str(uuid.uuid4())
         wav_path = f"/tmp/{uid}.wav"
@@ -374,25 +464,27 @@ async def process_audio(body: ProcessRequest):
         original_name = "audio"
         if body.temp_file_id:
             # Guest path: file already on disk from /upload-temp
-            print(f"[process] Using temp file: {body.temp_file_id}")
-            # Find the file with this ID prefix (any extension)
+            print(f"[process] [{ip}] Using temp file: {body.temp_file_id}")
             import glob as _glob
             matches = _glob.glob(f"/tmp/{body.temp_file_id}.*")
             if not matches:
                 raise Exception(f"Temp file not found: {body.temp_file_id}")
             tmp_path = matches[0]
-            print(f"[process] Found temp file: {tmp_path}")
+            _validate_file_size(tmp_path, "Uploaded file")
+            print(f"[process] [{ip}] Found temp file: {tmp_path}")
+            _check_abuse(ip, body.temp_file_id)
         elif body.audio_url:
-            print("[process] Step 1: Downloading audio...")
-            print(f"[process] Downloading from URL: {body.audio_url[:100]}...")
+            print(f"[process] [{ip}] Downloading from URL: {body.audio_url[:100]}...")
             original_name = body.audio_url.split("?")[0].split("/")[-1]
             ext = os.path.splitext(original_name)[1].lower() or ".mp3"
             tmp_path = f"/tmp/{uid}{ext}"
             file_size = await download_audio(body.audio_url, tmp_path)
-            print(f"[process] Downloaded file size: {file_size} bytes")
+            print(f"[process] [{ip}] Downloaded file size: {file_size} bytes")
             if file_size < 1000:
                 raise Exception(f"Downloaded file too small ({file_size} bytes) — likely failed download")
-            print(f"[process] Saved to temp file: {tmp_path}")
+            _validate_file_size(tmp_path, "Downloaded file")
+            _check_abuse(ip, body.audio_url[:80])
+            print(f"[process] [{ip}] Saved to temp file: {tmp_path}")
         else:
             raise HTTPException(status_code=400, detail="Provide either audio_url or temp_file_id")
 
@@ -425,11 +517,12 @@ async def process_audio(body: ProcessRequest):
         gc.collect()
         print("[process] Noise reduction complete")
 
-        # Step 3: Load WAV with librosa for duration
+        # Step 3: Load WAV with librosa for duration (also enforces 30-min hard cap)
         print("[process] Step 3: Loading WAV with librosa...")
+        duration_seconds = _validate_duration(wav_path)
         y, sr = librosa.load(wav_path, sr=22050, mono=True, duration=60.0)
         duration_seconds = float(librosa.get_duration(y=y, sr=sr))
-        print(f"[process] Audio duration: {duration_seconds:.2f}s")
+        print(f"[process] [{ip}] Audio duration: {duration_seconds:.2f}s")
         del y
         gc.collect()
 
@@ -477,26 +570,33 @@ async def process_audio(body: ProcessRequest):
 
 # ─── /process-with-stems ──────────────────────────────────────────────────────
 @app.post("/process-with-stems")
-async def process_with_stems(body: ProcessRequest):
+@limiter.limit("30/hour")
+async def process_with_stems(request: Request, body: ProcessRequest, _=Depends(verify_api_key)):
     tmp_path = None
     wav_path = None
     stem_path = None
     stem_wav_path = None
+    ip = get_remote_address(request)
     try:
         if not body.audio_url:
             raise HTTPException(status_code=400, detail="process-with-stems requires audio_url")
+        _validate_url(body.audio_url)
+        body.instrument    = (body.instrument   or "")[:64].strip()
+        body.output_format = (body.output_format or "")[:32].strip()
+        _check_abuse(ip, body.audio_url[:80])
 
         # Step 1: Download original audio
-        print("[stems] Step 1: Downloading audio...")
+        print(f"[stems] [{ip}] Step 1: Downloading audio...")
         original_name = body.audio_url.split("?")[0].split("/")[-1] or "audio"
         ext = os.path.splitext(original_name)[1].lower() or ".mp3"
         uid = str(uuid.uuid4())
         tmp_path = f"/tmp/{uid}{ext}"
 
         file_size = await download_audio(body.audio_url, tmp_path)
-        print(f"[stems] Downloaded {file_size} bytes to {tmp_path}")
+        print(f"[stems] [{ip}] Downloaded {file_size} bytes to {tmp_path}")
         if file_size < 1000:
             raise Exception(f"Downloaded file too small ({file_size} bytes)")
+        _validate_file_size(tmp_path, "Downloaded file")
 
         # Step 2: Call Replicate Demucs for stem separation
         print("[stems] Step 2: Running Demucs via Replicate...")
@@ -627,18 +727,17 @@ async def process_with_stems(body: ProcessRequest):
                 print(f"[stems] Deleted temp file: {f}")
 
 
-# ─── Clean Audio Endpoint ──────────────────────────────────────────────────────
-from fastapi import Request
-from fastapi.responses import JSONResponse
-import base64 as _base64
-
+# ─── Clean Audio Endpoint ─────────────────────────────────────────────────────
 @app.post("/clean-audio")
-async def clean_audio(request: Request):
+@limiter.limit("10/hour")
+async def clean_audio(request: Request, _=Depends(verify_api_key)):
     try:
         data = await request.json()
         audio_url = data.get("audio_url")
         if not audio_url:
             return JSONResponse({"error": "No audio_url provided"}, status_code=400)
+        if not str(audio_url).lower().startswith(("http://", "https://")):
+            return JSONResponse({"error": "Invalid audio_url"}, status_code=400)
 
         file_id = uuid.uuid4().hex
         input_path = f"/tmp/{file_id}_input.mp3"
