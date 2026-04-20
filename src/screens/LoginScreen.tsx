@@ -47,37 +47,48 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  function clearError() {
-    if (error) setError('');
-  }
 
   async function handleSignUp() {
-    if (!email || !password) { setError('Please enter your email and password.'); return; }
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      Alert.alert('Missing Fields', 'Please enter your email and password.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      return;
+    }
+    if (password.length < 6) {
+      Alert.alert('Password Too Short', 'Password must be at least 6 characters.');
+      return;
+    }
     setLoading(true);
-    setError('');
     try {
-      const data = await signUp(email, password);
-      console.log("SIGNUP SUCCESS - session:", data.session?.user?.email);
-      // Navigation handled by AuthGate in _layout.tsx once onAuthStateChange fires
+      const data = await signUp(trimmedEmail, password);
+      if (!data.session) {
+        // Supabase email confirmation is enabled — session won't arrive until confirmed
+        Alert.alert('Check Your Email', 'A confirmation link has been sent to ' + trimmedEmail + '. Please confirm your email to complete sign up.');
+      }
+      // If session exists, AuthGate in _layout.tsx handles navigation automatically
     } catch (e: any) {
-      setError(e.message ?? 'Sign up failed. Please try again.');
+      Alert.alert('Sign Up Failed', e.message ?? 'Please try again.');
     } finally {
       setLoading(false);
     }
   }
 
   async function handleSignIn() {
-    if (!email || !password) { setError('Please enter your email and password.'); return; }
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      Alert.alert('Missing Fields', 'Please enter your email and password.');
+      return;
+    }
     setLoading(true);
-    setError('');
     try {
-      const data = await signIn(email, password);
-      console.log("LOGIN SUCCESS - session:", data.session?.user?.email);
-      // Navigation handled by AuthGate in _layout.tsx once onAuthStateChange fires
+      await signIn(trimmedEmail, password);
+      // AuthGate in _layout.tsx handles navigation automatically
     } catch (e: any) {
-      setError(e.message ?? 'Login failed. Please check your credentials.');
+      Alert.alert('Login Failed', 'Invalid email or password. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -85,12 +96,11 @@ export default function LoginScreen() {
 
   async function handleSocialLogin(fn: () => Promise<void>, label: string) {
     setLoading(true);
-    setError('');
     try {
       await fn();
-      // Navigation handled by AuthGate in _layout.tsx once onAuthStateChange fires
+      // AuthGate in _layout.tsx handles navigation automatically
     } catch (e: any) {
-      setError(e.message ?? `${label} sign-in failed. Please try again.`);
+      Alert.alert(`${label} Sign-In Failed`, e.message ?? 'Please try again.');
     } finally {
       setLoading(false);
     }
@@ -151,32 +161,30 @@ export default function LoginScreen() {
           <Text style={styles.forgotText}>Forgot Password?</Text>
         </TouchableOpacity>
 
-        {/* Error message */}
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {/* Sign Up + Log In side by side */}
+        <View style={styles.btnRow}>
+          <TouchableOpacity
+            style={[styles.btnPrimary, styles.btnHalf, loading && styles.btnDisabled]}
+            onPress={handleSignUp}
+            activeOpacity={0.85}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={styles.btnPrimaryText}>Sign Up</Text>
+            )}
+          </TouchableOpacity>
 
-        {/* Sign Up */}
-        <TouchableOpacity
-          style={[styles.btnPrimary, loading && styles.btnDisabled]}
-          onPress={handleSignUp}
-          activeOpacity={0.85}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#FFFFFF" size="small" />
-          ) : (
-            <Text style={styles.btnPrimaryText}>Sign Up</Text>
-          )}
-        </TouchableOpacity>
-
-        {/* Log In */}
-        <TouchableOpacity
-          style={[styles.btnOutline, loading && styles.btnDisabled]}
-          onPress={handleSignIn}
-          activeOpacity={0.85}
-          disabled={loading}
-        >
-          <Text style={styles.btnOutlineText}>Log In</Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.btnOutline, styles.btnHalf, loading && styles.btnDisabled]}
+            onPress={handleSignIn}
+            activeOpacity={0.85}
+            disabled={loading}
+          >
+            <Text style={styles.btnOutlineText}>Log In</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Divider */}
         <View style={styles.dividerRow}>
@@ -302,12 +310,21 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 15,
     alignItems: 'center',
-    marginBottom: 12,
   },
   btnPrimaryText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+
+  // Row wrapper for side-by-side buttons
+  btnRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 24,
+  },
+  btnHalf: {
+    flex: 1,
   },
 
   // Outline button (Log In)
@@ -317,7 +334,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 15,
     alignItems: 'center',
-    marginBottom: 24,
   },
   btnOutlineText: {
     color: '#FFFFFF',
