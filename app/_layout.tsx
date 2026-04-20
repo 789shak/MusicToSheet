@@ -66,24 +66,30 @@ function RootLayoutInner() {
 
   // Capture OAuth deep-link callbacks (Google, Microsoft)
   useEffect(() => {
-    const handleUrl = async (event: { url: string }) => {
+    const handleDeepLink = async (event: { url: string }) => {
       const url = event.url;
-      if (!url.includes('access_token') && !url.includes('#')) return;
-      const fragment = url.split('#')[1] ?? url.split('?')[1] ?? '';
-      const params = new URLSearchParams(fragment);
-      const access_token = params.get('access_token');
-      const refresh_token = params.get('refresh_token');
-      if (access_token && refresh_token) {
-        await supabase.auth.setSession({ access_token, refresh_token });
+      console.log('[DeepLink] Received:', url);
+
+      if (!url.includes('access_token') && !url.includes('refresh_token')) return;
+
+      const hashPart = url.split('#')[1];
+      if (hashPart) {
+        const params = new URLSearchParams(hashPart);
+        const access_token = params.get('access_token');
+        const refresh_token = params.get('refresh_token');
+        if (access_token && refresh_token) {
+          console.log('[DeepLink] Setting session...');
+          await supabase.auth.setSession({ access_token, refresh_token });
+        }
       }
     };
 
-    // Handle URL if app was opened via deep link while closed
+    // Handle URL if app was cold-started via deep link
     Linking.getInitialURL().then((url) => {
-      if (url) handleUrl({ url });
+      if (url) handleDeepLink({ url });
     });
 
-    const subscription = Linking.addEventListener('url', handleUrl);
+    const subscription = Linking.addEventListener('url', handleDeepLink);
     return () => subscription.remove();
   }, []);
 

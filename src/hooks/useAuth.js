@@ -1,9 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import * as WebBrowser from 'expo-web-browser';
-import * as AuthSession from 'expo-auth-session';
+import * as Linking from 'expo-linking';
 import { supabase } from '../lib/supabase';
-
-WebBrowser.maybeCompleteAuthSession();
 
 const AuthContext = createContext(null);
 
@@ -55,38 +52,19 @@ export function AuthProvider({ children }) {
   }
 
   async function signInWithGoogle() {
-    const redirectUrl = AuthSession.makeRedirectUri({ scheme: 'musictosheet', path: 'auth/callback' });
+    const redirectUrl = 'musictosheet://auth/callback';
     console.log('[OAuth] Google redirect URL:', redirectUrl);
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: {
-        redirectTo: redirectUrl,
-        skipBrowserRedirect: true,
-      },
+      options: { redirectTo: redirectUrl },
     });
     if (error) throw error;
 
     if (data?.url) {
-      console.log('[OAuth] Opening URL:', data.url);
-      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
-      console.log('[OAuth] Result type:', result.type);
-
-      if (result.type === 'success' && result.url) {
-        const hashParams = result.url.split('#')[1];
-        if (hashParams) {
-          const params = new URLSearchParams(hashParams);
-          const access_token = params.get('access_token');
-          const refresh_token = params.get('refresh_token');
-          if (access_token && refresh_token) {
-            const { error: sessionError } = await supabase.auth.setSession({ access_token, refresh_token });
-            if (sessionError) throw sessionError;
-          }
-        } else {
-          // PKCE fallback — code is in query params
-          await supabase.auth.exchangeCodeForSession(result.url);
-        }
-      }
+      console.log('[OAuth] Opening in browser:', data.url);
+      await Linking.openURL(data.url);
+      // Session arrives via deep link → caught by Linking listener in _layout.tsx
     }
   }
 
@@ -95,37 +73,19 @@ export function AuthProvider({ children }) {
   }
 
   async function signInWithMicrosoft() {
-    const redirectUrl = AuthSession.makeRedirectUri({ scheme: 'musictosheet', path: 'auth/callback' });
+    const redirectUrl = 'musictosheet://auth/callback';
     console.log('[OAuth] Microsoft redirect URL:', redirectUrl);
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'azure',
-      options: {
-        redirectTo: redirectUrl,
-        skipBrowserRedirect: true,
-      },
+      options: { redirectTo: redirectUrl },
     });
     if (error) throw new Error('Microsoft login coming soon');
 
     if (data?.url) {
-      console.log('[OAuth] Opening URL:', data.url);
-      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
-      console.log('[OAuth] Result type:', result.type);
-
-      if (result.type === 'success' && result.url) {
-        const hashParams = result.url.split('#')[1];
-        if (hashParams) {
-          const params = new URLSearchParams(hashParams);
-          const access_token = params.get('access_token');
-          const refresh_token = params.get('refresh_token');
-          if (access_token && refresh_token) {
-            const { error: sessionError } = await supabase.auth.setSession({ access_token, refresh_token });
-            if (sessionError) throw new Error('Microsoft login coming soon');
-          }
-        } else {
-          await supabase.auth.exchangeCodeForSession(result.url);
-        }
-      }
+      console.log('[OAuth] Opening in browser:', data.url);
+      await Linking.openURL(data.url);
+      // Session arrives via deep link → caught by Linking listener in _layout.tsx
     }
   }
 
