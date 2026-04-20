@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/png" href="icon.png">
+<title>Try Music-To-Sheet — Convert Audio to Sheet Music Online</title>
+<meta name="description" content="Try Music-To-Sheet free in your browser. Upload any audio file and get sheet music in seconds. No download required for 30-second preview.">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://musictosheet.com/try.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #080810;
+  --bg-card: #12121c;
+  --bg-elevated: #1a1a28;
+  --turquoise: #0EA5E9;
+  --turquoise-glow: #38bdf8;
+  --white: #ffffff;
+  --gray-300: #cbd5e1;
+  --gray-400: #94a3b8;
+  --gray-500: #64748b;
+  --gray-700: #334155;
+  --green: #22c55e;
+  --red: #ef4444;
+  --font: 'Plus Jakarta Sans', sans-serif;
+  --mono: 'Space Mono', monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--white);
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Grain */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='256' height='256' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.4;
+}
+
+/* Nav */
+nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 100;
+  padding: 14px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  backdrop-filter: blur(20px);
+  background: rgba(8,8,16,0.85);
+  border-bottom: 1px solid rgba(14,165,233,0.1);
+}
+
+.nav-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+}
+
+.nav-left img { width: 32px; height: 32px; border-radius: 7px; }
+.nav-left span { font-size: 17px; font-weight: 700; color: var(--turquoise); letter-spacing: -0.3px; }
+
+.nav-right {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.nav-link {
+  color: var(--gray-400);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.nav-link:hover { color: var(--white); }
+
+.nav-cta {
+  padding: 8px 20px;
+  background: var(--turquoise);
+  color: var(--bg);
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.nav-cta:hover { background: var(--turquoise-glow); }
+
+/* Main container */
+.container {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 100px 20px 60px;
+}
+
+/* Header */
+.page-header {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.page-header h1 {
+  font-size: clamp(28px, 5vw, 42px);
+  font-weight: 800;
+  letter-spacing: -1px;
+  margin-bottom: 12px;
+}
+
+.page-header h1 .accent {
+  background: linear-gradient(135deg, var(--turquoise), var(--turquoise-glow));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.page-header p {
+  color: var(--gray-400);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.free-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  background: rgba(34,197,94,0.1);
+  border: 1px solid rgba(34,197,94,0.2);
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--green);
+  margin-bottom: 16px;
+}
+
+.free-badge::before {
+  content: '';
+  width: 6px; height: 6px;
+  background: var(--green);
+  border-radius: 50%;
+}
+
+/* Upload Zone */
+.upload-zone {
+  border: 2px dashed rgba(14,165,233,0.3);
+  border-radius: 16px;
+  padding: 48px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s;
+  background: var(--bg-card);
+  position: relative;
+  margin-bottom: 24px;
+}
+
+.upload-zone:hover {
+  border-color: var(--turquoise);
+  background: rgba(14,165,233,0.04);
+}
+
+.upload-zone.dragging {
+  border-color: var(--turquoise);
+  background: rgba(14,165,233,0.08);
+  transform: scale(1.01);
+}
+
+.upload-zone.has-file {
+  border-style: solid;
+  border-color: var(--turquoise);
+}
+
+.upload-icon {
+  width: 56px; height: 56px;
+  background: rgba(14,165,233,0.1);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+}
+
+.upload-icon svg { stroke: var(--turquoise); }
+
+.upload-zone h3 {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.upload-zone p {
+  color: var(--gray-500);
+  font-size: 13px;
+}
+
+.file-info {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg-elevated);
+  border-radius: 10px;
+  margin-top: 16px;
+}
+
+.file-info.visible { display: flex; }
+
+.file-name {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-size {
+  font-size: 12px;
+  color: var(--gray-500);
+  font-family: var(--mono);
+}
+
+.file-remove {
+  background: none;
+  border: none;
+  color: var(--gray-500);
+  cursor: pointer;
+  font-size: 18px;
+  padding: 4px;
+  transition: color 0.2s;
+}
+
+.file-remove:hover { color: var(--red); }
+
+/* Options */
+.options-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.option-group label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--gray-400);
+  margin-bottom: 6px;
+}
+
+.option-group select {
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  color: var(--white);
+  font-size: 14px;
+  font-family: var(--font);
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2394a3b8'%3E%3Cpath d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  transition: border-color 0.2s;
+}
+
+.option-group select:focus {
+  outline: none;
+  border-color: var(--turquoise);
+}
+
+/* Convert button */
+.convert-btn {
+  width: 100%;
+  padding: 16px;
+  background: var(--turquoise);
+  color: var(--bg);
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 800;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.convert-btn:hover:not(:disabled) {
+  background: var(--turquoise-glow);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px rgba(14,165,233,0.3);
+}
+
+.convert-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.limit-note {
+  text-align: center;
+  font-size: 13px;
+  color: var(--gray-500);
+  margin-bottom: 32px;
+}
+
+/* Processing */
+.processing-section {
+  display: none;
+  text-align: center;
+  padding: 48px 0;
+}
+
+.processing-section.visible { display: block; }
+
+.spinner {
+  width: 48px; height: 48px;
+  border: 3px solid rgba(14,165,233,0.15);
+  border-top-color: var(--turquoise);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 20px;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.processing-step {
+  font-size: 15px;
+  color: var(--gray-300);
+  margin-bottom: 8px;
+}
+
+.processing-sub {
+  font-size: 13px;
+  color: var(--gray-500);
+}
+
+/* Results */
+.results-section {
+  display: none;
+}
+
+.results-section.visible { display: block; }
+
+.result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.result-header h2 {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.result-badge {
+  padding: 4px 12px;
+  background: rgba(34,197,94,0.1);
+  border: 1px solid rgba(34,197,94,0.2);
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--green);
+}
+
+.sheet-preview {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 20px;
+  min-height: 300px;
+  overflow-x: auto;
+}
+
+.sheet-preview svg {
+  width: 100%;
+  height: auto;
+}
+
+/* Staff rendering */
+.staff-container {
+  padding: 16px 0;
+}
+
+.staff-row {
+  position: relative;
+  height: 60px;
+  margin-bottom: 20px;
+}
+
+.staff-line-render {
+  position: absolute;
+  left: 0; right: 0;
+  height: 1px;
+  background: #333;
+}
+
+.note-render {
+  position: absolute;
+  width: 10px; height: 7px;
+  background: #111;
+  border-radius: 50%;
+}
+
+.note-render::after {
+  content: '';
+  position: absolute;
+  right: -1px; top: -16px;
+  width: 1.5px; height: 16px;
+  background: #111;
+}
+
+/* Upgrade CTA */
+.upgrade-cta {
+  background: linear-gradient(135deg, rgba(14,165,233,0.1), rgba(14,165,233,0.05));
+  border: 1px solid rgba(14,165,233,0.2);
+  border-radius: 16px;
+  padding: 32px;
+  text-align: center;
+  margin-top: 24px;
+}
+
+.upgrade-cta h3 {
+  font-size: 22px;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.upgrade-cta p {
+  color: var(--gray-400);
+  font-size: 14px;
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.upgrade-cta .features-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 24px;
+}
+
+.upgrade-cta .feature-tag {
+  padding: 6px 14px;
+  background: rgba(14,165,233,0.08);
+  border: 1px solid rgba(14,165,233,0.15);
+  border-radius: 100px;
+  font-size: 12px;
+  color: var(--turquoise);
+  font-weight: 600;
+}
+
+.download-btns {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.dl-btn {
+  padding: 14px 32px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+}
+
+.dl-btn-primary {
+  background: var(--turquoise);
+  color: var(--bg);
+}
+
+.dl-btn-primary:hover { background: var(--turquoise-glow); transform: translateY(-1px); }
+
+.dl-btn-outline {
+  background: transparent;
+  color: var(--white);
+  border: 1px solid var(--gray-700);
+}
+
+.dl-btn-outline:hover { border-color: var(--turquoise); color: var(--turquoise); }
+
+/* Error */
+.error-msg {
+  display: none;
+  padding: 14px 18px;
+  background: rgba(239,68,68,0.1);
+  border: 1px solid rgba(239,68,68,0.2);
+  border-radius: 10px;
+  color: var(--red);
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.error-msg.visible { display: block; }
+
+/* Footer */
+.try-footer {
+  text-align: center;
+  padding: 40px 20px;
+  border-top: 1px solid rgba(255,255,255,0.05);
+  margin-top: 60px;
+}
+
+.try-footer a {
+  color: var(--gray-500);
+  text-decoration: none;
+  font-size: 13px;
+  margin: 0 12px;
+  transition: color 0.2s;
+}
+
+.try-footer a:hover { color: var(--turquoise); }
+
+.try-footer p {
+  color: var(--gray-500);
+  font-size: 12px;
+  margin-top: 16px;
+}
+
+/* Mobile */
+@media (max-width: 600px) {
+  .options-row { grid-template-columns: 1fr; }
+  .nav-right .nav-link { display: none; }
+  .download-btns { flex-direction: column; }
+  .dl-btn { width: 100%; justify-content: center; }
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="index.html" class="nav-left">
+    <img src="icon.png" alt="Music-To-Sheet">
+    <span>Music-To-Sheet</span>
+  </a>
+  <div class="nav-right">
+    <a href="index.html" class="nav-link">Home</a>
+    <a href="index.html#pricing" class="nav-link">Pricing</a>
+    <a href="index.html#faq" class="nav-link">FAQ</a>
+    <a href="index.html#download" class="nav-cta">Download App</a>
+  </div>
+</nav>
+
+<div class="container">
+
+  <!-- Header -->
+  <div class="page-header">
+    <div class="free-badge">Free — No account needed</div>
+    <h1>Try <span class="accent">Music-To-Sheet</span></h1>
+    <p>Upload an audio file and get sheet music in seconds. Free 30-second preview — download the app for full tracks.</p>
+  </div>
+
+  <!-- Upload Section -->
+  <div id="uploadSection">
+    <div class="upload-zone" id="dropZone">
+      <input type="file" id="fileInput" accept="audio/*" style="display:none">
+      <div class="upload-icon">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      </div>
+      <h3>Drop your audio file here</h3>
+      <p>MP3, WAV, M4A, AAC, FLAC — up to 10MB</p>
+
+      <div class="file-info" id="fileInfo">
+        <span>🎵</span>
+        <span class="file-name" id="fileName"></span>
+        <span class="file-size" id="fileSize"></span>
+        <button class="file-remove" id="fileRemove">&times;</button>
+      </div>
+    </div>
+
+    <div class="options-row">
+      <div class="option-group">
+        <label>Instrument Focus</label>
+        <select id="instrument">
+          <option value="Piano">Piano</option>
+          <option value="Guitar">Guitar</option>
+          <option value="Violin">Violin</option>
+          <option value="Drums">Drums</option>
+          <option value="Vocals">Vocals</option>
+          <option value="Bass">Bass</option>
+          <option value="Flute">Flute</option>
+          <option value="Saxophone">Saxophone</option>
+          <option value="Trumpet">Trumpet</option>
+          <option value="Cello">Cello</option>
+        </select>
+      </div>
+      <div class="option-group">
+        <label>Output Format</label>
+        <select id="outputFormat">
+          <option value="Score">Score</option>
+          <option value="Part">Part</option>
+          <option value="Lead Sheet">Lead Sheet</option>
+          <option value="Tabs">Guitar Tabs</option>
+          <option value="Fake Book">Fake Book</option>
+          <option value="Staff">Staff</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="error-msg" id="errorMsg"></div>
+
+    <button class="convert-btn" id="convertBtn" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v20M2 12h20"/></svg>
+      Convert to Sheet Music
+    </button>
+    <p class="limit-note">Free web preview: first 30 seconds · Download the app for full tracks</p>
+  </div>
+
+  <!-- Processing -->
+  <div class="processing-section" id="processingSection">
+    <div class="spinner"></div>
+    <div class="processing-step" id="processingStep">Uploading audio...</div>
+    <div class="processing-sub">This may take 30-60 seconds</div>
+  </div>
+
+  <!-- Results -->
+  <div class="results-section" id="resultsSection">
+    <div class="result-header">
+      <h2 id="resultTitle">Sheet Music</h2>
+      <div class="result-badge">30s Preview</div>
+    </div>
+
+    <div class="sheet-preview" id="sheetPreview">
+      <!-- SVG sheet music rendered here -->
+    </div>
+
+    <div class="upgrade-cta">
+      <h3>Want the full sheet music?</h3>
+      <p>This preview covers the first 30 seconds. Download the app for full-length transcriptions, PDF export, transpose, BPM control, and more.</p>
+      <div class="features-list">
+        <span class="feature-tag">Full length tracks</span>
+        <span class="feature-tag">PDF export</span>
+        <span class="feature-tag">Transpose ±12 keys</span>
+        <span class="feature-tag">BPM control</span>
+        <span class="feature-tag">Note editor</span>
+        <span class="feature-tag">DeNoise</span>
+        <span class="feature-tag">Metronome</span>
+      </div>
+      <div class="download-btns">
+        <a href="#" class="dl-btn dl-btn-primary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+          App Store
+        </a>
+        <a href="#" class="dl-btn dl-btn-primary" style="background:var(--white); color:var(--bg);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3 20.5v-17c0-.59.34-1.11.84-1.35L13.69 12l-9.85 9.85c-.5-.24-.84-.76-.84-1.35zm13.81-5.38L6.05 21.34l8.49-8.49 2.27 2.27zm.91-.52l2.71-1.54c.5-.29.8-.8.8-1.36 0-.56-.3-1.07-.8-1.36l-2.71-1.54-2.5 2.5 2.5 2.3zM6.05 2.66l10.76 6.22-2.27 2.27-8.49-8.49z"/></svg>
+          Google Play
+        </a>
+        <button class="dl-btn dl-btn-outline" id="tryAgainBtn">Try Another Track</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="try-footer">
+  <a href="index.html">Home</a>
+  <a href="terms.html">Terms</a>
+  <a href="privacy.html">Privacy</a>
+  <a href="dmca.html">DMCA</a>
+  <p>&copy; 2026 Music-To-Sheet. All rights reserved.</p>
+</div>
+
+<script>
+const API_URL = 'https://musictosheet.onrender.com';
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const fileInfo = document.getElementById('fileInfo');
+const fileName = document.getElementById('fileName');
+const fileSize = document.getElementById('fileSize');
+const fileRemove = document.getElementById('fileRemove');
+const convertBtn = document.getElementById('convertBtn');
+const errorMsg = document.getElementById('errorMsg');
+const uploadSection = document.getElementById('uploadSection');
+const processingSection = document.getElementById('processingSection');
+const processingStep = document.getElementById('processingStep');
+const resultsSection = document.getElementById('resultsSection');
+const sheetPreview = document.getElementById('sheetPreview');
+const resultTitle = document.getElementById('resultTitle');
+const tryAgainBtn = document.getElementById('tryAgainBtn');
+
+let selectedFile = null;
+
+// Drag & Drop
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragging'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragging'));
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('dragging');
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+
+fileInput.addEventListener('change', (e) => {
+  if (e.target.files.length) handleFile(e.target.files[0]);
+});
+
+fileRemove.addEventListener('click', (e) => {
+  e.stopPropagation();
+  selectedFile = null;
+  fileInfo.classList.remove('visible');
+  dropZone.classList.remove('has-file');
+  convertBtn.disabled = true;
+  fileInput.value = '';
+});
+
+function handleFile(file) {
+  if (file.size > MAX_FILE_SIZE) {
+    showError('File too large. Maximum size is 10MB.');
+    return;
+  }
+
+  const validTypes = ['audio/mpeg', 'audio/wav', 'audio/mp3', 'audio/m4a', 'audio/aac', 'audio/flac', 'audio/x-m4a', 'audio/mp4', 'audio/ogg', 'audio/webm'];
+  if (!validTypes.includes(file.type) && !file.name.match(/\.(mp3|wav|m4a|aac|flac|ogg|webm)$/i)) {
+    showError('Unsupported format. Please upload MP3, WAV, M4A, AAC, or FLAC.');
+    return;
+  }
+
+  hideError();
+  selectedFile = file;
+  fileName.textContent = file.name;
+  fileSize.textContent = (file.size / (1024 * 1024)).toFixed(1) + ' MB';
+  fileInfo.classList.add('visible');
+  dropZone.classList.add('has-file');
+  convertBtn.disabled = false;
+}
+
+function showError(msg) {
+  errorMsg.textContent = msg;
+  errorMsg.classList.add('visible');
+}
+
+function hideError() {
+  errorMsg.classList.remove('visible');
+}
+
+// Convert
+convertBtn.addEventListener('click', async () => {
+  if (!selectedFile) return;
+
+  hideError();
+  uploadSection.style.display = 'none';
+  processingSection.classList.add('visible');
+  resultsSection.classList.remove('visible');
+
+  try {
+    // Step 1: Upload to server
+    processingStep.textContent = 'Uploading audio...';
+    
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+
+    const uploadResp = await fetch(`${API_URL}/upload-temp`, {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!uploadResp.ok) throw new Error('Upload failed');
+    const uploadData = await uploadResp.json();
+    const audioUrl = uploadData.url || uploadData.audio_url;
+
+    if (!audioUrl) throw new Error('No audio URL returned');
+
+    // Step 2: Process
+    processingStep.textContent = 'Separating instruments...';
+
+    const instrument = document.getElementById('instrument').value;
+    const outputFormat = document.getElementById('outputFormat').value;
+
+    const processResp = await fetch(`${API_URL}/process-with-stems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        audio_url: audioUrl,
+        instrument: instrument,
+        output_format: outputFormat,
+        max_duration: 30
+      })
+    });
+
+    processingStep.textContent = 'Generating sheet music...';
+
+    if (!processResp.ok) {
+      const errData = await processResp.json().catch(() => ({}));
+      throw new Error(errData.error || errData.detail || 'Processing failed');
+    }
+
+    const result = await processResp.json();
+
+    // Step 3: Show results
+    processingSection.classList.remove('visible');
+    resultsSection.classList.add('visible');
+    resultTitle.textContent = selectedFile.name.replace(/\.[^.]+$/, '') + ' — ' + instrument;
+
+    // Render simple sheet music preview
+    renderSheetPreview(result.notes || []);
+
+  } catch (err) {
+    processingSection.classList.remove('visible');
+    uploadSection.style.display = 'block';
+    showError(err.message || 'Something went wrong. Please try again.');
+  }
+});
+
+function renderSheetPreview(notes) {
+  if (!notes || notes.length === 0) {
+    sheetPreview.innerHTML = '<p style="color:#666; text-align:center; padding:40px;">No notes detected. Try a cleaner recording.</p>';
+    return;
+  }
+
+  // Simple staff rendering
+  const svgWidth = 660;
+  const staffHeight = 50;
+  const staffSpacing = 30;
+  const lineSpacing = 10;
+  const numStaves = Math.min(Math.ceil(notes.length / 16), 7);
+  const svgHeight = numStaves * (staffHeight + staffSpacing) + 40;
+
+  let svg = `<svg viewBox="0 0 ${svgWidth} ${svgHeight}" xmlns="http://www.w3.org/2000/svg">`;
+  
+  // Clef and time sig text
+  svg += `<text x="8" y="38" font-size="32" font-family="serif">𝄞</text>`;
+  svg += `<text x="36" y="30" font-size="14" font-family="serif" font-weight="bold">4</text>`;
+  svg += `<text x="36" y="44" font-size="14" font-family="serif" font-weight="bold">4</text>`;
+
+  for (let s = 0; s < numStaves; s++) {
+    const yOffset = s * (staffHeight + staffSpacing) + 10;
+    
+    // Draw 5 staff lines
+    for (let i = 0; i < 5; i++) {
+      const y = yOffset + i * lineSpacing + 10;
+      svg += `<line x1="0" y1="${y}" x2="${svgWidth}" y2="${y}" stroke="#999" stroke-width="0.7"/>`;
+    }
+
+    // Draw notes for this staff
+    const staffNotes = notes.slice(s * 16, (s + 1) * 16);
+    staffNotes.forEach((note, idx) => {
+      const x = 55 + idx * 38;
+      const midi = note.midi || note.pitch || 60;
+      const noteY = yOffset + 50 - ((midi - 55) * 2.5);
+      const clampedY = Math.max(yOffset + 5, Math.min(yOffset + 55, noteY));
+      
+      // Note head
+      svg += `<ellipse cx="${x}" cy="${clampedY}" rx="5.5" ry="4" fill="#111"/>`;
+      // Stem
+      svg += `<line x1="${x + 5}" y1="${clampedY}" x2="${x + 5}" y2="${clampedY - 22}" stroke="#111" stroke-width="1.3"/>`;
+    });
+  }
+
+  svg += '</svg>';
+  sheetPreview.innerHTML = svg;
+}
+
+// Try Again
+tryAgainBtn.addEventListener('click', () => {
+  resultsSection.classList.remove('visible');
+  uploadSection.style.display = 'block';
+  selectedFile = null;
+  fileInfo.classList.remove('visible');
+  dropZone.classList.remove('has-file');
+  convertBtn.disabled = true;
+  fileInput.value = '';
+});
+</script>
+
+</body>
+</html>
