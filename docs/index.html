@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/png" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
 <title>Music-To-Sheet — Convert Audio to Sheet Music with AI</title>
 <meta name="description" content="Transform any audio recording into professional sheet music using AI. Upload MP3, WAV, or record directly. Export as PDF, MIDI, or MusicXML. Try free.">
 <meta name="keywords" content="audio to sheet music, music transcription, AI sheet music, convert audio to notes, music notation, piano sheet music, guitar tabs, MIDI converter">
@@ -13,6 +15,166 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="canonical" href="https://musictosheet.com">
+
+<!-- Schema Markup — SoftwareApplication -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Music-To-Sheet",
+  "applicationCategory": "MusicApplication",
+  "operatingSystem": "iOS, Android",
+  "description": "AI-powered audio to sheet music converter. Upload any recording and get professional notation in seconds. Supports piano, guitar, drums, vocals, and 10+ instruments. Export as PDF, MIDI, or MusicXML.",
+  "url": "https://musictosheet.com",
+  "downloadUrl": "https://musictosheet.com/#download",
+  "screenshot": "https://musictosheet.com/screenshot.png",
+  "softwareVersion": "1.0.0",
+  "datePublished": "2026-04-01",
+  "offers": [
+    {
+      "@type": "Offer",
+      "name": "Free Forever",
+      "price": "0",
+      "priceCurrency": "USD",
+      "description": "60 seconds audio, 5 sheets/month, metronome, recording up to 10 minutes"
+    },
+    {
+      "@type": "Offer",
+      "name": "Pay-As-You-Go",
+      "price": "1.99",
+      "priceCurrency": "USD",
+      "description": "Per track, 600 seconds, 5 attempts, clean PDF, transpose, BPM, note editing"
+    },
+    {
+      "@type": "Offer",
+      "name": "Advanced Pro",
+      "price": "14.99",
+      "priceCurrency": "USD",
+      "billingIncrement": "monthly",
+      "description": "15 minutes, 60 sheets/month, 2x priority, clean PDF, full editor"
+    },
+    {
+      "@type": "Offer",
+      "name": "Virtuosos",
+      "price": "19.99",
+      "priceCurrency": "USD",
+      "billingIncrement": "monthly",
+      "description": "Full length, 100 sheets/month, 5x priority, 30 min recording, all features"
+    }
+  ],
+  "featureList": [
+    "AI stem separation (Meta Demucs)",
+    "Polyphonic note detection (Spotify Basic Pitch)",
+    "6 output formats: Score, Part, Lead Sheet, Tabs, Fake Book, Staff",
+    "Transpose ±12 semitones",
+    "BPM control 40-240",
+    "Manual note editor",
+    "Built-in metronome with recording",
+    "Background noise removal (DeNoise)",
+    "PDF export with professional formatting",
+    "MIDI and MusicXML export",
+    "Audio recording up to 30 minutes"
+  ],
+  "author": {
+    "@type": "Organization",
+    "name": "Music-To-Sheet",
+    "url": "https://musictosheet.com"
+  }
+}
+</script>
+
+<!-- Schema Markup — Organization -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "Music-To-Sheet",
+  "url": "https://musictosheet.com",
+  "logo": "https://musictosheet.com/icon.png",
+  "description": "AI-powered audio to sheet music transcription platform",
+  "contactPoint": {
+    "@type": "ContactPoint",
+    "email": "support@musictosheet.com",
+    "contactType": "customer support"
+  },
+  "sameAs": []
+}
+</script>
+
+<!-- Schema Markup — FAQ -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What audio formats does Music-To-Sheet support?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Music-To-Sheet supports MP3, WAV, M4A, AAC, FLAC, and most common audio formats. You can also paste a direct link to an audio file hosted online."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How accurate is the AI music transcription?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Music-To-Sheet uses Spotify's Basic Pitch for polyphonic note detection combined with Meta's Demucs for stem separation. Accuracy depends on recording quality — clean recordings with a single instrument produce the best results."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I transcribe copyrighted music?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "You are responsible for having the necessary rights to transcribe audio you upload. Our Terms of Service require a rights declaration before each conversion. All processing is ephemeral — audio is never stored on our servers."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What output formats are available?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Score, Part, Lead Sheet, Guitar Tabs, Fake Book, and Staff notation. You can export as PDF (all tiers), MIDI and MusicXML (Pro and Virtuosos tiers)."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do I need an account to use Music-To-Sheet?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Free users can transcribe up to 60 seconds of audio without creating an account. Sign up for longer transcriptions and access to your conversion history."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I cancel my subscription anytime?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes, you can cancel your subscription at any time through your Apple App Store or Google Play Store account settings. There are no cancellation fees."
+      }
+    }
+  ]
+}
+</script>
+
+<!-- Schema Markup — WebSite with SearchAction -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": "Music-To-Sheet",
+  "url": "https://musictosheet.com",
+  "description": "Convert any audio recording into professional sheet music using AI",
+  "potentialAction": {
+    "@type": "SearchAction",
+    "target": "https://musictosheet.com/blog/?q={search_term_string}",
+    "query-input": "required name=search_term_string"
+  }
+}
+</script>
 <style>
 :root {
   --bg: #080810;
