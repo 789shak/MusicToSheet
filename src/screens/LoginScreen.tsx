@@ -12,8 +12,11 @@ import {
 } from 'react-native';
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { AntDesign, FontAwesome, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
+
+WebBrowser.maybeCompleteAuthSession();
 
 type SocialButtonProps = {
   icon: React.ReactNode;

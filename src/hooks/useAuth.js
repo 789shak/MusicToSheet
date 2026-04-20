@@ -56,6 +56,8 @@ export function AuthProvider({ children }) {
 
   async function signInWithGoogle() {
     const redirectUrl = makeRedirectUri({ scheme: 'musictosheet' });
+    console.log('[OAuth] Google redirect URL:', redirectUrl);
+
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
@@ -64,18 +66,24 @@ export function AuthProvider({ children }) {
       },
     });
     if (error) throw error;
+
     if (data?.url) {
+      console.log('[OAuth] Opening URL:', data.url);
       const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
-      if (result.type === 'success') {
-        const fragment = result.url.split('#')[1] ?? '';
-        const params = new URLSearchParams(fragment);
-        const access_token = params.get('access_token');
-        const refresh_token = params.get('refresh_token');
-        if (access_token && refresh_token) {
-          const { error: sessionError } = await supabase.auth.setSession({ access_token, refresh_token });
-          if (sessionError) throw sessionError;
+      console.log('[OAuth] Result type:', result.type);
+
+      if (result.type === 'success' && result.url) {
+        const hashParams = result.url.split('#')[1];
+        if (hashParams) {
+          const params = new URLSearchParams(hashParams);
+          const access_token = params.get('access_token');
+          const refresh_token = params.get('refresh_token');
+          if (access_token && refresh_token) {
+            const { error: sessionError } = await supabase.auth.setSession({ access_token, refresh_token });
+            if (sessionError) throw sessionError;
+          }
         } else {
-          // Fallback: try PKCE code exchange
+          // PKCE fallback — code is in query params
           await supabase.auth.exchangeCodeForSession(result.url);
         }
       }
@@ -88,6 +96,8 @@ export function AuthProvider({ children }) {
 
   async function signInWithMicrosoft() {
     const redirectUrl = makeRedirectUri({ scheme: 'musictosheet' });
+    console.log('[OAuth] Microsoft redirect URL:', redirectUrl);
+
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'azure',
       options: {
@@ -96,16 +106,22 @@ export function AuthProvider({ children }) {
       },
     });
     if (error) throw new Error('Microsoft login coming soon');
+
     if (data?.url) {
+      console.log('[OAuth] Opening URL:', data.url);
       const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
-      if (result.type === 'success') {
-        const fragment = result.url.split('#')[1] ?? '';
-        const params = new URLSearchParams(fragment);
-        const access_token = params.get('access_token');
-        const refresh_token = params.get('refresh_token');
-        if (access_token && refresh_token) {
-          const { error: sessionError } = await supabase.auth.setSession({ access_token, refresh_token });
-          if (sessionError) throw new Error('Microsoft login coming soon');
+      console.log('[OAuth] Result type:', result.type);
+
+      if (result.type === 'success' && result.url) {
+        const hashParams = result.url.split('#')[1];
+        if (hashParams) {
+          const params = new URLSearchParams(hashParams);
+          const access_token = params.get('access_token');
+          const refresh_token = params.get('refresh_token');
+          if (access_token && refresh_token) {
+            const { error: sessionError } = await supabase.auth.setSession({ access_token, refresh_token });
+            if (sessionError) throw new Error('Microsoft login coming soon');
+          }
         } else {
           await supabase.auth.exchangeCodeForSession(result.url);
         }
