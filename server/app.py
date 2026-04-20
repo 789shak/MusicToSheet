@@ -437,7 +437,7 @@ def root():
 # ─── /upload-temp (guest file upload) ────────────────────────────────────────
 @app.post("/upload-temp")
 @limiter.limit("20/hour")
-async def upload_temp(request: Request, file: UploadFile = File(...), _=Depends(verify_api_key)):
+async def upload_temp(request: Request, file: UploadFile = File(...)):
     """Accept a multipart audio upload, save to /tmp, return a temp_file_id."""
     ext = os.path.splitext(file.filename or 'audio.mp3')[1].lower() or '.mp3'
     temp_id = str(uuid.uuid4())
