@@ -140,7 +140,7 @@ export default function LoginScreen() {
           autoCapitalize="none"
           autoCorrect={false}
           value={email}
-          onChangeText={(t) => { setEmail(t); clearError(); }}
+          onChangeText={setEmail}
           editable={!loading}
         />
 
@@ -153,7 +153,7 @@ export default function LoginScreen() {
           autoCapitalize="none"
           autoCorrect={false}
           value={password}
-          onChangeText={(t) => { setPassword(t); clearError(); }}
+          onChangeText={setPassword}
           editable={!loading}
         />
 

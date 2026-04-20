@@ -2,6 +2,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Linking from 'expo-linking';
 import { useFonts } from 'expo-font';
 import { AntDesign, FontAwesome, Ionicons, Feather, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import 'react-native-reanimated';
@@ -9,6 +10,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider, useAuth } from '@/src/hooks/useAuth';
 import { OnboardingModal } from '@/src/components/OnboardingModal';
 import { configureRevenueCat } from '@/src/lib/revenuecat';
+import { supabase } from '@/src/lib/supabase';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -60,6 +62,29 @@ function AuthGate() {
 function RootLayoutInner() {
   useEffect(() => {
     configureRevenueCat();
+  }, []);
+
+  // Capture OAuth deep-link callbacks (Google, Microsoft)
+  useEffect(() => {
+    const handleUrl = async (event: { url: string }) => {
+      const url = event.url;
+      if (!url.includes('access_token') && !url.includes('#')) return;
+      const fragment = url.split('#')[1] ?? url.split('?')[1] ?? '';
+      const params = new URLSearchParams(fragment);
+      const access_token = params.get('access_token');
+      const refresh_token = params.get('refresh_token');
+      if (access_token && refresh_token) {
+        await supabase.auth.setSession({ access_token, refresh_token });
+      }
+    };
+
+    // Handle URL if app was opened via deep link while closed
+    Linking.getInitialURL().then((url) => {
+      if (url) handleUrl({ url });
+    });
+
+    const subscription = Linking.addEventListener('url', handleUrl);
+    return () => subscription.remove();
   }, []);
 
   const [fontsLoaded] = useFonts({
