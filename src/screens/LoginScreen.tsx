@@ -100,7 +100,12 @@ export default function LoginScreen() {
       await fn();
       // AuthGate in _layout.tsx handles navigation automatically
     } catch (e: any) {
-      Alert.alert(`${label} Sign-In Failed`, e.message ?? 'Please try again.');
+      const msg: string = e?.message ?? 'Please try again.';
+      const isComingSoon = msg.toLowerCase().includes('coming soon');
+      Alert.alert(
+        isComingSoon ? 'Coming Soon' : `${label} Sign-In Failed`,
+        msg
+      );
     } finally {
       setLoading(false);
     }

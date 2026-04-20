@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import * as WebBrowser from 'expo-web-browser';
-import * as Linking from 'expo-linking';
+import { makeRedirectUri } from 'expo-auth-session';
 import { supabase } from '../lib/supabase';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -55,49 +55,60 @@ export function AuthProvider({ children }) {
   }
 
   async function signInWithGoogle() {
-    const redirectTo = Linking.createURL('/');
+    const redirectUrl = makeRedirectUri();
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo },
+      options: {
+        redirectTo: redirectUrl,
+        skipBrowserRedirect: true,
+      },
     });
     if (error) throw error;
     if (data?.url) {
-      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
       if (result.type === 'success') {
-        const { url } = result;
-        await supabase.auth.exchangeCodeForSession(url);
+        const fragment = result.url.split('#')[1] ?? '';
+        const params = new URLSearchParams(fragment);
+        const access_token = params.get('access_token');
+        const refresh_token = params.get('refresh_token');
+        if (access_token && refresh_token) {
+          const { error: sessionError } = await supabase.auth.setSession({ access_token, refresh_token });
+          if (sessionError) throw sessionError;
+        } else {
+          // Fallback: try PKCE code exchange
+          await supabase.auth.exchangeCodeForSession(result.url);
+        }
       }
     }
   }
 
   async function signInWithApple() {
-    const redirectTo = Linking.createURL('/');
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'apple',
-      options: { redirectTo },
-    });
-    if (error) throw error;
-    if (data?.url) {
-      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-      if (result.type === 'success') {
-        const { url } = result;
-        await supabase.auth.exchangeCodeForSession(url);
-      }
-    }
+    throw new Error('Apple Sign-In coming soon');
   }
 
   async function signInWithMicrosoft() {
-    const redirectTo = Linking.createURL('/');
+    const redirectUrl = makeRedirectUri();
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'azure',
-      options: { redirectTo },
+      options: {
+        redirectTo: redirectUrl,
+        skipBrowserRedirect: true,
+      },
     });
-    if (error) throw error;
+    if (error) throw new Error('Microsoft login coming soon');
     if (data?.url) {
-      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
       if (result.type === 'success') {
-        const { url } = result;
-        await supabase.auth.exchangeCodeForSession(url);
+        const fragment = result.url.split('#')[1] ?? '';
+        const params = new URLSearchParams(fragment);
+        const access_token = params.get('access_token');
+        const refresh_token = params.get('refresh_token');
+        if (access_token && refresh_token) {
+          const { error: sessionError } = await supabase.auth.setSession({ access_token, refresh_token });
+          if (sessionError) throw new Error('Microsoft login coming soon');
+        } else {
+          await supabase.auth.exchangeCodeForSession(result.url);
+        }
       }
     }
   }
