@@ -1,47 +1,49 @@
 import Purchases from 'react-native-purchases';
+import { Platform } from 'react-native';
 
-// RevenueCat public API key — safe to embed in mobile apps (not a secret).
-// Replace with separate iOS / Android keys once both are set up in the dashboard.
-const API_KEY = 'test_xQbinSlnzqKtOIvcnXVgnEntyUV';
+const API_KEY_ANDROID = process.env.REVENUECAT_API_KEY_ANDROID;
+const API_KEY_IOS     = process.env.REVENUECAT_API_KEY_IOS;
+const API_KEY         = Platform.OS === 'ios' ? API_KEY_IOS : API_KEY_ANDROID;
+
+let _configured = false;
 
 /**
- * Call once on app start (before any subscription checks).
+ * Call once on app start. Silently skips if no API key is configured.
  */
 export function configureRevenueCat() {
-  Purchases.configure({ apiKey: API_KEY });
+  if (!API_KEY) {
+    console.warn('[RevenueCat] No API key configured — subscription features disabled.');
+    return;
+  }
+  try {
+    Purchases.configure({ apiKey: API_KEY });
+    _configured = true;
+  } catch (e) {
+    console.warn('[RevenueCat] Failed to configure:', e?.message ?? e);
+  }
 }
 
-/**
- * Fetch available offerings (plans + packages with live prices).
- * @returns {Promise<import('react-native-purchases').PurchasesOfferings>}
- */
+function assertConfigured() {
+  if (!_configured) throw new Error('RevenueCat not configured');
+}
+
 export async function getOfferings() {
+  assertConfigured();
   return Purchases.getOfferings();
 }
 
-/**
- * Purchase a RevenueCat package.
- * Throws with { userCancelled: true } if the user dismissed the payment sheet.
- * @param {import('react-native-purchases').PurchasesPackage} pkg
- * @returns {Promise<import('react-native-purchases').CustomerInfo>}
- */
 export async function purchasePackage(pkg) {
+  assertConfigured();
   const { customerInfo } = await Purchases.purchasePackage(pkg);
   return customerInfo;
 }
 
-/**
- * Restore previous purchases (required by App Store / Play Store guidelines).
- * @returns {Promise<import('react-native-purchases').CustomerInfo>}
- */
 export async function restorePurchases() {
+  assertConfigured();
   return Purchases.restorePurchases();
 }
 
-/**
- * Get the latest customer info / entitlements for the current user.
- * @returns {Promise<import('react-native-purchases').CustomerInfo>}
- */
 export async function getCustomerInfo() {
+  assertConfigured();
   return Purchases.getCustomerInfo();
 }
