@@ -52,9 +52,14 @@ async def add_security_headers(request: Request, call_next):
 # ─── API Key Auth ─────────────────────────────────────────────────────────────
 _API_SECRET_KEY = os.environ.get("API_SECRET_KEY", "")
 
+_WEB_ORIGINS = {"https://musictosheet.com", "https://www.musictosheet.com"}
+
 def verify_api_key(request: Request):
     if not _API_SECRET_KEY:
         return  # Not configured — dev mode, skip
+    origin = request.headers.get("Origin", "")
+    if origin in _WEB_ORIGINS:
+        return  # Web demo — origin-based trust, no API key needed
     key = request.headers.get("X-API-Key", "")
     if key != _API_SECRET_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -437,7 +442,7 @@ def root():
 # ─── /upload-temp (guest file upload) ────────────────────────────────────────
 @app.post("/upload-temp")
 @limiter.limit("20/hour")
-async def upload_temp(request: Request, file: UploadFile = File(...)):
+async def upload_temp(request: Request, file: UploadFile = File(...), _=Depends(verify_api_key)):
     """Accept a multipart audio upload, save to /tmp, return a temp_file_id."""
     ext = os.path.splitext(file.filename or 'audio.mp3')[1].lower() or '.mp3'
     temp_id = str(uuid.uuid4())

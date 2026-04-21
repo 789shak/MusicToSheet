@@ -30,7 +30,6 @@ export function AuthProvider({ children }) {
 
     // Listen for auth state changes (login, logout, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("onAuthStateChange fired:", event, session?.user?.email);
       setSession(session);
       setUser(session?.user ?? null);
       // Real sign-in clears guest mode automatically
@@ -71,7 +70,6 @@ export function AuthProvider({ children }) {
     if (error) throw error;
 
     if (data?.url) {
-      console.log('[OAuth] Opening in browser:', data.url);
       await Linking.openURL(data.url);
       // Session arrives via deep link → caught by Linking listener in _layout.tsx
     }
@@ -91,7 +89,6 @@ export function AuthProvider({ children }) {
     if (error) throw new Error('Microsoft login coming soon');
 
     if (data?.url) {
-      console.log('[OAuth] Opening in browser:', data.url);
       await Linking.openURL(data.url);
       // Session arrives via deep link → caught by Linking listener in _layout.tsx
     }

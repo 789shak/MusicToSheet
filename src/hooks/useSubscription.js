@@ -107,13 +107,6 @@ export function useSubscription() {
         return;
       }
 
-      // TODO: Remove before final production build
-      const TEST_EMAIL = 'gyuhfsaaer@gmail.com';
-      if (session.user?.email === TEST_EMAIL) {
-        setCurrentTier('virtuosos');
-        return;
-      }
-
       try {
         const customerInfo = await getCustomerInfo();
         const active = customerInfo.entitlements.active;

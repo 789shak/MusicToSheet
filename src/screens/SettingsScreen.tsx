@@ -215,6 +215,8 @@ export default function SettingsScreen() {
           <Feather name="log-out" size={17} color="#EF4444" style={{ marginRight: 8 }} />
           <Text style={styles.logOutText}>Log Out</Text>
         </TouchableOpacity>
+
+        <Text style={styles.versionText}>Version 1.0.0</Text>
       </ScrollView>
     </View>
   );
@@ -256,5 +258,11 @@ const styles = StyleSheet.create({
     color: '#EF4444',
     fontSize: 15,
     fontWeight: '700',
+  },
+  versionText: {
+    color: '#4B5563',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 20,
   },
 });
