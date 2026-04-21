@@ -790,28 +790,29 @@ convertBtn.addEventListener('click', async () => {
 
     if (!uploadResp.ok) throw new Error('Upload failed');
     const uploadData = await uploadResp.json();
-    const audioUrl = uploadData.url || uploadData.audio_url;
+    const tempFileId = uploadData.temp_file_id;
+    const ext = uploadData.ext;
 
-    if (!audioUrl) throw new Error('No audio URL returned');
+    if (!tempFileId) throw new Error('Upload did not return a file ID');
 
-    // Step 2: Process
-    processingStep.textContent = 'Separating instruments...';
+    // Step 2: Process using temp_file_id (server reads directly from disk)
+    processingStep.textContent = 'Analysing audio...';
 
     const instrument = document.getElementById('instrument').value;
     const outputFormat = document.getElementById('outputFormat').value;
 
-    const processResp = await fetch(`${API_URL}/process-with-stems`, {
+    const processResp = await fetch(`${API_URL}/process`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        audio_url: audioUrl,
+        temp_file_id: tempFileId,
         instrument: instrument,
         output_format: outputFormat,
-        max_duration: 30
       })
     });
 
     processingStep.textContent = 'Generating sheet music...';
+
 
     if (!processResp.ok) {
       const errData = await processResp.json().catch(() => ({}));
