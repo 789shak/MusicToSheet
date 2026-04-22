@@ -37,8 +37,8 @@ const STAGES = [
 const SLOW_WARNING_MS = 8_000;
 
 // Maximum time to wait for the server before showing a timeout error
-// Demucs (30-60s) + Basic Pitch (10-20s) + music21 (5-10s) = up to 90s; use 180s for safety
-const SERVER_TIMEOUT_MS = 180_000;
+// Demucs (30-60s) + Basic Pitch (10-20s) + music21 (5-10s) = up to 90s; use 300s for safety
+const SERVER_TIMEOUT_MS = 300_000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([

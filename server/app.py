@@ -675,10 +675,11 @@ async def process_with_stems(request: Request, body: ProcessRequest, _=Depends(v
             audio_for_detection = stem_path
 
         # Step 6: Convert to WAV with ffmpeg
+        # TODO: Remove 90-second cap when async processing is implemented
         wav_path = f"/tmp/{uid}_out.wav"
         print("[stems] Step 6: Converting to WAV with ffmpeg...")
         result = subprocess.run(
-            ['ffmpeg', '-i', audio_for_detection, '-t', '60', '-ar', '22050', '-ac', '1', '-sample_fmt', 's16', wav_path, '-y'],
+            ['ffmpeg', '-i', audio_for_detection, '-t', '90', '-ar', '22050', '-ac', '1', '-sample_fmt', 's16', wav_path, '-y'],
             capture_output=True,
             text=True,
         )
