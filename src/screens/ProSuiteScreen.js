@@ -24,22 +24,6 @@ const CARDS = [
     free: false,
     route: '/noise-cleaner',
   },
-  {
-    key: 'coming-soon-1',
-    title: 'Chord Identifier',
-    description: 'Detect chords and progressions from audio',
-    icon: 'grid-outline',
-    iconColor: '#F59E0B',
-    comingSoon: true,
-  },
-  {
-    key: 'coming-soon-2',
-    title: 'Tempo Analyzer',
-    description: 'Detect BPM and rhythm patterns from any recording',
-    icon: 'speedometer-outline',
-    iconColor: '#34D399',
-    comingSoon: true,
-  },
 ];
 
 export default function ProSuiteScreen() {

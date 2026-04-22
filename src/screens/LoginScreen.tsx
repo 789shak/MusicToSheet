@@ -47,6 +47,7 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   async function handleSignUp() {
     const trimmedEmail = email.trim();
@@ -145,17 +146,30 @@ export default function LoginScreen() {
         />
 
         {/* Password */}
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          placeholderTextColor="#6B7280"
-          secureTextEntry
-          autoCapitalize="none"
-          autoCorrect={false}
-          value={password}
-          onChangeText={setPassword}
-          editable={!loading}
-        />
+        <View style={styles.inputWrap}>
+          <TextInput
+            style={styles.inputInner}
+            placeholder="Password"
+            placeholderTextColor="#6B7280"
+            secureTextEntry={!showPassword}
+            autoCapitalize="none"
+            autoCorrect={false}
+            value={password}
+            onChangeText={setPassword}
+            editable={!loading}
+          />
+          <TouchableOpacity
+            style={styles.eyeBtn}
+            onPress={() => setShowPassword(v => !v)}
+            hitSlop={8}
+          >
+            <Ionicons
+              name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+              size={20}
+              color="#6B7280"
+            />
+          </TouchableOpacity>
+        </View>
 
         {/* Forgot Password */}
         <TouchableOpacity
@@ -289,6 +303,26 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     marginBottom: 12,
+  },
+  inputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1C1C27',
+    borderWidth: 1,
+    borderColor: '#2D2D3E',
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  inputInner: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    color: '#FFFFFF',
+    fontSize: 15,
+  },
+  eyeBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 14,
   },
 
   // Forgot password

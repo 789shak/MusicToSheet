@@ -596,12 +596,11 @@ export default function ProcessingScreen() {
       {/* Pulsing app icon */}
       <View style={styles.iconArea}>
         <Animated.View style={[styles.glowRing, { opacity: glowAnim }]} />
-        <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+        <Animated.View style={{ transform: [{ scale: pulseAnim }], zIndex: 1 }}>
           <Image
             source={require('../../assets/icon.png')}
             style={styles.appIcon}
-            resizeMode="cover"
-            onError={(e) => console.log('[ProcessingScreen] icon load error:', e.nativeEvent.error)}
+            resizeMode="contain"
           />
         </Animated.View>
       </View>
@@ -671,6 +670,7 @@ const styles = StyleSheet.create({
     height: 140,
     borderRadius: 70,
     backgroundColor: '#0EA5E9',
+    zIndex: 0,
   },
   appIcon: {
     width: 120,
