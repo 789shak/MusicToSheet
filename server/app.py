@@ -267,6 +267,72 @@ def detect_notes_with_basic_pitch(wav_path: str) -> tuple:
     return notes, new_midi
 
 
+# ─── ByteDance Piano Transcription ───────────────────────────────────────────
+def _midi_data_to_notes(midi_data: pretty_midi.PrettyMIDI) -> list:
+    """Extract notes from a PrettyMIDI object in the standard response dict shape."""
+    notes = []
+    for instrument in midi_data.instruments:
+        for note in instrument.notes:
+            notes.append({
+                "pitch":      pretty_midi.note_number_to_name(note.pitch),
+                "start":      round(note.start, 3),
+                "duration":   round(note.end - note.start, 3),
+                "velocity":   round(note.velocity / 127.0, 2),
+                "confidence": 0.9,
+            })
+    notes.sort(key=lambda n: n["start"])
+    return notes
+
+
+async def detect_notes_with_piano_specialist(wav_path: str) -> pretty_midi.PrettyMIDI:
+    """
+    Send WAV to e7mac/piano_transcription on Replicate, download the
+    returned MIDI from output["midi"], and return a PrettyMIDI object so
+    the downstream generate_musicxml() pipeline is unchanged.
+    """
+    replicate_token = os.environ.get("REPLICATE_API_TOKEN")
+    if not replicate_token:
+        raise RuntimeError("REPLICATE_API_TOKEN environment variable not set")
+
+    # Default SDK read/write timeout is 30 s — far too short for a model that
+    # takes several minutes. Set a generous 10-minute window on all operations.
+    repl_client = replicate.Client(
+        api_token=replicate_token,
+        timeout=httpx.Timeout(connect=10.0, read=600.0, write=600.0, pool=10.0),
+    )
+    print("[piano_specialist] Uploading WAV to Replicate piano_transcription...")
+    with open(wav_path, "rb") as audio_file:
+        output = await asyncio.to_thread(
+            repl_client.run,
+            "e7mac/piano_transcription:cef04ff2582f0c074d828f8947e855fed0aabb2c8bc1caccccd481eb0fb8c933",
+            input={"audio_input": audio_file, "make_video": False},
+            # wait=False skips the 60-second Prefer:wait long-poll (which has a hard
+            # 60.5 s read timeout baked into the SDK) and goes straight to polling.
+            # Each poll GET uses the client's 600 s read timeout instead.
+            wait=False,
+        )
+
+    midi_url = str(output["midi"])
+    print(f"[piano_specialist] Received MIDI URL: {midi_url[:80]}...")
+
+    midi_path = f"/tmp/{uuid.uuid4()}_piano_specialist.mid"
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=60.0) as dl_client:
+            resp = await dl_client.get(midi_url)
+            resp.raise_for_status()
+            with open(midi_path, "wb") as f:
+                f.write(resp.content)
+        print(f"[piano_specialist] Downloaded {len(resp.content)} bytes of MIDI")
+        midi_data = pretty_midi.PrettyMIDI(midi_path)
+        note_count = sum(len(i.notes) for i in midi_data.instruments)
+        print(f"[piano_specialist] PrettyMIDI loaded: {len(midi_data.instruments)} instruments, {note_count} notes")
+        return midi_data
+    finally:
+        if os.path.exists(midi_path):
+            os.remove(midi_path)
+            print(f"[piano_specialist] Cleaned up temp MIDI: {midi_path}")
+
+
 # ─── MusicXML generation ──────────────────────────────────────────────────────
 def generate_musicxml(
     midi_data,
@@ -553,10 +619,22 @@ async def process_audio(request: Request, body: ProcessRequest, _=Depends(verify
         del y
         gc.collect()
 
-        # Step 4: Run Basic Pitch inference
-        print("[process] Step 4: Running Basic Pitch inference...")
-        notes, midi_data = await asyncio.to_thread(detect_notes_with_basic_pitch, wav_path)
-        print(f"[process] Basic Pitch detected {len(notes)} notes")
+        # Step 4: Transcription — piano specialist for piano, Basic Pitch for everything else
+        if body.instrument.strip().lower() == "piano":
+            print("[process] Step 4: Piano detected — routing to piano specialist transcription...")
+            try:
+                midi_data = await detect_notes_with_piano_specialist(wav_path)
+            except Exception as bd_err:
+                print(f"[process] Piano specialist failed: {bd_err}")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Transcription service temporarily unavailable. Please try again.",
+                )
+            notes = _midi_data_to_notes(midi_data)
+        else:
+            print("[process] Step 4: Running Basic Pitch inference...")
+            notes, midi_data = await asyncio.to_thread(detect_notes_with_basic_pitch, wav_path)
+        print(f"[process] Transcription detected {len(notes)} notes")
 
         # Step 5: Generate MusicXML from the MIDI data
         track_name = os.path.splitext(original_name)[0] or "Untitled"
@@ -710,10 +788,22 @@ async def process_with_stems(request: Request, body: ProcessRequest, _=Depends(v
         del y
         gc.collect()
 
-        # Step 8: Run Basic Pitch inference
-        print("[stems] Step 8: Running Basic Pitch inference...")
-        notes, midi_data = await asyncio.to_thread(detect_notes_with_basic_pitch, wav_path)
-        print(f"[stems] Basic Pitch detected {len(notes)} notes.")
+        # Step 8: Transcription — piano specialist for piano, Basic Pitch for everything else
+        if body.instrument.strip().lower() == "piano":
+            print("[stems] Step 8: Piano detected — routing to piano specialist transcription...")
+            try:
+                midi_data = await detect_notes_with_piano_specialist(wav_path)
+            except Exception as bd_err:
+                print(f"[stems] Piano specialist failed: {bd_err}")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Transcription service temporarily unavailable. Please try again.",
+                )
+            notes = _midi_data_to_notes(midi_data)
+        else:
+            print("[stems] Step 8: Running Basic Pitch inference...")
+            notes, midi_data = await asyncio.to_thread(detect_notes_with_basic_pitch, wav_path)
+        print(f"[stems] Transcription detected {len(notes)} notes")
 
         # Step 9: Generate MusicXML from the MIDI data
         track_name = os.path.splitext(original_name)[0] or "Untitled"
