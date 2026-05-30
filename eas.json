@@ -10,23 +10,9 @@
     "preview": {
       "distribution": "internal"
     },
-    "production": {
-      "ios": {
-        "buildNumber": "1"
-      },
-      "android": {
-        "buildNumber": 1,
-        "versionCode": 1
-      }
-    }
+    "production": {}
   },
   "submit": {
-    "production": {
-      "ios": {
-        "appleId": "PLACEHOLDER",
-        "ascAppId": "PLACEHOLDER",
-        "appleTeamId": "PLACEHOLDER"
-      }
-    }
+    "production": {}
   }
 }

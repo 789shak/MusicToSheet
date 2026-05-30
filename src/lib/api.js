@@ -65,7 +65,7 @@ export async function processAudio({ audioUrl, tempFileId, instrument, outputFor
   console.log('[api] POST /process', { audioUrl: audioUrl ?? '(temp file)', tempFileId, instrument, outputFormat });
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 180000);
+  const timeoutId = setTimeout(() => controller.abort(), 300000);
 
   try {
     const response = await fetch(`${API_URL}/process`, {
@@ -103,7 +103,7 @@ export async function processAudioWithStems({ audioUrl, instrument, outputFormat
   console.log('[api] POST /process-with-stems', { audioUrl, instrument, outputFormat });
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 180000);
+  const timeoutId = setTimeout(() => controller.abort(), 580000);
 
   try {
     const response = await fetch(`${API_URL}/process-with-stems`, {

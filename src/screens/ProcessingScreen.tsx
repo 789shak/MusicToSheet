@@ -36,9 +36,12 @@ const STAGES = [
 // Show a cold-start warning if the server hasn't replied within this many ms
 const SLOW_WARNING_MS = 8_000;
 
+// Show a piano-specific progress hint after this many ms
+const PIANO_HINT_MS = 60_000;
+
 // Maximum time to wait for the server before showing a timeout error
-// Demucs (30-60s) + Basic Pitch (10-20s) + music21 (5-10s) = up to 90s; use 300s for safety
-const SERVER_TIMEOUT_MS = 300_000;
+// Piano specialist (up to ~7 min) + Demucs (30-60s) + music21 (5-10s); use 600s to match Render cap
+const SERVER_TIMEOUT_MS = 600_000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
@@ -282,6 +285,7 @@ export default function ProcessingScreen() {
 
   const [currentStage, setCurrentStage] = useState(0);
   const [slowWarning, setSlowWarning] = useState(false);
+  const [pianoHint, setPianoHint] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Pulse animation for the music note icon
@@ -320,11 +324,16 @@ export default function ProcessingScreen() {
   useEffect(() => {
     let cancelled = false;
 
+    const isPiano = (instrument ?? '').trim().toLowerCase() === 'piano';
+
     // Stage timers: advance visually while waiting for the API
     const t1 = setTimeout(() => { if (!cancelled) setCurrentStage((s) => Math.max(s, 1)); }, 2000);
     const t2 = setTimeout(() => { if (!cancelled) setCurrentStage((s) => Math.max(s, 2)); }, 5000);
     const t3 = setTimeout(() => { if (!cancelled) setCurrentStage((s) => Math.max(s, 3)); }, 9000);
     const tSlow = setTimeout(() => { if (!cancelled) setSlowWarning(true); }, SLOW_WARNING_MS);
+    const tPiano = isPiano
+      ? setTimeout(() => { if (!cancelled) setPianoHint(true); }, PIANO_HINT_MS)
+      : null;
 
     async function run() {
       try {
@@ -520,7 +529,7 @@ export default function ProcessingScreen() {
         } else if (msg === '__TIMEOUT__' || e?.name === 'AbortError' || msg.toLowerCase().includes('aborted')) {
           showErrorAlert(
             'Server Timeout',
-            'Processing is taking longer than expected (over 3 minutes). Please try again.',
+            'Processing is taking longer than expected. Please try again with a shorter clip, or contact support if this keeps happening.',
             goBack
           );
 
@@ -551,6 +560,7 @@ export default function ProcessingScreen() {
         clearTimeout(t2);
         clearTimeout(t3);
         clearTimeout(tSlow);
+        if (tPiano) clearTimeout(tPiano);
       }
     }
 
@@ -561,6 +571,7 @@ export default function ProcessingScreen() {
       clearTimeout(t2);
       clearTimeout(t3);
       clearTimeout(tSlow);
+      if (tPiano) clearTimeout(tPiano);
     };
   }, []);
 
@@ -632,6 +643,14 @@ export default function ProcessingScreen() {
         <View style={styles.slowWrap}>
           <Ionicons name="information-circle-outline" size={13} color="#FFFFFF" style={{ marginRight: 6 }} />
           <Text style={styles.slowText}>Your file is being processed, this may take up to 30-60 seconds</Text>
+        </View>
+      )}
+
+      {/* Piano specialist progress hint — shown after 60s on piano requests */}
+      {pianoHint && (
+        <View style={styles.slowWrap}>
+          <Ionicons name="musical-notes-outline" size={13} color="#FFFFFF" style={{ marginRight: 6 }} />
+          <Text style={styles.slowText}>Transcribing piano notes — this can take a few minutes for accuracy.</Text>
         </View>
       )}
 
