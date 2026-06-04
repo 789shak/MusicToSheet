@@ -1,10 +1,5 @@
 import { supabase } from './supabase';
 
-// ─── Dev bypass ───────────────────────────────────────────────────────────────
-// Set to true in development to skip all rate limiting for easier testing.
-// This flag is automatically false in production builds via __DEV__.
-const DEV_BYPASS_RATE_LIMITS = __DEV__ && false; // flip to `true` to bypass during local testing
-
 // ─── Limits ───────────────────────────────────────────────────────────────────
 
 const DAILY_LIMITS = {
@@ -81,11 +76,6 @@ export async function logConversion(userId, trackHash, trackName, instrument, so
  * @returns {Promise<{ allowed: boolean, remaining: number, message: string }>}
  */
 export async function checkRateLimits(userId, tier) {
-  if (DEV_BYPASS_RATE_LIMITS) {
-    console.log(`[ContentRiskEngine] DEV_BYPASS active — skipping daily rate limit (tier: ${tier}, userId: ${userId})`);
-    return { allowed: true, remaining: 999, message: '' };
-  }
-
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const maxPerDay = DAILY_LIMITS[tier] ?? DAILY_LIMITS.free;
 
@@ -129,11 +119,6 @@ export async function checkPerTrackLimits(userId, trackHash, tier) {
   // would block legitimate re-uploads after app restarts.
   if (tier === 'freeGuest') {
     console.log(`[ContentRiskEngine] per-track check skipped — guest users have no per-track limit (userId: ${userId})`);
-    return { allowed: true, attemptsUsed: 0, maxAttempts: Infinity };
-  }
-
-  if (DEV_BYPASS_RATE_LIMITS) {
-    console.log(`[ContentRiskEngine] DEV_BYPASS active — skipping per-track limit (tier: ${tier}, trackHash: ${trackHash})`);
     return { allowed: true, attemptsUsed: 0, maxAttempts: Infinity };
   }
 

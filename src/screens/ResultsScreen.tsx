@@ -128,16 +128,14 @@ export default function ResultsScreen() {
   // While auth is still resolving treat as authenticated so authed users don't see a
   // flash of locked content. Once resolved, no session → guest.
   const isGuest = !authLoading && !session;
-  // TODO: REMOVE BEFORE PRODUCTION — test user bypass
-  const isTestUser = session?.user?.email === 'gyuhfsaaer@gmail.com';
   // Paid tiers get watermark-free PDFs and no page locks
-  const isPro = isTestUser || (tier !== 'free' && tier !== 'freeGuest');
+  const isPro = tier !== 'free' && tier !== 'freeGuest';
   // Guest users see only the first GUEST_PAGE_LIMIT pages clearly; authenticated see all
   const GUEST_PAGE_LIMIT = 2;
-  const lockedFromPage = isGuest && !isTestUser ? GUEST_PAGE_LIMIT : null;
-  const canTranspose = isTestUser || rawCanTranspose;
-  const canBPM = isTestUser || rawCanBPM;
-  const canEdit = isTestUser || rawCanEdit;
+  const lockedFromPage = isGuest ? GUEST_PAGE_LIMIT : null;
+  const canTranspose = rawCanTranspose;
+  const canBPM = rawCanBPM;
+  const canEdit = rawCanEdit;
 
   const [activeFormat, setActiveFormat] = useState('Score');
   const [transposeOffset, setTransposeOffset] = useState(0);
