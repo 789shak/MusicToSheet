@@ -596,8 +596,9 @@ function buildPdfBodyHtml(notes, meta) {
   const NH_RY         = 4;
   const CLEF_W        = 52;
   const TIME_W        = 24;
-  const PER_ROW       = 8;
-  const ROWS_PER_PAGE = 7;
+  const PER_ROW            = 8;
+  const ROWS_PER_PAGE_FIRST = 5;
+  const ROWS_PER_PAGE_REST  = 6;
 
   const NX0_FIRST = CLEF_W + TIME_W + 8;
   const NX0_REST  = CLEF_W + 8;
@@ -624,8 +625,12 @@ function buildPdfBodyHtml(notes, meta) {
     allRows.push(parsed.slice(i, i + PER_ROW));
 
   const allPages = [];
-  for (let p = 0; p < allRows.length; p += ROWS_PER_PAGE)
-    allPages.push(allRows.slice(p, p + ROWS_PER_PAGE));
+  if (allRows.length > 0) {
+    allPages.push(allRows.slice(0, ROWS_PER_PAGE_FIRST));
+    for (let p = ROWS_PER_PAGE_FIRST; p < allRows.length; p += ROWS_PER_PAGE_REST) {
+      allPages.push(allRows.slice(p, p + ROWS_PER_PAGE_REST));
+    }
+  }
 
   // maxPages: optional limit — guest users export only the first N pages
   const maxPages = (meta.maxPages != null) ? Number(meta.maxPages) : null;
@@ -662,7 +667,7 @@ function buildPdfBodyHtml(notes, meta) {
     let svgOut = svgRect(0, 0, W, svgH, '#FFFFFF');
 
     pageRows.forEach((row, ri) => {
-      const globalRi  = pi * ROWS_PER_PAGE + ri;
+      const globalRi  = (pi === 0 ? 0 : ROWS_PER_PAGE_FIRST + (pi - 1) * ROWS_PER_PAGE_REST) + ri;
       const isFirstRow = globalRi === 0;
       const ry  = ri * ROW_H;
       const stT = ry + ST_OFF;
@@ -825,8 +830,9 @@ export function buildScreenHtml(notes, meta) {
   const NH_RY         = 4;
   const CLEF_W        = 52;
   const TIME_W        = 24;
-  const PER_ROW       = 8;
-  const ROWS_PER_PAGE = 7;
+  const PER_ROW            = 8;
+  const ROWS_PER_PAGE_FIRST = 5;
+  const ROWS_PER_PAGE_REST  = 6;
 
   const NX0_FIRST = CLEF_W + TIME_W + 8;
   const NX0_REST  = CLEF_W + 8;
@@ -846,7 +852,10 @@ export function buildScreenHtml(notes, meta) {
     {pitch:'A4',start:6},{pitch:'G4',start:6.5},{pitch:'F4',start:7},{pitch:'E4',start:7.5},
   ];
 
-  const totalPages = Math.ceil(INPUT.length / (ROWS_PER_PAGE * PER_ROW)) || 1;
+  const totalRows  = Math.ceil(INPUT.length / PER_ROW) || 0;
+  const totalPages = totalRows <= ROWS_PER_PAGE_FIRST
+    ? (totalRows > 0 ? 1 : 0)
+    : 1 + Math.ceil((totalRows - ROWS_PER_PAGE_FIRST) / ROWS_PER_PAGE_REST);
   console.log(
     '[SheetMusicViewer] page lock from:', lockedFromPage,
     '| total notes:', INPUT.length, '| total pages:', totalPages
@@ -859,8 +868,12 @@ export function buildScreenHtml(notes, meta) {
     allRows.push(parsed.slice(i, i + PER_ROW));
 
   const pages = [];
-  for (let p = 0; p < allRows.length; p += ROWS_PER_PAGE)
-    pages.push(allRows.slice(p, p + ROWS_PER_PAGE));
+  if (allRows.length > 0) {
+    pages.push(allRows.slice(0, ROWS_PER_PAGE_FIRST));
+    for (let p = ROWS_PER_PAGE_FIRST; p < allRows.length; p += ROWS_PER_PAGE_REST) {
+      pages.push(allRows.slice(p, p + ROWS_PER_PAGE_REST));
+    }
+  }
 
   // ── Build SVG inner content for a slice of rows ────────────────────────────
   // rowsData      : array of parsed-note arrays to render
@@ -989,7 +1002,7 @@ export function buildScreenHtml(notes, meta) {
 
   pages.forEach((pageRows, pi) => {
     const isLastPage    = pi === pages.length - 1;
-    const globalRowStart = pi * ROWS_PER_PAGE;
+    const globalRowStart = pi === 0 ? 0 : ROWS_PER_PAGE_FIRST + (pi - 1) * ROWS_PER_PAGE_REST;
     const isPageLocked  = lockedFromPage !== null && pi >= lockedFromPage;
     const isFirstLocked = lockedFromPage !== null && pi === lockedFromPage;
 

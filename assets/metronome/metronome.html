@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<title>Metronome Audio Engine</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: transparent;
+    overflow: hidden;
+  }
+</style>
+</head>
+<body>
+<script>
+'use strict';
+
+// ─── Web Audio API — sample-accurate scheduling ───────────────────────────
+// AudioContext.currentTime is a double-precision hardware clock that advances
+// at exactly the audio sample rate. Scheduling against it eliminates every
+// source of JS-thread jitter that plagues setTimeout-only approaches.
+
+var audioCtx = null;
+var isPlaying = false;
+var nextNoteTime = 0.0;   // AudioContext time for the next scheduled beat
+var beatCount = 0;         // total beats since last start (absolute index)
+
+// Parameters — updated live via postMessage; scheduler reads them each tick
+var bpm = 120;
+var beatsPerMeasure = 4;
+var volume = 0.8;
+
+// Scheduler tuning
+var LOOKAHEAD_MS = 25;          // how often the scheduler loop fires (ms)
+var SCHEDULE_AHEAD_SEC = 0.1;   // how far ahead to queue beats (seconds)
+
+var schedulerTimer = null;
+
+// ── Audio context ─────────────────────────────────────────────────────────
+function getAudioCtx() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  return audioCtx;
+}
+
+// ── Generate one click via OscillatorNode + GainNode ─────────────────────
+// Sounds are synthesised on-the-fly — no audio files required.
+// All timing is expressed in AudioContext seconds (hardware clock).
+function scheduleClick(absoluteBeatIndex, time) {
+  var ctx = getAudioCtx();
+  var isDownbeat = (absoluteBeatIndex % beatsPerMeasure) === 0;
+  var freq = isDownbeat ? 1500 : 1000;
+  var dur  = 0.04;  // 40 ms click
+
+  var osc  = ctx.createOscillator();
+  var gain = ctx.createGain();
+
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+
+  // Exponential decay envelope — avoids click artefacts at note end
+  gain.gain.setValueAtTime(volume, time);
+  gain.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(time);
+  osc.stop(time + dur);
+
+  // ── Notify React Native when the beat actually fires ──────────────────
+  // Convert AudioContext time to a wall-clock delay so the UI pulse lands
+  // in sync with the audio, not when scheduleClick() was called.
+  var delayMs = Math.max(0, (time - ctx.currentTime) * 1000);
+  var beatInMeasure = (absoluteBeatIndex % beatsPerMeasure) + 1; // 1-indexed
+
+  setTimeout(function () {
+    try {
+      window.ReactNativeWebView.postMessage(JSON.stringify({
+        type: 'beat',
+        beatNumber: beatInMeasure,
+        isDownbeat: isDownbeat
+      }));
+    } catch (e) {}
+  }, delayMs);
+}
+
+// ── Scheduler loop ─────────────────────────────────────────────────────────
+// Runs every LOOKAHEAD_MS milliseconds.  Each run looks SCHEDULE_AHEAD_SEC
+// seconds into the future and queues all beats that fall in that window.
+// The loop itself can be late (JS thread busy), but because each beat is
+// anchored to the hardware AudioContext clock the audio stays tight.
+function scheduler() {
+  if (!isPlaying) return;
+
+  var ctx = getAudioCtx();
+  var beatInterval = 60.0 / bpm;
+
+  while (nextNoteTime < ctx.currentTime + SCHEDULE_AHEAD_SEC) {
+    scheduleClick(beatCount, nextNoteTime);
+    nextNoteTime += beatInterval;
+    beatCount    += 1;
+  }
+
+  schedulerTimer = setTimeout(scheduler, LOOKAHEAD_MS);
+}
+
+// ── Start / Stop ───────────────────────────────────────────────────────────
+function start(params) {
+  if (params.bpm)           bpm             = params.bpm;
+  if (params.timeSignature) beatsPerMeasure = parseBeats(params.timeSignature);
+  if (params.volume != null) volume         = params.volume;
+
+  var ctx = getAudioCtx();
+
+  // iOS suspends AudioContext until a user-gesture; resume here because
+  // the start command is always triggered by a button tap in React Native.
+  if (ctx.state === 'suspended') {
+    ctx.resume().then(function () { _startInternal(ctx); });
+  } else {
+    _startInternal(ctx);
+  }
+}
+
+function _startInternal(ctx) {
+  isPlaying    = true;
+  beatCount    = 0;
+  // Small 50 ms lead-in avoids a click right at t=0 and gives the first
+  // scheduler tick enough room to pre-queue beats before they're due.
+  nextNoteTime = ctx.currentTime + 0.05;
+  scheduler();
+}
+
+function stop() {
+  isPlaying = false;
+  if (schedulerTimer !== null) {
+    clearTimeout(schedulerTimer);
+    schedulerTimer = null;
+  }
+  beatCount = 0;
+}
+
+// ── Parameter helpers ──────────────────────────────────────────────────────
+function parseBeats(timeSig) {
+  // '4/4' → 4, '6/8' → 6, '7/8' → 7, etc.
+  var n = parseInt((timeSig || '4/4').split('/')[0], 10);
+  return (n > 0) ? n : 4;
+}
+
+function setBpm(newBpm) {
+  bpm = newBpm;
+  // No restart needed — the while-loop reads bpm fresh each tick so the
+  // new interval takes effect within the next LOOKAHEAD_MS milliseconds.
+}
+
+function setTimeSignature(newSig) {
+  beatsPerMeasure = parseBeats(newSig);
+  // Beat-number display resets at the next natural measure boundary since
+  // we reset beatCount to the nearest multiple of the new beatsPerMeasure.
+  // Simpler: just reset to 0; a tiny seam in the measure is imperceptible.
+  beatCount = 0;
+}
+
+function setVolume(newVol) {
+  volume = newVol;
+  // Already-scheduled OscillatorNodes captured the old volume at schedule
+  // time, but future beats will use the updated value immediately.
+}
+
+// ── Message handler from React Native ─────────────────────────────────────
+function handleMessage(event) {
+  var msg;
+  try { msg = JSON.parse(event.data); } catch (e) { return; }
+  if (!msg || !msg.type) return;
+
+  switch (msg.type) {
+    case 'start':         start(msg);                   break;
+    case 'stop':          stop();                        break;
+    case 'setBpm':        setBpm(msg.bpm);               break;
+    case 'setTimeSignature': setTimeSignature(msg.timeSignature); break;
+    case 'setVolume':     setVolume(msg.volume);         break;
+  }
+}
+
+// react-native-webview injects into document (not window) on Android
+document.addEventListener('message', handleMessage);
+window.addEventListener('message', handleMessage);
+</script>
+</body>
+</html>
