@@ -1,6 +1,52 @@
+import { supabase } from './supabase';
+
 const API_URL = 'https://musictosheet.onrender.com';
-const API_KEY = 'b7faacf6c9daa1271b763c462dce1f85340db90fe564ddeeba81f14ac132e246';
-const AUTH_HEADERS = { 'X-API-Key': API_KEY, 'Content-Type': 'application/json' };
+
+/**
+ * Return a Supabase access token for the current user. Guests transparently get
+ * an anonymous session the first time, which is then reused (and auto-refreshed
+ * by the supabase client). Throws if a token cannot be obtained.
+ * @returns {Promise<string>} a JWT access token
+ */
+export async function getAccessToken() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session?.access_token) return session.access_token;
+
+  const { data, error } = await supabase.auth.signInAnonymously();
+  if (error) throw new Error(`Anonymous sign-in failed: ${error.message}`);
+  if (!data?.session?.access_token) throw new Error('Anonymous sign-in returned no session');
+  return data.session.access_token;
+}
+
+/**
+ * fetch() wrapper that attaches Authorization: Bearer <token>. On a 401 it
+ * refreshes the Supabase session once and retries exactly once.
+ * @param {string} url
+ * @param {RequestInit} options
+ * @returns {Promise<Response>}
+ */
+export async function authFetch(url, options = {}) {
+  const token = await getAccessToken();
+  const baseHeaders = options.headers ?? {};
+
+  let response = await fetch(url, {
+    ...options,
+    headers: { ...baseHeaders, Authorization: `Bearer ${token}` },
+  });
+
+  if (response.status === 401) {
+    const { data, error } = await supabase.auth.refreshSession();
+    const refreshed = data?.session?.access_token;
+    if (!error && refreshed) {
+      response = await fetch(url, {
+        ...options,
+        headers: { ...baseHeaders, Authorization: `Bearer ${refreshed}` },
+      });
+    }
+  }
+
+  return response;
+}
 
 /**
  * POST /process — send an audio file as multipart/form-data.
@@ -22,9 +68,9 @@ export async function uploadTempFile({ fileUri, mimeType, fileName }) {
   const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s upload timeout
 
   try {
-    const response = await fetch(`${API_URL}/upload-temp`, {
+    // No Content-Type header: the runtime sets the multipart boundary itself.
+    const response = await authFetch(`${API_URL}/upload-temp`, {
       method: 'POST',
-      headers: { 'X-API-Key': API_KEY },
       body: form,
       signal: controller.signal,
     });
@@ -68,9 +114,9 @@ export async function processAudio({ audioUrl, tempFileId, instrument, outputFor
   const timeoutId = setTimeout(() => controller.abort(), 300000);
 
   try {
-    const response = await fetch(`${API_URL}/process`, {
+    const response = await authFetch(`${API_URL}/process`, {
       method: 'POST',
-      headers: AUTH_HEADERS,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         audio_url: audioUrl ?? null,
         temp_file_id: tempFileId ?? null,
@@ -106,9 +152,9 @@ export async function processAudioWithStems({ audioUrl, instrument, outputFormat
   const timeoutId = setTimeout(() => controller.abort(), 580000);
 
   try {
-    const response = await fetch(`${API_URL}/process-with-stems`, {
+    const response = await authFetch(`${API_URL}/process-with-stems`, {
       method: 'POST',
-      headers: AUTH_HEADERS,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ audio_url: audioUrl, instrument, output_format: outputFormat }),
       signal: controller.signal,
     });

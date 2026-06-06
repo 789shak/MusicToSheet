@@ -692,9 +692,27 @@ nav {
   <p>&copy; 2026 Music-To-Sheet. All rights reserved.</p>
 </div>
 
+<!-- Supabase JS v2 (official jsDelivr CDN) — exposes window.supabase.createClient -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const API_URL = 'https://musictosheet.onrender.com';
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+// ─── Supabase auth ───────────────────────────────────────────────────────────
+// Anon key is public by design (safe to embed in client code). Guests get an
+// anonymous session on first use; the server verifies the resulting JWT.
+const SUPABASE_URL = 'https://wlyjrotvjxemzgagpulj.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndseWpyb3R2anhlbXpnYWdwdWxqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjY3MjMsImV4cCI6MjA5MDQ0MjcyM30.UmEfpA50icRhMe3agmDWk0MYaE_g22XGFsBbcJttewI';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Get an access token, signing in anonymously on first use and reusing it after.
+async function getAccessToken() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session?.access_token) return session.access_token;
+  const { data, error } = await sb.auth.signInAnonymously();
+  if (error) throw new Error('Sign-in failed: ' + error.message);
+  return data.session.access_token;
+}
 
 const dropZone = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
@@ -783,8 +801,12 @@ convertBtn.addEventListener('click', async () => {
     const formData = new FormData();
     formData.append('file', selectedFile);
 
+    // Anonymous Supabase session → Bearer token the server verifies via JWKS.
+    const token = await getAccessToken();
+
     const uploadResp = await fetch(`${API_URL}/upload-temp`, {
       method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
       body: formData
     });
 
@@ -803,7 +825,10 @@ convertBtn.addEventListener('click', async () => {
 
     const processResp = await fetch(`${API_URL}/process`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify({
         temp_file_id: tempFileId,
         instrument: instrument,

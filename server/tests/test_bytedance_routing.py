@@ -10,6 +10,11 @@ Four scenarios:
   T3: POST /process-with-stems instrument="Piano"  -> Demucs->ByteDance, 200
   T4: POST /process-with-stems instrument="Guitar" -> Demucs->Basic Pitch, 200
 
+Auth:
+  Protected routes now require a Supabase access token. Export one before running:
+    export SUPABASE_ACCESS_TOKEN=<a valid Supabase JWT>
+  (Obtain it client-side, e.g. supabase.auth.signInAnonymously().)
+
 Usage:
   python tests/test_bytedance_routing.py
   python tests/test_bytedance_routing.py --url http://localhost:8000
@@ -26,7 +31,7 @@ import requests
 
 # ── Config ────────────────────────────────────────────────────────────────────
 DEFAULT_SERVER = "http://localhost:8000"
-API_KEY = os.environ.get("API_SECRET_KEY", "")
+ACCESS_TOKEN = os.environ.get("SUPABASE_ACCESS_TOKEN", "")
 
 # A short piano clip accessible at a public URL.
 # We use a royalty-free MIDI-piano sample from Replicate's own test assets.
@@ -44,8 +49,8 @@ REQUEST_TIMEOUT_S = 720
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def make_headers():
     h = {"Content-Type": "application/json"}
-    if API_KEY:
-        h["X-API-Key"] = API_KEY
+    if ACCESS_TOKEN:
+        h["Authorization"] = f"Bearer {ACCESS_TOKEN}"
     return h
 
 

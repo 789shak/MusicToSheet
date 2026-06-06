@@ -26,6 +26,10 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
+import jwt
+from jwt import PyJWKClient
+from jwt.exceptions import PyJWKClientConnectionError
+
 # ─── App + Rate Limiter ───────────────────────────────────────────────────────
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="Music-To-Sheet API")
@@ -35,9 +39,13 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # ─── CORS ─────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://musictosheet.com", "http://localhost:3000", "*"],
+    allow_origins=[
+        "https://musictosheet.com",
+        "https://www.musictosheet.com",
+        "http://localhost:3000",
+    ],
     allow_methods=["GET", "POST"],
-    allow_headers=["*"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # ─── Security Headers ─────────────────────────────────────────────────────────
@@ -49,20 +57,74 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-XSS-Protection"] = "1; mode=block"
     return response
 
-# ─── API Key Auth ─────────────────────────────────────────────────────────────
-_API_SECRET_KEY = os.environ.get("API_SECRET_KEY", "")
+# ─── Supabase JWT Auth ────────────────────────────────────────────────────────
+# Every protected route requires a valid Supabase access token in the
+# Authorization: Bearer <jwt> header. Tokens are signed with ES256 and verified
+# against the project's JWKS (public keys cached 10 minutes). Anonymous sign-ins
+# are first-class — guests get an anonymous Supabase session and a real JWT.
+#
+# FAILS CLOSED: a missing/invalid/expired token → 401. A misconfigured server
+# (no SUPABASE_URL) or an unreachable JWKS endpoint → 503. The request is never
+# allowed through without a verified token.
+SUPABASE_URL     = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_JWT_AUD = os.environ.get("SUPABASE_JWT_AUD", "authenticated")
 
-_WEB_ORIGINS = {"https://musictosheet.com", "https://www.musictosheet.com"}
+_jwks_client: Optional[PyJWKClient] = None
 
-def verify_api_key(request: Request):
-    if not _API_SECRET_KEY:
-        return  # Not configured — dev mode, skip
-    origin = request.headers.get("Origin", "")
-    if origin in _WEB_ORIGINS:
-        return  # Web demo — origin-based trust, no API key needed
-    key = request.headers.get("X-API-Key", "")
-    if key != _API_SECRET_KEY:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+def _get_jwks_client() -> PyJWKClient:
+    """Lazily build a PyJWKClient that caches the JWK set for 10 minutes."""
+    global _jwks_client
+    if _jwks_client is None:
+        jwks_url = f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json"
+        _jwks_client = PyJWKClient(jwks_url, cache_keys=True, lifespan=600)
+    return _jwks_client
+
+def verify_supabase_jwt(request: Request) -> dict:
+    """FastAPI dependency: verify the Supabase access token. Fails closed."""
+    if not SUPABASE_URL:
+        # Server misconfiguration — never silently skip auth.
+        raise HTTPException(status_code=503, detail="Authentication not configured")
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    token = auth_header[len("Bearer "):].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+
+    # Fetch the signing key from the JWKS. A connection failure must fail closed
+    # as 503 (service issue), never as success.
+    try:
+        signing_key = _get_jwks_client().get_signing_key_from_jwt(token)
+    except PyJWKClientConnectionError:
+        raise HTTPException(status_code=503, detail="Auth key service unavailable")
+    except Exception:
+        # Malformed token header / unknown key id → treat as invalid token.
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    # Verify signature, expiry, and audience.
+    try:
+        claims = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["ES256"],
+            audience=SUPABASE_JWT_AUD,
+            options={"require": ["exp", "sub"]},
+        )
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    request.state.user_id     = claims.get("sub")
+    request.state.is_anonymous = bool(claims.get("is_anonymous", False))
+    request.state.claims      = claims
+    return claims
+
+def rate_limit_key(request: Request) -> str:
+    """Rate-limit protected routes by authenticated user id, falling back to IP."""
+    user_id = getattr(request.state, "user_id", None)
+    if user_id:
+        return f"user:{user_id}"
+    return get_remote_address(request)
 
 # ─── Limits ───────────────────────────────────────────────────────────────────
 MAX_FILE_SIZE_BYTES  = 50 * 1024 * 1024   # 50 MB
@@ -507,8 +569,8 @@ def root():
 
 # ─── /upload-temp (guest file upload) ────────────────────────────────────────
 @app.post("/upload-temp")
-@limiter.limit("20/hour")
-async def upload_temp(request: Request, file: UploadFile = File(...), _=Depends(verify_api_key)):
+@limiter.limit("20/hour", key_func=rate_limit_key)
+async def upload_temp(request: Request, file: UploadFile = File(...), claims=Depends(verify_supabase_jwt)):
     """Accept a multipart audio upload, save to /tmp, return a temp_file_id."""
     ext = os.path.splitext(file.filename or 'audio.mp3')[1].lower() or '.mp3'
     temp_id = str(uuid.uuid4())
@@ -529,8 +591,8 @@ async def upload_temp(request: Request, file: UploadFile = File(...), _=Depends(
 
 
 @app.post("/process")
-@limiter.limit("30/hour")
-async def process_audio(request: Request, body: ProcessRequest, _=Depends(verify_api_key)):
+@limiter.limit("30/hour", key_func=rate_limit_key)
+async def process_audio(request: Request, body: ProcessRequest, claims=Depends(verify_supabase_jwt)):
     tmp_path = None
     wav_path = None
     ip = get_remote_address(request)
@@ -675,8 +737,8 @@ async def process_audio(request: Request, body: ProcessRequest, _=Depends(verify
 
 # ─── /process-with-stems ──────────────────────────────────────────────────────
 @app.post("/process-with-stems")
-@limiter.limit("30/hour")
-async def process_with_stems(request: Request, body: ProcessRequest, _=Depends(verify_api_key)):
+@limiter.limit("30/hour", key_func=rate_limit_key)
+async def process_with_stems(request: Request, body: ProcessRequest, claims=Depends(verify_supabase_jwt)):
     tmp_path = None
     wav_path = None
     stem_path = None
@@ -847,8 +909,8 @@ async def process_with_stems(request: Request, body: ProcessRequest, _=Depends(v
 
 # ─── Clean Audio Endpoint ─────────────────────────────────────────────────────
 @app.post("/clean-audio")
-@limiter.limit("10/hour")
-async def clean_audio(request: Request, _=Depends(verify_api_key)):
+@limiter.limit("10/hour", key_func=rate_limit_key)
+async def clean_audio(request: Request, claims=Depends(verify_supabase_jwt)):
     try:
         data = await request.json()
         audio_url = data.get("audio_url")

@@ -11,3 +11,4 @@ basic-pitch
 music21
 noisereduce
 slowapi
+PyJWT[crypto]==2.10.1
