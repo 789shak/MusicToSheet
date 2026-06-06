@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
+import { setResult, makeResultId } from '../lib/resultStore';
 import { processAudio, processAudioWithStems, uploadTempFile } from '../lib/api';
 import { useSubscription } from '../hooks/useSubscription';
 import {
@@ -437,10 +438,18 @@ export default function ProcessingScreen() {
           sourceType === 'recording' ? 'Voice Recording' :
           (fileName || 'Untitled');
 
+        // Stash the heavy payload (notes + MusicXML) in the in-memory store and
+        // pass only a short id through navigation params. Large JSON/XML strings
+        // can be truncated or corrupted when routed as params, which previously
+        // crashed the Results screen (black screen) on parse.
+        const resultId = makeResultId();
+        setResult(resultId, {
+          notes:    result.notes ?? [],
+          musicxml: result.musicxml ?? '',
+        });
         const resultParams = {
-          notesJson:       JSON.stringify(result.notes ?? []),
+          resultId,
           durationSeconds: String(result.duration_seconds ?? 30),
-          musicxml:        result.musicxml ?? '',
         };
 
         // Guest users: skip DB insert, navigate with notes in params only.

@@ -11,11 +11,12 @@ import {
   Alert,
 } from 'react-native';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
-import { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { supabase } from '../lib/supabase';
+import { takeResult } from '../lib/resultStore';
 import { useSubscription } from '../hooks/useSubscription';
 import { useAuth } from '../hooks/useAuth';
 import SheetMusicViewer, { buildStaticPdfHtml, buildScreenHtml } from '../components/SheetMusicViewer';
@@ -102,20 +103,107 @@ const toast = StyleSheet.create({
   text: { color: '#FFFFFF', fontSize: 13, fontWeight: '500' },
 });
 
+// ─── Styled status screen (error / empty states) ─────────────────────────────
+// Shared dark-themed full-screen state with an accent icon and a Back button.
+// Used for both the "load failed" and "no notes detected" cases so the user
+// never lands on a blank black screen.
+function StatusScreen({ title, subtitle, onBack }: { title: string; subtitle?: string; onBack: () => void }) {
+  return (
+    <View style={status.root}>
+      <Stack.Screen
+        options={{
+          headerShown: true,
+          headerStyle: { backgroundColor: '#111118' },
+          headerTintColor: '#FFFFFF',
+          headerTitle: '',
+        }}
+      />
+      <Ionicons name="musical-notes-outline" size={48} color="#0EA5E9" style={{ marginBottom: 16 }} />
+      <Text style={status.title}>{title}</Text>
+      {subtitle ? <Text style={status.subtitle}>{subtitle}</Text> : null}
+      <TouchableOpacity style={status.backBtn} onPress={onBack} activeOpacity={0.85}>
+        <Text style={status.backBtnText}>Back</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// Fallback rendered by ErrorBoundary — needs router, so it's its own component.
+function ErrorFallback() {
+  const router = useRouter();
+  return (
+    <StatusScreen
+      title="Something went wrong loading this sheet"
+      onBack={() => router.replace('/upload')}
+    />
+  );
+}
+
+// ─── Error boundary ──────────────────────────────────────────────────────────
+// Catches any render-time throw inside the Results screen and shows the styled
+// error state instead of unmounting to a black screen.
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('[ResultsScreen] ErrorBoundary caught:', error, info);
+  }
+
+  render() {
+    if (this.state.hasError) return <ErrorFallback />;
+    return this.props.children;
+  }
+}
+
 // ─── Main Screen ────────────────────────────────────────────────────────────
 export default function ResultsScreen() {
+  return (
+    <ErrorBoundary>
+      <ResultsScreenInner />
+    </ErrorBoundary>
+  );
+}
+
+function ResultsScreenInner() {
   const router = useRouter();
-  const { historyId, notesJson, durationSeconds, musicxml } = useLocalSearchParams<{
+  const { historyId, resultId, durationSeconds } = useLocalSearchParams<{
     historyId?: string;
-    notesJson?: string;
+    resultId?: string;
     durationSeconds?: string;
-    musicxml?: string;
   }>();
 
-  // notes may arrive via params (fresh processing) or be loaded from output_data (history replay)
-  const [notes, setNotes] = useState<{ pitch: string; start: number; duration: number }[]>(
-    () => (notesJson ? JSON.parse(notesJson) : [])
-  );
+  // Read the heavy payload (notes + MusicXML) from the in-memory store exactly
+  // once, guarded. Nothing here can throw into render: a missing/corrupt payload
+  // surfaces as loadError and renders the styled error state below.
+  const initial = useRef<{ notes: { pitch: string; start: number; duration: number }[]; musicxml: string | null; loadError: boolean } | null>(null);
+  if (initial.current === null) {
+    try {
+      const payload: any = resultId ? takeResult(resultId) : null;
+      const rawNotes = payload?.notes;
+      const rawXml = payload?.musicxml;
+      initial.current = {
+        notes: Array.isArray(rawNotes) ? rawNotes : [],
+        musicxml: typeof rawXml === 'string' && rawXml.length > 0 ? rawXml : null,
+        loadError: false,
+      };
+    } catch (e) {
+      console.error('[ResultsScreen] failed to load result payload from store:', e);
+      initial.current = { notes: [], musicxml: null, loadError: true };
+    }
+  }
+
+  // notes may arrive via the store (fresh processing) or be loaded from
+  // output_data (history replay). Original notes are never mutated in place.
+  const [notes, setNotes] = useState<{ pitch: string; start: number; duration: number }[]>(initial.current.notes);
+  const [musicxml] = useState<string | null>(initial.current.musicxml);
+  const [loadError, setLoadError] = useState(initial.current.loadError);
+  // History replay loads notes asynchronously — stay in a loading state until
+  // the fetch resolves so we don't flash the "no notes" screen prematurely.
+  const [historyLoading, setHistoryLoading] = useState(!!historyId);
   const { show: showToast, message: toastMessage, opacity: toastOpacity } = useToast();
 
   const { tier, canTranspose: rawCanTranspose, canBPM: rawCanBPM, canEdit: rawCanEdit } = useSubscription();
@@ -287,15 +375,19 @@ export default function ResultsScreen() {
           setTrackRecord(data);
           if (data?.transpose_semitones != null) setTransposeOffset(data.transpose_semitones);
           if (data?.bpm != null) setBpm(data.bpm);
-          // Populate notes from saved output_data when not passed via params
-          if (!notesJson && data?.output_data) {
+          // Populate notes from saved output_data when none arrived via the store.
+          // Guarded: a corrupt output_data string shows the error state, not a crash.
+          if (notes.length === 0 && data?.output_data) {
             try {
-              setNotes(JSON.parse(data.output_data));
+              const parsed = JSON.parse(data.output_data);
+              if (Array.isArray(parsed)) setNotes(parsed);
             } catch (e) {
-              console.log('[ResultsScreen] failed to parse output_data:', e);
+              console.error('[ResultsScreen] failed to parse output_data:', e);
+              setLoadError(true);
             }
           }
         }
+        setHistoryLoading(false);
       });
   }, [historyId]);
 
@@ -451,6 +543,28 @@ export default function ResultsScreen() {
     } else {
       heartScale.setValue(1);
     }
+  }
+
+  // A payload that was lost or failed to parse → styled error, never a blank screen.
+  if (loadError) {
+    return (
+      <StatusScreen
+        title="Something went wrong loading this sheet"
+        onBack={() => router.replace('/upload')}
+      />
+    );
+  }
+
+  // Processing produced nothing usable → explicit empty state, not a dark WebView.
+  // Gated on historyLoading so a history-replay fetch in flight doesn't flash this.
+  if (!historyLoading && notes.length === 0 && !musicxml) {
+    return (
+      <StatusScreen
+        title="No notes detected in this audio"
+        subtitle="Try a clearer recording or a track with a stronger melody."
+        onBack={() => router.replace('/upload')}
+      />
+    );
   }
 
   return (
@@ -854,6 +968,38 @@ const header = StyleSheet.create({
     paddingVertical: 5,
   },
   newBtnText: { color: '#0EA5E9', fontSize: 13, fontWeight: '600' },
+});
+
+// Styled error / empty status screen
+const status = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: '#111118',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  title: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  subtitle: {
+    color: '#9CA3AF',
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  backBtn: {
+    backgroundColor: '#0EA5E9',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 36,
+    marginTop: 8,
+  },
+  backBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
 });
 
 const styles = StyleSheet.create({
