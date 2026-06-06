@@ -583,6 +583,8 @@ function buildPdfBodyHtml(notes, meta) {
   const fileName  = meta.fileName ? htmlEsc(String(meta.fileName)) : null;
   const duration  = meta.duration ? htmlEsc(String(meta.duration)) : null;
   const dateTime  = meta.dateTime ? htmlEsc(String(meta.dateTime)) : null;
+  // Free-tier exports carry a closing notice line on the last page.
+  const previewNotice = meta.previewNotice ? htmlEsc(String(meta.previewNotice)) : null;
 
   const DEGREE    = { C:0, D:1, E:2, F:3, G:4, A:5, B:6 };
   const BEATS     = 4;
@@ -756,6 +758,9 @@ function buildPdfBodyHtml(notes, meta) {
     bodyHtml += '<div class="page' + (isLastPage ? '' : ' break') + '">';
     if (pi === 0) bodyHtml += HEADER_HTML;
     bodyHtml += '<svg width="' + W + '" height="' + svgH + '" xmlns="http://www.w3.org/2000/svg">' + svgOut + '</svg>';
+    if (isLastPage && previewNotice) {
+      bodyHtml += '<div class="preview-notice">' + previewNotice + '</div>';
+    }
     bodyHtml += FOOTER_HTML;
     bodyHtml += '</div>';
   });
@@ -788,6 +793,7 @@ export function buildStaticPdfHtml(notes, meta) {
   .meta-lbl   { color: #888888; font-weight: 600; display: inline-block; min-width: 75px; }
   .meta-sep   { display: none; }
   .footer { padding-top: 10px; border-top: 1px solid #E5E7EB; font-size: 9px; color: #333333; text-align: center; margin-top: 8px; }
+  .preview-notice { margin-top: 14px; text-align: center; font-size: 11px; font-weight: 600; color: #0EA5E9; }
 </style>
 </head>
 <body>
@@ -1019,11 +1025,10 @@ export function buildScreenHtml(notes, meta) {
         bodyHtml +=
           '<div class="upgrade-overlay">'
           + '<div class="upgrade-icon">\uD83D\uDD12</div>'
-          + '<div class="upgrade-heading">Unlock All Pages</div>'
-          + '<button class="upgrade-btn-primary" onclick="postNav(\'/\')">'
-          + 'Sign Up Free \u2014 Unlock All Pages</button>'
-          + '<button class="upgrade-btn-outline" onclick="postNav(\'/subscription\')">'
-          + 'Upgrade to Pro \u2014 Remove Watermark</button>'
+          + '<div class="upgrade-heading">Preview ends at 0:30</div>'
+          + '<div class="upgrade-subtext">Unlock the full sheet for $1.99</div>'
+          + '<button class="upgrade-btn-primary" onclick="postNav(\'/subscription\')">'
+          + 'Unlock Full Sheet</button>'
           + '</div>';
       }
       const { content, height } = buildRowsSvg(pageRows, globalRowStart);
@@ -1078,6 +1083,9 @@ export function buildScreenHtml(notes, meta) {
   .upgrade-icon { font-size: 26px; }
   .upgrade-heading {
     color: #FFFFFF; font-size: 18px; font-weight: 700; font-family: sans-serif;
+  }
+  .upgrade-subtext {
+    color: #9CA3AF; font-size: 13px; font-family: sans-serif; margin-top: -4px;
   }
   .upgrade-btn-primary {
     width: 100%; background: #0EA5E9; color: #FFFFFF;

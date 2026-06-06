@@ -20,6 +20,7 @@ import { takeResult } from '../lib/resultStore';
 import { useSubscription } from '../hooks/useSubscription';
 import { useAuth } from '../hooks/useAuth';
 import SheetMusicViewer, { buildStaticPdfHtml, buildScreenHtml } from '../components/SheetMusicViewer';
+import { FREE_PREVIEW_SECONDS, pageForNoteIndex } from '../components/sheetLayout';
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 const FORMATS = ['Score', 'Part', 'Lead Sheet', 'Tabs', 'Fake Book', 'Staff'];
@@ -216,11 +217,12 @@ function ResultsScreenInner() {
   // While auth is still resolving treat as authenticated so authed users don't see a
   // flash of locked content. Once resolved, no session → guest.
   const isGuest = !authLoading && !session;
-  // Paid tiers get watermark-free PDFs and no page locks
-  const isPro = tier !== 'free' && tier !== 'freeGuest';
-  // Guest users see only the first GUEST_PAGE_LIMIT pages clearly; authenticated see all
-  const GUEST_PAGE_LIMIT = 2;
-  const lockedFromPage = isGuest ? GUEST_PAGE_LIMIT : null;
+  // Free tiers (guest + signed-in free) get the watermark and the 30s preview
+  // lock. payAsYouGo (track already paid for at upload), advancedPro and
+  // virtuosos are unlocked. Server-side enforcement arrives with RevenueCat;
+  // this is cosmetic client-side gating.
+  const isFreeTier = tier === 'free' || tier === 'freeGuest';
+  const isPro = !isFreeTier;
   const canTranspose = rawCanTranspose;
   const canBPM = rawCanBPM;
   const canEdit = rawCanEdit;
@@ -248,9 +250,21 @@ function ResultsScreenInner() {
     [notes, transposeOffset]
   );
 
-  // Build SVG-based preview. Guest users see pages 1-2 clearly; pages 3+ are
-  // CSS-blurred in the WebView with an inline upgrade overlay. Authenticated
-  // users (free or paid) see all pages clearly.
+  // Preview lock boundary: free tiers see notes clearly only for the first
+  // FREE_PREVIEW_SECONDS. Find the first note that starts at/after the cutoff
+  // and lock from the page it lands on. Transpose doesn't change start times,
+  // so this is driven by the original notes. null → no lock (paid, or the whole
+  // track fits inside the preview window).
+  const lockedFromPage = useMemo<number | null>(() => {
+    if (!isFreeTier) return null;
+    const idx = notes.findIndex(n => (n.start ?? 0) >= FREE_PREVIEW_SECONDS);
+    if (idx === -1) return null;
+    return pageForNoteIndex(idx);
+  }, [isFreeTier, notes]);
+
+  // Build SVG-based preview. Free tiers see the first 30 seconds clearly; pages
+  // from lockedFromPage onward are CSS-blurred in the WebView with an inline
+  // upgrade overlay. Paid tiers see all pages clearly.
   const previewHtml = useMemo(
     () => {
       const PER_PAGE   = 48; // 6 rows × 8 notes per row
@@ -412,8 +426,11 @@ function ResultsScreenInner() {
       bpm,
       date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
       watermark:  !isPro,
-      // Guest exports are capped at 2 pages; authenticated users get all pages
-      maxPages:   isGuest ? GUEST_PAGE_LIMIT : undefined,
+      // Free exports are sliced to the 30s preview window (see generatePdf) and
+      // get a closing notice line; paid exports get the full sheet, no notice.
+      previewNotice: isFreeTier
+        ? 'Preview — first 30 seconds. Full sheet at musictosheet.com'
+        : undefined,
       username:   pdfUsername,
       fileName:   trackRecord?.file_name ?? trackRecord?.track_name ?? null,
       duration:   pdfDur,
@@ -422,7 +439,11 @@ function ResultsScreenInner() {
   }
 
   async function generatePdf(notes: typeof displayNotes): Promise<string> {
-    const trimmedNotes = notes.length > 200 ? notes.slice(0, 200) : notes;
+    // Free tiers export only the notes inside the 30s preview window.
+    const scopedNotes = isFreeTier
+      ? notes.filter(n => (n.start ?? 0) < FREE_PREVIEW_SECONDS)
+      : notes;
+    const trimmedNotes = scopedNotes.length > 200 ? scopedNotes.slice(0, 200) : scopedNotes;
     const html = buildStaticPdfHtml(trimmedNotes, pdfMeta());
 
     console.log('PDF SHARE: Starting PDF generation');
@@ -450,8 +471,8 @@ function ResultsScreenInner() {
 
   async function handleShare() {
     setShareLoading(true);
-    if (isGuest) {
-      showToast(`Sharing first ${GUEST_PAGE_LIMIT} pages — sign up to share all pages`);
+    if (isFreeTier) {
+      showToast('Exporting the first 30 seconds — upgrade for the full sheet');
     }
     try {
       const uri = await generatePdf(displayNotes);
