@@ -171,3 +171,45 @@ export async function processAudioWithStems({ audioUrl, instrument, outputFormat
     clearTimeout(timeoutId);
   }
 }
+
+/**
+ * POST /process-async — submit a job and return {job_id} immediately (HTTP 202).
+ * The server runs the full stems pipeline in the background; poll with pollJob().
+ * @param {{ audioUrl: string, instrument: string, outputFormat: string }} params
+ * @returns {Promise<{job_id: string}>}
+ */
+export async function processAudioAsync({ audioUrl, instrument, outputFormat }) {
+  console.log('[api] POST /process-async', { audioUrl, instrument, outputFormat });
+
+  const response = await authFetch(`${API_URL}/process-async`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ audio_url: audioUrl, instrument, output_format: outputFormat }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Server error ${response.status}: ${text}`);
+  }
+
+  const data = await response.json();
+  console.log('[api] /process-async response:', data);
+  return data; // { job_id }
+}
+
+/**
+ * GET /jobs/{jobId} — poll for job status.
+ * @param {string} jobId
+ * @returns {Promise<{job_id: string, status: string, stage: string|null,
+ *   progress_pct: number, result: object|null, error_detail: string|null}>}
+ */
+export async function pollJob(jobId) {
+  const response = await authFetch(`${API_URL}/jobs/${jobId}`);
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Server error ${response.status}: ${text}`);
+  }
+
+  return response.json();
+}

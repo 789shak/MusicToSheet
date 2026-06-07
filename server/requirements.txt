@@ -12,3 +12,4 @@ music21
 noisereduce
 slowapi
 PyJWT[crypto]==2.10.1
+supabase==2.9.1

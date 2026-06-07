@@ -7,6 +7,7 @@ import gc
 import time
 import base64 as _base64
 from collections import defaultdict
+from datetime import datetime, timezone
 from typing import Optional
 
 import numpy as np
@@ -18,7 +19,7 @@ import pretty_midi
 import replicate
 from basic_pitch.inference import predict
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, Depends
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, Depends, BackgroundTasks
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -29,6 +30,8 @@ from slowapi.errors import RateLimitExceeded
 import jwt
 from jwt import PyJWKClient
 from jwt.exceptions import PyJWKClientConnectionError
+
+from supabase import create_client as _create_supabase_client
 
 # ─── App + Rate Limiter ───────────────────────────────────────────────────────
 limiter = Limiter(key_func=get_remote_address)
@@ -66,8 +69,9 @@ async def add_security_headers(request: Request, call_next):
 # FAILS CLOSED: a missing/invalid/expired token → 401. A misconfigured server
 # (no SUPABASE_URL) or an unreachable JWKS endpoint → 503. The request is never
 # allowed through without a verified token.
-SUPABASE_URL     = os.environ.get("SUPABASE_URL", "").rstrip("/")
-SUPABASE_JWT_AUD = os.environ.get("SUPABASE_JWT_AUD", "authenticated")
+SUPABASE_URL          = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_JWT_AUD      = os.environ.get("SUPABASE_JWT_AUD", "authenticated")
+SUPABASE_SERVICE_KEY  = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 
 _jwks_client: Optional[PyJWKClient] = None
 
@@ -78,6 +82,29 @@ def _get_jwks_client() -> PyJWKClient:
         jwks_url = f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json"
         _jwks_client = PyJWKClient(jwks_url, cache_keys=True, lifespan=600)
     return _jwks_client
+
+# ─── Supabase Admin Client (service role — bypasses RLS) ─────────────────────
+_supabase_admin = None
+
+def _get_supabase_admin():
+    """Lazily create a Supabase admin client using the service role key."""
+    global _supabase_admin
+    if _supabase_admin is None:
+        if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+            raise RuntimeError("SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not configured")
+        _supabase_admin = _create_supabase_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    return _supabase_admin
+
+async def _update_job(job_id: str, **fields) -> None:
+    """UPDATE public.jobs SET ... WHERE id = job_id. Swallows errors (non-fatal)."""
+    fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+    try:
+        await asyncio.to_thread(
+            lambda: _get_supabase_admin().table("jobs").update(fields).eq("id", job_id).execute()
+        )
+    except Exception as ex:
+        print(f"[jobs] DB update failed (non-fatal) for job {job_id}: {ex}")
+
 
 def verify_supabase_jwt(request: Request) -> dict:
     """FastAPI dependency: verify the Supabase access token. Fails closed."""
@@ -905,6 +932,264 @@ async def process_with_stems(request: Request, body: ProcessRequest, claims=Depe
             if f and os.path.exists(f):
                 os.remove(f)
                 print(f"[stems] Deleted temp file: {f}")
+
+
+# ─── Async job: background pipeline ─────────────────────────────────────────
+async def _run_stems_pipeline(job_id: str, body: ProcessRequest) -> None:
+    """
+    Runs the full stems + transcription pipeline as a FastAPI BackgroundTask.
+    Writes stage/progress updates to public.jobs throughout, then writes
+    result_data on success or error_detail on failure.
+    """
+    tmp_path = None
+    wav_path = None
+    stem_path = None
+
+    try:
+        # ── Mark as processing ────────────────────────────────────────────────
+        await _update_job(
+            job_id,
+            status="processing",
+            started_at=datetime.now(timezone.utc).isoformat(),
+            stage="downloading",
+            progress_pct=10,
+        )
+
+        # ── Step 1: Download original audio ──────────────────────────────────
+        print(f"[process-async] [{job_id}] Step 1: Downloading audio…")
+        original_name = (body.audio_url or "audio").split("?")[0].split("/")[-1] or "audio"
+        ext = os.path.splitext(original_name)[1].lower() or ".mp3"
+        uid = str(uuid.uuid4())
+        tmp_path = f"/tmp/{uid}{ext}"
+
+        file_size = await download_audio(body.audio_url, tmp_path)
+        print(f"[process-async] [{job_id}] Downloaded {file_size} bytes → {tmp_path}")
+        if file_size < 1000:
+            raise Exception(f"Downloaded file too small ({file_size} bytes)")
+        _validate_file_size(tmp_path, "Downloaded file")
+
+        # ── Step 2: Demucs stem separation ───────────────────────────────────
+        await _update_job(job_id, stage="separating_stems", progress_pct=30)
+        print(f"[process-async] [{job_id}] Step 2: Running Demucs via Replicate…")
+
+        replicate_token = os.environ.get("REPLICATE_API_TOKEN")
+        if not replicate_token:
+            raise Exception("REPLICATE_API_TOKEN not set")
+
+        repl_client = replicate.Client(api_token=replicate_token)
+        output = await asyncio.to_thread(
+            repl_client.run,
+            "cjwbw/demucs:25a173108cff36ef9f80f854c162d01df9e6528be175794b81158fa03836d953",
+            input={"audio": body.audio_url},
+        )
+        print(f"[process-async] [{job_id}] Demucs output type: {type(output)}, value: {output}")
+
+        # Parse stem URLs from Demucs output
+        detected_stems = []
+        stem_urls = {}
+        if isinstance(output, dict):
+            for stem_name in ("vocals", "drums", "bass", "other"):
+                if output.get(stem_name):
+                    detected_stems.append(stem_name)
+                    stem_urls[stem_name] = str(output[stem_name])
+        else:
+            stem_order = ["drums", "bass", "other", "vocals"]
+            for idx, url in enumerate(output or []):
+                if idx < len(stem_order) and url:
+                    name = stem_order[idx]
+                    detected_stems.append(name)
+                    stem_urls[name] = str(url)
+        print(f"[process-async] [{job_id}] Detected stems: {detected_stems}")
+
+        # ── Step 3: Pick stem + convert to WAV ───────────────────────────────
+        selected_stem = INSTRUMENT_TO_STEM.get(body.instrument)
+        print(f"[process-async] [{job_id}] Instrument '{body.instrument}' → stem '{selected_stem}'")
+
+        if selected_stem is None or selected_stem not in stem_urls:
+            audio_for_detection = tmp_path
+        else:
+            stem_path = f"/tmp/{uid}_stem.wav"
+            print(f"[process-async] [{job_id}] Downloading stem '{selected_stem}'…")
+            stem_size = await download_audio(stem_urls[selected_stem], stem_path)
+            print(f"[process-async] [{job_id}] Stem: {stem_size} bytes")
+            audio_for_detection = stem_path
+
+        wav_path = f"/tmp/{uid}_out.wav"
+        print(f"[process-async] [{job_id}] Converting to WAV…")
+        conv = subprocess.run(
+            ['ffmpeg', '-i', audio_for_detection, '-ar', '22050', '-ac', '1', '-sample_fmt', 's16', wav_path, '-y'],
+            capture_output=True, text=True,
+        )
+        if conv.returncode != 0:
+            raise Exception(f"ffmpeg failed: {conv.stderr}")
+
+        # Noise reduction
+        _nr_y, _nr_sr = sf.read(wav_path)
+        _nr_reduced = nr.reduce_noise(
+            y=_nr_y, sr=_nr_sr,
+            prop_decrease=0.6, stationary=False, n_fft=2048, freq_mask_smooth_hz=500,
+        )
+        sf.write(wav_path, _nr_reduced, _nr_sr)
+        del _nr_y, _nr_reduced
+        gc.collect()
+
+        # Duration
+        _y, _sr = librosa.load(wav_path, sr=22050, mono=True)
+        duration_seconds = float(librosa.get_duration(y=_y, sr=_sr))
+        del _y
+        gc.collect()
+
+        # ── Step 4: Transcription ─────────────────────────────────────────────
+        await _update_job(job_id, stage="transcribing", progress_pct=60)
+        print(f"[process-async] [{job_id}] Step 4: Transcription…")
+
+        if body.instrument.strip().lower() == "piano":
+            print(f"[process-async] [{job_id}] Routing to piano specialist…")
+            midi_data = await detect_notes_with_piano_specialist(wav_path)
+            notes = _midi_data_to_notes(midi_data)
+        else:
+            notes, midi_data = await asyncio.to_thread(detect_notes_with_basic_pitch, wav_path)
+        print(f"[process-async] [{job_id}] Transcription: {len(notes)} notes")
+
+        # ── Step 5: MusicXML generation ───────────────────────────────────────
+        await _update_job(job_id, stage="generating_xml", progress_pct=85)
+        track_name = os.path.splitext(original_name)[0] or "Untitled"
+        print(f"[process-async] [{job_id}] Step 5: MusicXML generation…")
+        musicxml, transposed_notes = await asyncio.to_thread(
+            generate_musicxml, midi_data, track_name, body.instrument, 120
+        )
+        if musicxml:
+            print(f"[process-async] [{job_id}] MusicXML ready ({len(musicxml):,} chars)")
+        gc.collect()
+
+        # ── Done: write result ────────────────────────────────────────────────
+        result_payload = {
+            "status":           "success",
+            "track_name":       track_name,
+            "instrument":       body.instrument,
+            "format":           body.output_format,
+            "duration_seconds": round(duration_seconds),
+            "notes":            transposed_notes or notes,
+            "musicxml":         musicxml,
+            "confidence":       0.90,
+            "stems_detected":   detected_stems,
+            "stem_used":        selected_stem,
+        }
+        await _update_job(
+            job_id,
+            status="done",
+            stage="complete",
+            progress_pct=100,
+            result_data=result_payload,
+            completed_at=datetime.now(timezone.utc).isoformat(),
+        )
+        print(f"[process-async] [{job_id}] Job completed successfully")
+
+    except Exception as e:
+        print(f"[process-async] [{job_id}] Job failed: {e}\n{traceback.format_exc()}")
+        await _update_job(
+            job_id,
+            status="error",
+            error_detail=str(e)[:2000],
+            completed_at=datetime.now(timezone.utc).isoformat(),
+        )
+    finally:
+        for f in [tmp_path, wav_path, stem_path]:
+            if f and os.path.exists(f):
+                try:
+                    os.remove(f)
+                    print(f"[process-async] [{job_id}] Deleted temp file: {f}")
+                except Exception:
+                    pass
+
+
+# ─── POST /process-async ──────────────────────────────────────────────────────
+@app.post("/process-async", status_code=202)
+@limiter.limit("30/hour", key_func=rate_limit_key)
+async def process_async_endpoint(
+    request: Request,
+    body: ProcessRequest,
+    background_tasks: BackgroundTasks,
+    claims=Depends(verify_supabase_jwt),
+):
+    """
+    Accept a stems-processing job, persist it to public.jobs, launch it as a
+    BackgroundTask, and immediately return {job_id} (HTTP 202 Accepted).
+    Clients poll GET /jobs/{job_id} to check progress.
+    """
+    if not body.audio_url:
+        raise HTTPException(status_code=400, detail="process-async requires audio_url")
+    _validate_url(body.audio_url)
+
+    if not SUPABASE_SERVICE_KEY:
+        raise HTTPException(status_code=503, detail="Job tracking not configured on this server")
+
+    body.instrument    = (body.instrument    or "")[:64].strip()
+    body.output_format = (body.output_format or "")[:32].strip()
+
+    ip = get_remote_address(request)
+    _check_abuse(ip, body.audio_url[:80])
+
+    user_id = request.state.user_id
+
+    # INSERT the job row; service role bypasses RLS
+    try:
+        resp = await asyncio.to_thread(
+            lambda: _get_supabase_admin().table("jobs").insert({
+                "user_id":      user_id,
+                "endpoint":     "/process-async",
+                "audio_url":    body.audio_url,
+                "instrument":   body.instrument,
+                "output_format": body.output_format,
+                "status":       "queued",
+                "progress_pct": 0,
+            }).execute()
+        )
+        job_id = resp.data[0]["id"]
+    except Exception as e:
+        print(f"[process-async] Failed to insert job row: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create job")
+
+    background_tasks.add_task(_run_stems_pipeline, job_id, body)
+    print(f"[process-async] Job {job_id} queued for user {user_id}")
+    return {"job_id": job_id}
+
+
+# ─── GET /jobs/{job_id} ───────────────────────────────────────────────────────
+@app.get("/jobs/{job_id}")
+async def get_job(job_id: str, request: Request, claims=Depends(verify_supabase_jwt)):
+    """
+    Return the current status + result of a job.
+    The requesting user must own the job (user_id match); otherwise 403.
+    """
+    if not SUPABASE_SERVICE_KEY:
+        raise HTTPException(status_code=503, detail="Job tracking not configured on this server")
+
+    try:
+        resp = await asyncio.to_thread(
+            lambda: _get_supabase_admin().table("jobs").select("*").eq("id", job_id).execute()
+        )
+    except Exception as e:
+        print(f"[jobs] DB read failed for job {job_id}: {e}")
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if not resp.data:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job = resp.data[0]
+
+    # Ownership check: job must belong to the authenticated user
+    if job.get("user_id") != request.state.user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    return {
+        "job_id":       job["id"],
+        "status":       job["status"],
+        "stage":        job.get("stage"),
+        "progress_pct": job.get("progress_pct", 0),
+        "result":       job.get("result_data"),       # full result dict when status='done'
+        "error_detail": job.get("error_detail"),      # error string when status='error'
+    }
 
 
 # ─── Clean Audio Endpoint ─────────────────────────────────────────────────────

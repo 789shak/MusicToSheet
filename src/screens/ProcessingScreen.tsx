@@ -12,7 +12,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { setResult, makeResultId } from '../lib/resultStore';
-import { processAudio, processAudioWithStems, uploadTempFile } from '../lib/api';
+import { processAudio, uploadTempFile, processAudioAsync, pollJob } from '../lib/api';
 import { useSubscription } from '../hooks/useSubscription';
 import {
   computeTrackHash,
@@ -336,7 +336,38 @@ export default function ProcessingScreen() {
       ? setTimeout(() => { if (!cancelled) setPianoHint(true); }, PIANO_HINT_MS)
       : null;
 
+    // Polling timeout for async jobs: 15 minutes
+    const ASYNC_POLL_TIMEOUT_MS = 15 * 60 * 1_000;
+    const ASYNC_POLL_INTERVAL_MS = 5_000;
+
     async function run() {
+      // ── Inner helper: poll GET /jobs/{jobId} until done or error ────────────
+      async function pollUntilDone(jobId: string): Promise<any> {
+        const deadline = Date.now() + ASYNC_POLL_TIMEOUT_MS;
+        while (Date.now() < deadline) {
+          if (cancelled) throw new Error('__CANCELLED__');
+          const job = await pollJob(jobId);
+          console.log('[ProcessingScreen] poll:', job.status, job.stage, `${job.progress_pct ?? 0}%`);
+
+          if (job.status === 'done') return job;
+          if (job.status === 'error') {
+            throw new Error(job.error_detail ?? 'Processing failed on server');
+          }
+
+          // Advance visual stages from server-reported stage
+          if (job.stage === 'downloading' || job.stage === 'separating_stems') {
+            setCurrentStage((s) => Math.max(s, 1));
+          } else if (job.stage === 'transcribing') {
+            setCurrentStage((s) => Math.max(s, 2));
+          } else if (job.stage === 'generating_xml') {
+            setCurrentStage((s) => Math.max(s, 3));
+          }
+
+          await new Promise<void>((r) => setTimeout(r, ASYNC_POLL_INTERVAL_MS));
+        }
+        throw new Error('__TIMEOUT__');
+      }
+
       try {
         // ── 0. Identify user + track ──────────────────────────────────────────
         const { data: { session } } = await supabase.auth.getSession();
@@ -401,24 +432,22 @@ export default function ProcessingScreen() {
             audioUrl = signedData.signedUrl;
           }
 
-          console.log('[ProcessingScreen] calling processAudioWithStems with audioUrl:', audioUrl);
+          // Submit async job — returns immediately with job_id (HTTP 202)
+          console.log('[ProcessingScreen] submitting async job, audioUrl:', audioUrl);
+          const { job_id } = await withTimeout(
+            processAudioAsync({
+              audioUrl,
+              instrument: instrument ?? '',
+              outputFormat: outputFormat ?? '',
+            }),
+            30_000, // 30 s to submit — the endpoint itself is instant
+          );
+          console.log('[ProcessingScreen] job_id:', job_id);
 
-          try {
-            result = await withTimeout(processAudioWithStems({
-              audioUrl,
-              instrument: instrument ?? '',
-              outputFormat: outputFormat ?? '',
-            }), SERVER_TIMEOUT_MS);
-            console.log('[ProcessingScreen] stems detected:', result?.stems_detected, 'stem used:', result?.stem_used);
-          } catch (stemsErr: any) {
-            if (stemsErr?.message === '__TIMEOUT__') throw stemsErr;
-            console.log('[ProcessingScreen] stem separation failed, falling back to /process:', stemsErr?.message);
-            result = await withTimeout(processAudio({
-              audioUrl,
-              instrument: instrument ?? '',
-              outputFormat: outputFormat ?? '',
-            }), SERVER_TIMEOUT_MS);
-          }
+          // Poll every 5 s until done (15-min timeout baked into pollUntilDone)
+          const job = await pollUntilDone(job_id);
+          result = job.result;
+          console.log('[ProcessingScreen] async job done — stems:', result?.stems_detected, 'stem used:', result?.stem_used);
         }
 
         if (cancelled) return;
