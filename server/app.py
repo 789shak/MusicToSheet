@@ -39,6 +39,18 @@ app = FastAPI(title="Music-To-Sheet API")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# ─── Startup config diagnostics ──────────────────────────────────────────────
+# TODO: remove verbose detail before production
+@app.on_event("startup")
+async def _log_config_status() -> None:
+    url_set     = bool(os.environ.get("SUPABASE_URL", "").strip())
+    svc_key     = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+    svc_key_len = len(svc_key)
+    print(
+        f"CONFIG: SUPABASE_URL set: {url_set} | "
+        f"SERVICE_ROLE_KEY set: {bool(svc_key)}, length {svc_key_len}"
+    )
+
 # ─── CORS ─────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
@@ -92,7 +104,15 @@ def _get_supabase_admin():
     if _supabase_admin is None:
         if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
             raise RuntimeError("SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not configured")
-        _supabase_admin = _create_supabase_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+        # TODO: remove verbose detail before production
+        try:
+            _supabase_admin = _create_supabase_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+        except Exception as ex:
+            print(
+                f"[supabase-admin] create_client failed: "
+                f"{type(ex).__name__}: {ex}\n{traceback.format_exc()}"
+            )
+            raise
     return _supabase_admin
 
 async def _update_job(job_id: str, **fields) -> None:
@@ -103,7 +123,11 @@ async def _update_job(job_id: str, **fields) -> None:
             lambda: _get_supabase_admin().table("jobs").update(fields).eq("id", job_id).execute()
         )
     except Exception as ex:
-        print(f"[jobs] DB update failed (non-fatal) for job {job_id}: {ex}")
+        # TODO: remove verbose detail before production
+        print(
+            f"[jobs] DB update failed (non-fatal) for job {job_id}: "
+            f"{type(ex).__name__}: {ex}\n{traceback.format_exc()}"
+        )
 
 
 def verify_supabase_jwt(request: Request) -> dict:
@@ -1121,8 +1145,17 @@ async def process_async_endpoint(
         raise HTTPException(status_code=400, detail="process-async requires audio_url")
     _validate_url(body.audio_url)
 
+    # TODO: remove verbose detail before production
+    if not SUPABASE_URL:
+        raise HTTPException(
+            status_code=503,
+            detail="Job tracking not configured: SUPABASE_URL is empty",
+        )
     if not SUPABASE_SERVICE_KEY:
-        raise HTTPException(status_code=503, detail="Job tracking not configured on this server")
+        raise HTTPException(
+            status_code=503,
+            detail="Job tracking not configured: SUPABASE_SERVICE_ROLE_KEY is empty",
+        )
 
     body.instrument    = (body.instrument    or "")[:64].strip()
     body.output_format = (body.output_format or "")[:32].strip()
@@ -1132,10 +1165,22 @@ async def process_async_endpoint(
 
     user_id = request.state.user_id
 
+    # TODO: remove verbose detail before production
+    # Build the admin client first so init failures get their own diagnostic frame.
+    try:
+        admin = await asyncio.to_thread(_get_supabase_admin)
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(f"[process-async] supabase admin init failed: {type(e).__name__}: {e}\n{tb}")
+        raise HTTPException(
+            status_code=503,
+            detail=f"admin_init {type(e).__name__}: {str(e)[:120]}",
+        )
+
     # INSERT the job row; service role bypasses RLS
     try:
         resp = await asyncio.to_thread(
-            lambda: _get_supabase_admin().table("jobs").insert({
+            lambda: admin.table("jobs").insert({
                 "user_id":      user_id,
                 "endpoint":     "/process-async",
                 "audio_url":    body.audio_url,
@@ -1147,8 +1192,13 @@ async def process_async_endpoint(
         )
         job_id = resp.data[0]["id"]
     except Exception as e:
-        print(f"[process-async] Failed to insert job row: {e}")
-        raise HTTPException(status_code=500, detail="Failed to create job")
+        # TODO: remove verbose detail before production
+        tb = traceback.format_exc()
+        print(f"[process-async] Failed to insert job row: {type(e).__name__}: {e}\n{tb}")
+        raise HTTPException(
+            status_code=503,
+            detail=f"jobs_insert {type(e).__name__}: {str(e)[:120]}",
+        )
 
     background_tasks.add_task(_run_stems_pipeline, job_id, body)
     print(f"[process-async] Job {job_id} queued for user {user_id}")
