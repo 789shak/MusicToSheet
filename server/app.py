@@ -40,7 +40,6 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ─── Startup config diagnostics ──────────────────────────────────────────────
-# TODO: remove verbose detail before production
 @app.on_event("startup")
 async def _log_config_status() -> None:
     url_set     = bool(os.environ.get("SUPABASE_URL", "").strip())
@@ -104,7 +103,6 @@ def _get_supabase_admin():
     if _supabase_admin is None:
         if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
             raise RuntimeError("SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not configured")
-        # TODO: remove verbose detail before production
         try:
             _supabase_admin = _create_supabase_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
         except Exception as ex:
@@ -1145,17 +1143,8 @@ async def process_async_endpoint(
         raise HTTPException(status_code=400, detail="process-async requires audio_url")
     _validate_url(body.audio_url)
 
-    # TODO: remove verbose detail before production
-    if not SUPABASE_URL:
-        raise HTTPException(
-            status_code=503,
-            detail="Job tracking not configured: SUPABASE_URL is empty",
-        )
-    if not SUPABASE_SERVICE_KEY:
-        raise HTTPException(
-            status_code=503,
-            detail="Job tracking not configured: SUPABASE_SERVICE_ROLE_KEY is empty",
-        )
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+        raise HTTPException(status_code=503, detail="Service unavailable")
 
     body.instrument    = (body.instrument    or "")[:64].strip()
     body.output_format = (body.output_format or "")[:32].strip()
@@ -1165,79 +1154,33 @@ async def process_async_endpoint(
 
     user_id = request.state.user_id
 
-    # TODO: remove verbose detail before production
-    # Build the admin client first so init failures get their own diagnostic frame.
     try:
         admin = await asyncio.to_thread(_get_supabase_admin)
     except Exception as e:
-        tb = traceback.format_exc()
-        print(f"[process-async] supabase admin init failed: {type(e).__name__}: {e}\n{tb}")
-        raise HTTPException(
-            status_code=503,
-            detail=f"admin_init {type(e).__name__}: {str(e)[:120]}",
-        )
+        print(f"[process-async] supabase admin init failed: {type(e).__name__}: {e}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=503, detail="Service unavailable")
 
     # INSERT the job row; service role bypasses RLS.
-    # `jobs.endpoint` is NOT NULL with a CHECK whitelist (jobs_endpoint_check)
-    # whose accepted values are not in the repo (table created in Supabase Studio).
-    # Try the most-likely candidates in order; the first one accepted wins.
-    # TODO: once a value is confirmed in logs, hardcode it and drop this loop.
-    ENDPOINT_CANDIDATES = [
-        "process_async",   # snake_case, matches column naming conventions
-        "process-async",   # kebab-case path without leading slash
-        "/process-async",  # full path with slash
-        "async",
-        "stems",
-        "process",
-        "/process",
-    ]
     job_id = None
-    last_err = None
-    for candidate in ENDPOINT_CANDIDATES:
-        try:
-            payload = {
+    try:
+        resp = await asyncio.to_thread(
+            lambda: admin.table("jobs").insert({
                 "user_id":       user_id,
-                "endpoint":      candidate,
+                "endpoint":      "process-async",
                 "audio_url":     body.audio_url,
                 "instrument":    body.instrument,
                 "output_format": body.output_format,
                 "status":        "queued",
                 "progress_pct":  0,
-            }
-            resp = await asyncio.to_thread(
-                lambda p=payload: admin.table("jobs").insert(p).execute()
-            )
-            job_id = resp.data[0]["id"]
-            print(f"[process-async] endpoint='{candidate}' accepted by jobs_endpoint_check")
-            break
-        except Exception as e:
-            code = getattr(e, "code", None) or getattr(e, "pgcode", None)
-            # Only retry on CHECK constraint violations; bail on anything else.
-            if code != "23514" and "23514" not in str(e):
-                last_err = e
-                break
-            last_err = e
-            continue
-
-    if job_id is None:
-        e = last_err if last_err else RuntimeError("jobs insert failed with no exception")
-        # TODO: remove verbose detail before production
-        tb = traceback.format_exc()
-        code    = getattr(e, "code", None)    or getattr(e, "pgcode",   None)
-        message = getattr(e, "message", None) or getattr(e, "pgmessage", None)
-        details = getattr(e, "details", None) or getattr(e, "pgdetails", None)
-        hint    = getattr(e, "hint", None)    or getattr(e, "pghint",    None)
+            }).execute()
+        )
+        job_id = resp.data[0]["id"]
+    except Exception as e:
         print(
             f"[process-async] Failed to insert job row: {type(e).__name__}: {e}\n"
-            f"  code={code!r} message={message!r} details={details!r} hint={hint!r}\n{tb}"
+            f"{traceback.format_exc()}"
         )
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                f"jobs_insert {type(e).__name__} code={code} "
-                f"message={(message or str(e))[:200]} hint={(hint or '')[:100]}"
-            ),
-        )
+        raise HTTPException(status_code=503, detail="Failed to create job")
 
     background_tasks.add_task(_run_stems_pipeline, job_id, body)
     print(f"[process-async] Job {job_id} queued for user {user_id}")
