@@ -1177,12 +1177,14 @@ async def process_async_endpoint(
             detail=f"admin_init {type(e).__name__}: {str(e)[:120]}",
         )
 
-    # INSERT the job row; service role bypasses RLS
+    # INSERT the job row; service role bypasses RLS.
+    # `endpoint` is omitted: the table's jobs_endpoint_check CHECK constraint
+    # whitelists a fixed set of values and "/process-async" is not in it.
+    # The column is informational only — GET /jobs/{id} never reads it.
     try:
         resp = await asyncio.to_thread(
             lambda: admin.table("jobs").insert({
                 "user_id":      user_id,
-                "endpoint":     "/process-async",
                 "audio_url":    body.audio_url,
                 "instrument":   body.instrument,
                 "output_format": body.output_format,
