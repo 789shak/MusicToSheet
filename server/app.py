@@ -1194,10 +1194,21 @@ async def process_async_endpoint(
     except Exception as e:
         # TODO: remove verbose detail before production
         tb = traceback.format_exc()
-        print(f"[process-async] Failed to insert job row: {type(e).__name__}: {e}\n{tb}")
+        # supabase-py APIError carries structured fields; pull them out if present
+        code    = getattr(e, "code", None)    or getattr(e, "pgcode",   None)
+        message = getattr(e, "message", None) or getattr(e, "pgmessage", None)
+        details = getattr(e, "details", None) or getattr(e, "pgdetails", None)
+        hint    = getattr(e, "hint", None)    or getattr(e, "pghint",    None)
+        print(
+            f"[process-async] Failed to insert job row: {type(e).__name__}: {e}\n"
+            f"  code={code!r} message={message!r} details={details!r} hint={hint!r}\n{tb}"
+        )
         raise HTTPException(
             status_code=503,
-            detail=f"jobs_insert {type(e).__name__}: {str(e)[:120]}",
+            detail=(
+                f"jobs_insert {type(e).__name__} code={code} "
+                f"message={(message or '')[:150]} hint={(hint or '')[:150]}"
+            ),
         )
 
     background_tasks.add_task(_run_stems_pipeline, job_id, body)
