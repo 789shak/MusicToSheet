@@ -33,6 +33,8 @@ from jwt.exceptions import PyJWKClientConnectionError
 
 from supabase import create_client as _create_supabase_client
 
+from note_extraction import extract_notes_seconds as _extract_notes_seconds
+
 # ─── App + Rate Limiter ───────────────────────────────────────────────────────
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="Music-To-Sheet API")
@@ -562,26 +564,7 @@ def generate_musicxml(
         # Step 7: Extract note names from the transposed + quantized score.
         # These replace the original Basic Pitch notes so the frontend receives
         # pitch names that match the MusicXML (e.g. "C4" not "C#4").
-        transposed_notes = []
-        for n in new_score.recurse().notes:
-            if hasattr(n, 'pitch'):
-                transposed_notes.append({
-                    "pitch":      n.pitch.nameWithOctave,
-                    "start":      round(float(n.offset), 3),
-                    "duration":   round(float(n.duration.quarterLength), 3),
-                    "velocity":   0.8,
-                    "confidence": 0.8,
-                })
-            elif hasattr(n, 'pitches'):  # chord
-                for p in n.pitches:
-                    transposed_notes.append({
-                        "pitch":      p.nameWithOctave,
-                        "start":      round(float(n.offset), 3),
-                        "duration":   round(float(n.duration.quarterLength), 3),
-                        "velocity":   0.8,
-                        "confidence": 0.8,
-                    })
-        transposed_notes.sort(key=lambda x: x['start'])
+        transposed_notes = _extract_notes_seconds(new_score, bpm)
         print(f"[musicxml] Transposed notes — first 5 pitches: {[n['pitch'] for n in transposed_notes[:5]]}")
 
         # Step 8: Export MusicXML
