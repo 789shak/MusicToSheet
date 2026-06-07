@@ -291,10 +291,14 @@ function ResultsScreenInner() {
       const totalPages = Math.max(1, Math.ceil(displayNotes.length / PER_PAGE));
       console.log('[ResultsScreen] User tier:', { isGuest, tier, isPro, authLoading, hasSession: !!session });
       console.log('[ResultsScreen] Total notes:', displayNotes.length, '→ ~', totalPages, 'page(s)');
-      console.log('[ResultsScreen] lockedFromPage:', lockedFromPage,
+      console.log(
+        `[ResultsScreen] tier=${tier} isFreeTier=${isFreeTier} lockedFromPage=${lockedFromPage}`,
         lockedFromPage !== null
           ? `→ pages ${lockedFromPage + 1}+ will be CSS-blurred`
-          : '→ no blur (authenticated)');
+          : isFreeTier
+            ? `→ no blur (free tier but all notes < ${FREE_PREVIEW_SECONDS}s)`
+            : '→ no blur (paid tier)',
+      );
       const metaUsername = isGuest
         ? null
         : (session?.user?.user_metadata?.full_name || session?.user?.email || null);
