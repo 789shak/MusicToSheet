@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, waitForInitialSession } from './supabase';
 
 const API_URL = 'https://musictosheet.onrender.com';
 
@@ -9,6 +9,13 @@ const API_URL = 'https://musictosheet.onrender.com';
  * @returns {Promise<string>} a JWT access token
  */
 export async function getAccessToken() {
+  // Block until the persisted session has been read from AsyncStorage.
+  // Without this gate, a cold-start getSession() can return null while
+  // restoration is still in flight, and the anonymous fallback below
+  // silently overwrites the real persisted session — splitting the
+  // app's identity (Profile shows real email, conversions log as anonymous).
+  await waitForInitialSession();
+
   const { data: { session } } = await supabase.auth.getSession();
   if (session?.access_token) return session.access_token;
 

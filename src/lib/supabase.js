@@ -19,6 +19,29 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   },
 });
 
+// Initial-session gate. Subscribed immediately after createClient so the
+// INITIAL_SESSION event (fired once the persisted session has been read from
+// AsyncStorage — see GoTrueClient.onAuthStateChange docs) is captured. Other
+// code paths await this before deciding whether to fall back to an anonymous
+// sign-in. Without this gate, getSession() can return null during a cold
+// start while restoration is still in flight, and a stray signInAnonymously()
+// silently overwrites the persisted real-user session.
+let _initialSessionReady = false;
+const _initialSessionPromise = new Promise((resolve) => {
+  const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    if (event === 'INITIAL_SESSION') {
+      _initialSessionReady = true;
+      subscription.unsubscribe();
+      resolve();
+    }
+  });
+});
+
+export async function waitForInitialSession() {
+  if (_initialSessionReady) return;
+  await _initialSessionPromise;
+}
+
 // Foreground/background-aware token refresh, per Supabase's React Native
 // guidance: pause refresh when backgrounded, resume on return to foreground.
 // Without this the refresh timer keeps firing while the app is suspended,

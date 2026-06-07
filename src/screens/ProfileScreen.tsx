@@ -216,7 +216,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   // useAuth context is populated by onAuthStateChange — does NOT depend on storage
-  const { user, session, loading: authLoading } = useAuth();
+  const { user, session, loading: authLoading, signOut } = useAuth();
   const { show: showToast, message: toastMsg, opacity: toastOpacity } = useToast();
 
   console.log("PROFILE RENDER - user:", user?.email, "session:", !!session);
@@ -237,6 +237,20 @@ export default function ProfileScreen() {
 
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarLoading, setAvatarLoading] = useState(false);
+  const [signOutLoading, setSignOutLoading] = useState(false);
+
+  async function handleSignOut() {
+    if (signOutLoading) return;
+    setSignOutLoading(true);
+    try {
+      await signOut();
+      router.replace('/');
+    } catch (e: any) {
+      showToast(e?.message ?? 'Sign out failed');
+    } finally {
+      setSignOutLoading(false);
+    }
+  }
 
   // Derived after fullName / email state are populated
   const initials = (fullName || email)[0]?.toUpperCase() ?? '?';
@@ -500,6 +514,24 @@ export default function ProfileScreen() {
           }
         </TouchableOpacity>
 
+        {/* ── Sign Out ── */}
+        <TouchableOpacity
+          style={[styles.signOutBtn, signOutLoading && { opacity: 0.7 }]}
+          onPress={handleSignOut}
+          disabled={signOutLoading}
+          activeOpacity={0.85}
+        >
+          {signOutLoading
+            ? <ActivityIndicator size="small" color="#0EA5E9" />
+            : (
+              <>
+                <Feather name="log-out" size={16} color="#0EA5E9" style={{ marginRight: 8 }} />
+                <Text style={styles.signOutBtnText}>Sign Out</Text>
+              </>
+            )
+          }
+        </TouchableOpacity>
+
         {/* ── Delete Account ── */}
         <View style={styles.deleteSection}>
           <TouchableOpacity onPress={() => router.push('/delete-account')}>
@@ -604,6 +636,20 @@ const styles = StyleSheet.create({
     paddingVertical: 15, alignItems: 'center', marginTop: 16,
   },
   saveBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+
+  // Sign Out — outlined accent button, matches app theme
+  signOutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: '#0EA5E9',
+    borderRadius: 14,
+    paddingVertical: 14,
+    marginTop: 12,
+  },
+  signOutBtnText: { color: '#0EA5E9', fontSize: 15, fontWeight: '700' },
 
   // Delete
   deleteSection: {
