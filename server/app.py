@@ -1178,25 +1178,51 @@ async def process_async_endpoint(
         )
 
     # INSERT the job row; service role bypasses RLS.
-    # `endpoint` is omitted: the table's jobs_endpoint_check CHECK constraint
-    # whitelists a fixed set of values and "/process-async" is not in it.
-    # The column is informational only — GET /jobs/{id} never reads it.
-    try:
-        resp = await asyncio.to_thread(
-            lambda: admin.table("jobs").insert({
-                "user_id":      user_id,
-                "audio_url":    body.audio_url,
-                "instrument":   body.instrument,
+    # `jobs.endpoint` is NOT NULL with a CHECK whitelist (jobs_endpoint_check)
+    # whose accepted values are not in the repo (table created in Supabase Studio).
+    # Try the most-likely candidates in order; the first one accepted wins.
+    # TODO: once a value is confirmed in logs, hardcode it and drop this loop.
+    ENDPOINT_CANDIDATES = [
+        "process_async",   # snake_case, matches column naming conventions
+        "process-async",   # kebab-case path without leading slash
+        "/process-async",  # full path with slash
+        "async",
+        "stems",
+        "process",
+        "/process",
+    ]
+    job_id = None
+    last_err = None
+    for candidate in ENDPOINT_CANDIDATES:
+        try:
+            payload = {
+                "user_id":       user_id,
+                "endpoint":      candidate,
+                "audio_url":     body.audio_url,
+                "instrument":    body.instrument,
                 "output_format": body.output_format,
-                "status":       "queued",
-                "progress_pct": 0,
-            }).execute()
-        )
-        job_id = resp.data[0]["id"]
-    except Exception as e:
+                "status":        "queued",
+                "progress_pct":  0,
+            }
+            resp = await asyncio.to_thread(
+                lambda p=payload: admin.table("jobs").insert(p).execute()
+            )
+            job_id = resp.data[0]["id"]
+            print(f"[process-async] endpoint='{candidate}' accepted by jobs_endpoint_check")
+            break
+        except Exception as e:
+            code = getattr(e, "code", None) or getattr(e, "pgcode", None)
+            # Only retry on CHECK constraint violations; bail on anything else.
+            if code != "23514" and "23514" not in str(e):
+                last_err = e
+                break
+            last_err = e
+            continue
+
+    if job_id is None:
+        e = last_err if last_err else RuntimeError("jobs insert failed with no exception")
         # TODO: remove verbose detail before production
         tb = traceback.format_exc()
-        # supabase-py APIError carries structured fields; pull them out if present
         code    = getattr(e, "code", None)    or getattr(e, "pgcode",   None)
         message = getattr(e, "message", None) or getattr(e, "pgmessage", None)
         details = getattr(e, "details", None) or getattr(e, "pgdetails", None)
@@ -1209,7 +1235,7 @@ async def process_async_endpoint(
             status_code=503,
             detail=(
                 f"jobs_insert {type(e).__name__} code={code} "
-                f"message={(message or '')[:150]} hint={(hint or '')[:150]}"
+                f"message={(message or str(e))[:200]} hint={(hint or '')[:100]}"
             ),
         )
 
