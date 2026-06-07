@@ -177,10 +177,22 @@ function ResultsScreenInner() {
     durationSeconds?: string;
   }>();
 
-  // Read the heavy payload (notes + MusicXML) from the in-memory store exactly
-  // once, guarded. Nothing here can throw into render: a missing/corrupt payload
-  // surfaces as loadError and renders the styled error state below.
-  const initial = useRef<{ notes: { pitch: string; start: number; duration: number }[]; musicxml: string | null; loadError: boolean } | null>(null);
+  // Read the heavy payload (notes + MusicXML + metadata) from the in-memory
+  // store exactly once, guarded. Nothing here can throw into render: a
+  // missing/corrupt payload surfaces as loadError and renders the styled error
+  // state below.
+  const initial = useRef<{
+    notes: { pitch: string; start: number; duration: number }[];
+    musicxml: string | null;
+    storeMeta: {
+      instrument?: string;
+      format?: string;
+      trackName?: string;
+      fileName?: string | null;
+      duration_seconds?: number;
+    };
+    loadError: boolean;
+  } | null>(null);
   if (initial.current === null) {
     try {
       const payload: any = resultId ? takeResult(resultId) : null;
@@ -189,11 +201,18 @@ function ResultsScreenInner() {
       initial.current = {
         notes: Array.isArray(rawNotes) ? rawNotes : [],
         musicxml: typeof rawXml === 'string' && rawXml.length > 0 ? rawXml : null,
+        storeMeta: {
+          instrument:       payload?.instrument,
+          format:           payload?.format,
+          trackName:        payload?.trackName,
+          fileName:         payload?.fileName,
+          duration_seconds: payload?.duration_seconds,
+        },
         loadError: false,
       };
     } catch (e) {
       console.error('[ResultsScreen] failed to load result payload from store:', e);
-      initial.current = { notes: [], musicxml: null, loadError: true };
+      initial.current = { notes: [], musicxml: null, storeMeta: {}, loadError: true };
     }
   }
 
@@ -201,6 +220,7 @@ function ResultsScreenInner() {
   // output_data (history replay). Original notes are never mutated in place.
   const [notes, setNotes] = useState<{ pitch: string; start: number; duration: number }[]>(initial.current.notes);
   const [musicxml] = useState<string | null>(initial.current.musicxml);
+  const storeMeta = initial.current.storeMeta;
   const [loadError, setLoadError] = useState(initial.current.loadError);
   // History replay loads notes asynchronously — stay in a loading state until
   // the fetch resolves so we don't flash the "no notes" screen prematurely.
@@ -267,7 +287,7 @@ function ResultsScreenInner() {
   // upgrade overlay. Paid tiers see all pages clearly.
   const previewHtml = useMemo(
     () => {
-      const PER_PAGE   = 48; // 6 rows × 8 notes per row
+      const PER_PAGE   = 40; // 5 rows × 8 notes per row (uniform pagination)
       const totalPages = Math.max(1, Math.ceil(displayNotes.length / PER_PAGE));
       console.log('[ResultsScreen] User tier:', { isGuest, tier, isPro, authLoading, hasSession: !!session });
       console.log('[ResultsScreen] Total notes:', displayNotes.length, '→ ~', totalPages, 'page(s)');
@@ -278,7 +298,7 @@ function ResultsScreenInner() {
       const metaUsername = isGuest
         ? null
         : (session?.user?.user_metadata?.full_name || session?.user?.email || null);
-      const metaDurSecs  = Number(durationSeconds ?? trackRecord?.duration_seconds ?? 0);
+      const metaDurSecs  = Number(durationSeconds ?? trackRecord?.duration_seconds ?? storeMeta.duration_seconds ?? 0);
       const metaDuration = metaDurSecs > 0
         ? `${Math.floor(metaDurSecs / 60)}:${String(Math.floor(metaDurSecs % 60)).padStart(2, '0')}`
         : null;
@@ -290,14 +310,14 @@ function ResultsScreenInner() {
         : null;
 
       return buildScreenHtml(displayNotes, {
-        trackName:  trackRecord?.track_name ?? 'Sample Track',
-        instrument: trackRecord?.instrument ?? 'Unknown',
+        trackName:  trackRecord?.track_name ?? storeMeta.trackName ?? 'Sample Track',
+        instrument: trackRecord?.instrument ?? storeMeta.instrument ?? 'Unknown',
         format:     activeFormat,
         bpm,
         watermark:  !isPro,
         lockedFromPage,
         username:   metaUsername,
-        fileName:   trackRecord?.file_name ?? trackRecord?.track_name ?? null,
+        fileName:   trackRecord?.file_name ?? storeMeta.fileName ?? trackRecord?.track_name ?? storeMeta.trackName ?? null,
         duration:   metaDuration,
         dateTime:   metaDateTime,
       });
@@ -409,7 +429,7 @@ function ResultsScreenInner() {
     const pdfUsername = isGuest
       ? null
       : (session?.user?.user_metadata?.full_name || session?.user?.email || null);
-    const pdfDurSecs = Number(durationSeconds ?? trackRecord?.duration_seconds ?? 0);
+    const pdfDurSecs = Number(durationSeconds ?? trackRecord?.duration_seconds ?? storeMeta.duration_seconds ?? 0);
     const pdfDur     = pdfDurSecs > 0
       ? `${Math.floor(pdfDurSecs / 60)}:${String(Math.floor(pdfDurSecs % 60)).padStart(2, '0')}`
       : null;
@@ -420,8 +440,8 @@ function ResultsScreenInner() {
         })
       : null;
     return {
-      trackName:  trackRecord?.track_name  ?? 'Sample Track',
-      instrument: trackRecord?.instrument  ?? 'Unknown',
+      trackName:  trackRecord?.track_name  ?? storeMeta.trackName  ?? 'Sample Track',
+      instrument: trackRecord?.instrument  ?? storeMeta.instrument ?? 'Unknown',
       format:     activeFormat,
       bpm,
       date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
@@ -432,7 +452,7 @@ function ResultsScreenInner() {
         ? 'Preview — first 30 seconds. Full sheet at musictosheet.com'
         : undefined,
       username:   pdfUsername,
-      fileName:   trackRecord?.file_name ?? trackRecord?.track_name ?? null,
+      fileName:   trackRecord?.file_name ?? storeMeta.fileName ?? trackRecord?.track_name ?? storeMeta.trackName ?? null,
       duration:   pdfDur,
       dateTime:   pdfDateTime,
     };
@@ -624,9 +644,9 @@ function ResultsScreenInner() {
           <View style={styles.trackLeft}>
             <Ionicons name="musical-note" size={16} color="#0EA5E9" style={{ marginRight: 6 }} />
             <View>
-              <Text style={styles.trackName}>{trackRecord?.track_name ?? 'Sample Track'}</Text>
+              <Text style={styles.trackName}>{trackRecord?.track_name ?? storeMeta.trackName ?? 'Sample Track'}</Text>
               <Text style={styles.trackMeta}>
-                {trackRecord?.instrument ?? 'Unknown'} · 0:{String(Number(durationSeconds ?? trackRecord?.duration_seconds ?? 30)).padStart(2, '0')}
+                {trackRecord?.instrument ?? storeMeta.instrument ?? 'Unknown'} · 0:{String(Number(durationSeconds ?? trackRecord?.duration_seconds ?? storeMeta.duration_seconds ?? 30)).padStart(2, '0')}
               </Text>
             </View>
           </View>
@@ -794,8 +814,8 @@ function ResultsScreenInner() {
             <Text style={upsell.title}>Want the full sheet music?</Text>
             <Text style={upsell.subtitle}>
               {tier === 'freeGuest'
-                ? 'Your free preview covers the first 60 seconds.'
-                : 'Your free preview covers the first 3 minutes.'}
+                ? 'Your free preview covers the first 30 seconds.'
+                : 'Your free preview covers the first 30 seconds.'}
             </Text>
             <View style={upsell.btnRow}>
               <TouchableOpacity

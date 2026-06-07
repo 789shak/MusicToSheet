@@ -598,9 +598,13 @@ function buildPdfBodyHtml(notes, meta) {
   const NH_RY         = 4;
   const CLEF_W        = 52;
   const TIME_W        = 24;
-  const PER_ROW            = 8;
-  const ROWS_PER_PAGE_FIRST = 5;
-  const ROWS_PER_PAGE_REST  = 6;
+  const PER_ROW       = 8;
+  // Uniform pagination: every page (page 1 included, below its compact header)
+  // holds exactly ROWS_PER_PAGE rows. Height math:
+  //   A4 printable ≈ 971px (297mm − 2×20mm margins @ 96 DPI)
+  //   header (≤80px on page 1) + 5×140px row + 24px svg pad + ~31px footer
+  //   = 835px on page 1 (14% slack), 755px on later pages (22% slack).
+  const ROWS_PER_PAGE = 5;
 
   const NX0_FIRST = CLEF_W + TIME_W + 8;
   const NX0_REST  = CLEF_W + 8;
@@ -627,32 +631,34 @@ function buildPdfBodyHtml(notes, meta) {
     allRows.push(parsed.slice(i, i + PER_ROW));
 
   const allPages = [];
-  if (allRows.length > 0) {
-    allPages.push(allRows.slice(0, ROWS_PER_PAGE_FIRST));
-    for (let p = ROWS_PER_PAGE_FIRST; p < allRows.length; p += ROWS_PER_PAGE_REST) {
-      allPages.push(allRows.slice(p, p + ROWS_PER_PAGE_REST));
-    }
+  for (let p = 0; p < allRows.length; p += ROWS_PER_PAGE) {
+    allPages.push(allRows.slice(p, p + ROWS_PER_PAGE));
   }
 
   // maxPages: optional limit — guest users export only the first N pages
   const maxPages = (meta.maxPages != null) ? Number(meta.maxPages) : null;
   const pages = (maxPages !== null) ? allPages.slice(0, maxPages) : allPages;
 
-  const metaRow = (lbl, val) => val
-    ? '<div class="meta-row"><span class="meta-lbl">' + lbl + ':</span> ' + val + '</div>'
+  // Compact inline header (page 1 only). Sized \u2264 ~80px tall:
+  //   12px title + ~2 lines \u00d7 9px/1.5 inline meta + 6+6 padding + 10 margin
+  //   \u2248 12 + 27 + 12 + 10 = 61px (\u226480px target with slack for 3-line wrap).
+  const metaPart = (lbl, val) => val
+    ? '<span class="meta-part"><span class="meta-lbl">' + lbl + ':</span> ' + val + '</span>'
     : '';
+  const metaParts = [
+    username ? metaPart('User', username) : '',
+    metaPart('File',       fileName),
+    metaPart('Duration',   duration),
+    metaPart('Date',       dateTime || date),
+    metaPart('BPM',        String(BPM)),
+    metaPart('Instrument', instrument),
+    metaPart('Format',     format),
+  ].filter(Boolean).join('<span class="meta-sep">&nbsp;\u00b7&nbsp;</span>');
   const HEADER_HTML =
     '<div class="meta-block">'
     + '<div class="meta-title">' + trackName + '</div>'
-    + (username ? metaRow('User',       username) : '')
-    + metaRow('File',       fileName)
-    + metaRow('Duration',   duration)
-    + metaRow('Date',       dateTime || date)
-    + metaRow('BPM',        String(BPM))
-    + metaRow('Instrument', instrument)
-    + metaRow('Format',     format)
-    + '</div>'
-    + '<div class="meta-sep"></div>';
+    + '<div class="meta-line">' + metaParts + '</div>'
+    + '</div>';
 
   const FOOTER_HTML =
     '<div class="footer">'
@@ -669,7 +675,7 @@ function buildPdfBodyHtml(notes, meta) {
     let svgOut = svgRect(0, 0, W, svgH, '#FFFFFF');
 
     pageRows.forEach((row, ri) => {
-      const globalRi  = (pi === 0 ? 0 : ROWS_PER_PAGE_FIRST + (pi - 1) * ROWS_PER_PAGE_REST) + ri;
+      const globalRi  = pi * ROWS_PER_PAGE + ri;
       const isFirstRow = globalRi === 0;
       const ry  = ri * ROW_H;
       const stT = ry + ST_OFF;
@@ -781,19 +787,21 @@ export function buildStaticPdfHtml(notes, meta) {
   * { box-sizing: border-box; margin: 0; padding: 0; }
   @page { size: A4; margin: 20mm 20mm 20mm 45mm; }
   html, body { background: #FFFFFF; font-family: sans-serif; }
+  /* page-break-after on every page wrapper except the last; .page itself emits no break */
   .page { }
   .page.break { page-break-after: always; }
   /* Center the fixed-width SVG within the A4 content area */
   svg { display: block; margin: 0 auto; }
-  /* Metadata block — print-friendly */
-  .meta-block { background: #F8F9FA; padding: 10px 12px 8px; border-radius: 4px;
-                margin-bottom: 14px; border-left: 3px solid #0EA5E9; }
-  .meta-title { font-size: 14px; font-weight: 700; color: #111118; margin-bottom: 5px; }
-  .meta-row   { font-size: 11px; line-height: 1.7; color: #444444; }
-  .meta-lbl   { color: #888888; font-weight: 600; display: inline-block; min-width: 75px; }
-  .meta-sep   { display: none; }
-  .footer { padding-top: 10px; border-top: 1px solid #E5E7EB; font-size: 9px; color: #333333; text-align: center; margin-top: 8px; }
-  .preview-notice { margin-top: 14px; text-align: center; font-size: 11px; font-weight: 600; color: #0EA5E9; }
+  /* Compact metadata header — page 1 only, sized ≤80px tall */
+  .meta-block { background: #F8F9FA; padding: 6px 10px; border-radius: 3px;
+                margin-bottom: 10px; border-left: 3px solid #0EA5E9; }
+  .meta-title { font-size: 12px; font-weight: 700; color: #111118; margin-bottom: 3px; line-height: 1.2; }
+  .meta-line  { font-size: 9px; line-height: 1.5; color: #444444; }
+  .meta-lbl   { color: #888888; font-weight: 600; }
+  .meta-sep   { color: #BBBBBB; }
+  .meta-part  { white-space: nowrap; }
+  .footer { padding-top: 8px; border-top: 1px solid #E5E7EB; font-size: 9px; color: #333333; text-align: center; margin-top: 8px; }
+  .preview-notice { margin-top: 10px; text-align: center; font-size: 11px; font-weight: 600; color: #0EA5E9; }
 </style>
 </head>
 <body>
@@ -836,9 +844,11 @@ export function buildScreenHtml(notes, meta) {
   const NH_RY         = 4;
   const CLEF_W        = 52;
   const TIME_W        = 24;
-  const PER_ROW            = 8;
-  const ROWS_PER_PAGE_FIRST = 5;
-  const ROWS_PER_PAGE_REST  = 6;
+  const PER_ROW       = 8;
+  // Uniform pagination — must match sheetLayout.js ROWS_PER_PAGE and the PDF
+  // builder so lockedFromPage (computed via pageForNoteIndex) maps to the
+  // correct page in this preview.
+  const ROWS_PER_PAGE = 5;
 
   const NX0_FIRST = CLEF_W + TIME_W + 8;
   const NX0_REST  = CLEF_W + 8;
@@ -859,9 +869,7 @@ export function buildScreenHtml(notes, meta) {
   ];
 
   const totalRows  = Math.ceil(INPUT.length / PER_ROW) || 0;
-  const totalPages = totalRows <= ROWS_PER_PAGE_FIRST
-    ? (totalRows > 0 ? 1 : 0)
-    : 1 + Math.ceil((totalRows - ROWS_PER_PAGE_FIRST) / ROWS_PER_PAGE_REST);
+  const totalPages = Math.ceil(totalRows / ROWS_PER_PAGE);
   console.log(
     '[SheetMusicViewer] page lock from:', lockedFromPage,
     '| total notes:', INPUT.length, '| total pages:', totalPages
@@ -874,11 +882,8 @@ export function buildScreenHtml(notes, meta) {
     allRows.push(parsed.slice(i, i + PER_ROW));
 
   const pages = [];
-  if (allRows.length > 0) {
-    pages.push(allRows.slice(0, ROWS_PER_PAGE_FIRST));
-    for (let p = ROWS_PER_PAGE_FIRST; p < allRows.length; p += ROWS_PER_PAGE_REST) {
-      pages.push(allRows.slice(p, p + ROWS_PER_PAGE_REST));
-    }
+  for (let p = 0; p < allRows.length; p += ROWS_PER_PAGE) {
+    pages.push(allRows.slice(p, p + ROWS_PER_PAGE));
   }
 
   // ── Build SVG inner content for a slice of rows ────────────────────────────
@@ -981,21 +986,25 @@ export function buildScreenHtml(notes, meta) {
          + '" xmlns="http://www.w3.org/2000/svg">' + content + '</svg>';
   }
 
-  const metaRow = (lbl, val) => val
-    ? '<div class="meta-row"><span class="meta-lbl">' + lbl + ':</span> ' + val + '</div>'
+  // Compact inline header — page 1 only. Mirrors the PDF header layout but
+  // styled for the dark in-app preview theme.
+  const metaPart = (lbl, val) => val
+    ? '<span class="meta-part"><span class="meta-lbl">' + lbl + ':</span> ' + val + '</span>'
     : '';
+  const metaParts = [
+    username ? metaPart('User', username) : '',
+    metaPart('File',       fileName),
+    metaPart('Duration',   duration),
+    metaPart('Date',       dateTime),
+    metaPart('BPM',        String(BPM)),
+    metaPart('Instrument', instrument),
+    metaPart('Format',     format),
+  ].filter(Boolean).join('<span class="meta-sep">&nbsp;·&nbsp;</span>');
   const HEADER_HTML =
     '<div class="meta-block">'
     + '<div class="meta-title">' + trackName + '</div>'
-    + (username ? metaRow('User',       username) : '')
-    + metaRow('File',       fileName)
-    + metaRow('Duration',   duration)
-    + metaRow('Date',       dateTime)
-    + metaRow('BPM',        String(BPM))
-    + metaRow('Instrument', instrument)
-    + metaRow('Format',     format)
-    + '</div>'
-    + '<div class="meta-sep"></div>';
+    + '<div class="meta-line">' + metaParts + '</div>'
+    + '</div>';
 
   const FOOTER_HTML =
     '<div class="footer">'
@@ -1008,7 +1017,7 @@ export function buildScreenHtml(notes, meta) {
 
   pages.forEach((pageRows, pi) => {
     const isLastPage    = pi === pages.length - 1;
-    const globalRowStart = pi === 0 ? 0 : ROWS_PER_PAGE_FIRST + (pi - 1) * ROWS_PER_PAGE_REST;
+    const globalRowStart = pi * ROWS_PER_PAGE;
     const isPageLocked  = lockedFromPage !== null && pi >= lockedFromPage;
     const isFirstLocked = lockedFromPage !== null && pi === lockedFromPage;
 
@@ -1050,12 +1059,14 @@ export function buildScreenHtml(notes, meta) {
   .page { }
   /* Centre the fixed-width SVG (500px) within the 540px viewport */
   svg { display: block; margin: 0 auto; }
-  /* Metadata info block — dark theme */
-  .meta-block { background: #111118; padding: 12px 14px 10px; font-family: sans-serif; }
-  .meta-title { font-size: 14px; font-weight: 700; color: #FFFFFF; margin-bottom: 6px; }
-  .meta-row   { font-size: 12px; line-height: 1.8; color: #AAAAAA; }
-  .meta-lbl   { color: #666666; font-weight: 600; display: inline-block; min-width: 82px; }
-  .meta-sep   { height: 1px; background: #2D2D3E; margin-bottom: 10px; }
+  /* Compact metadata header — dark theme, page 1 only */
+  .meta-block { background: #111118; padding: 8px 12px; font-family: sans-serif;
+                border-bottom: 1px solid #2D2D3E; margin-bottom: 8px; }
+  .meta-title { font-size: 13px; font-weight: 700; color: #FFFFFF; margin-bottom: 3px; line-height: 1.2; }
+  .meta-line  { font-size: 10px; line-height: 1.5; color: #AAAAAA; }
+  .meta-lbl   { color: #666666; font-weight: 600; }
+  .meta-sep   { color: #444444; }
+  .meta-part  { white-space: nowrap; }
   .footer { padding-top: 10px; border-top: 1px solid #2D2D3E; font-size: 9px;
             color: #666666; text-align: center; margin-top: 8px; }
   /* Locked staves: CSS blur makes notes completely unreadable */

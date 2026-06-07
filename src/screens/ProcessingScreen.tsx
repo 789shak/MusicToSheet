@@ -472,9 +472,16 @@ export default function ProcessingScreen() {
         // can be truncated or corrupted when routed as params, which previously
         // crashed the Results screen (black screen) on parse.
         const resultId = makeResultId();
+        // Include instrument/format/etc so guest users (no Supabase historyId,
+        // so no trackRecord) still see the correct metadata header.
         setResult(resultId, {
-          notes:    result.notes ?? [],
-          musicxml: result.musicxml ?? '',
+          notes:            result.notes ?? [],
+          musicxml:         result.musicxml ?? '',
+          instrument:       result.instrument ?? instrument ?? '',
+          format:           result.format ?? outputFormat ?? '',
+          trackName,
+          fileName:         fileName ?? null,
+          duration_seconds: result.duration_seconds ?? 30,
         });
         const resultParams = {
           resultId,
