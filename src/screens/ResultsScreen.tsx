@@ -479,6 +479,9 @@ function ResultsScreenInner() {
     const scopedNotes = isFreeTier
       ? notes.filter(n => (n.start ?? 0) < FREE_PREVIEW_SECONDS)
       : notes;
+    console.log(
+      `[ResultsScreen] generatePdf slice: isFreeTier=${isFreeTier} pre=${notes.length} post=${scopedNotes.length}`
+    );
     const trimmedNotes = scopedNotes.length > 200 ? scopedNotes.slice(0, 200) : scopedNotes;
     const html = buildStaticPdfHtml(trimmedNotes, pdfMeta());
 

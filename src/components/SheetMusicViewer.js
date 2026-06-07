@@ -1069,14 +1069,30 @@ export function buildScreenHtml(notes, meta) {
   .meta-part  { white-space: nowrap; }
   .footer { padding-top: 10px; border-top: 1px solid #2D2D3E; font-size: 9px;
             color: #666666; text-align: center; margin-top: 8px; }
-  /* Locked staves: CSS blur makes notes completely unreadable */
+  /* Locked staves: CSS blur makes notes completely unreadable.
+     transform: translateZ(0) + will-change force a compositing layer so the
+     Android WebView reliably rasterises the SVG subtree and applies the blur
+     filter on the rendered layer. Without these hints, Android WebView can
+     skip the blur pass on a direct-vector SVG draw and the notes render sharp. */
   .locked-staves {
     filter: blur(10px);
     -webkit-filter: blur(10px);
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+    will-change: filter, transform;
     pointer-events: none;
     user-select: none;
     -webkit-user-select: none;
     overflow: hidden;
+  }
+  /* Belt-and-braces: also force the inner SVG onto its own layer.
+     Some WebView builds compose the SVG before the parent's filter pass; a
+     direct rule on the SVG inside .locked-staves keeps the blur in-pass. */
+  .locked-staves svg {
+    filter: blur(10px);
+    -webkit-filter: blur(10px);
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
   }
   /* Upgrade overlay — shown once at the top of the first locked page */
   .upgrade-overlay {
@@ -1360,6 +1376,11 @@ const SheetMusicViewer = forwardRef(function SheetMusicViewer(
         mediaPlaybackRequiresUserAction={false}
         allowsInlineMediaPlayback
         backgroundColor="#FFFFFF"
+        /* Force hardware-accelerated compositing on Android. The free-preview
+           blur (.locked-staves { filter: blur(10px) }) silently no-ops in the
+           default ('none') layer type on some Android System WebView builds
+           because the SVG subtree is drawn directly without a backing layer. */
+        androidLayerType="hardware"
         onMessage={onMessage}
         onError={(e) =>
           console.log('[SheetMusicViewer] WebView error:', e.nativeEvent)
