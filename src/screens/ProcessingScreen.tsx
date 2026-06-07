@@ -498,6 +498,9 @@ export default function ProcessingScreen() {
 
         console.log('[ProcessingScreen] saving to conversion_history');
 
+        // output_data carries notes + musicxml so the History tab can replay
+        // the full rendered sheet, not just the note list. Older rows stored
+        // only an array of notes — ResultsScreen accepts both shapes.
         const { data: historyRow, error: dbError } = await supabase
           .from('conversion_history')
           .insert({
@@ -507,7 +510,10 @@ export default function ProcessingScreen() {
             instrument:         result.instrument ?? instrument ?? '',
             output_format:      result.format ?? outputFormat ?? '',
             duration_seconds:   result.duration_seconds ?? 30,
-            output_data:        JSON.stringify(result.notes ?? []),
+            output_data:        JSON.stringify({
+              notes:    result.notes ?? [],
+              musicxml: result.musicxml ?? '',
+            }),
             rights_declaration: rightsDeclaration ?? '',
           })
           .select('id')

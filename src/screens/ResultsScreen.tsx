@@ -219,7 +219,7 @@ function ResultsScreenInner() {
   // notes may arrive via the store (fresh processing) or be loaded from
   // output_data (history replay). Original notes are never mutated in place.
   const [notes, setNotes] = useState<{ pitch: string; start: number; duration: number }[]>(initial.current.notes);
-  const [musicxml] = useState<string | null>(initial.current.musicxml);
+  const [musicxml, setMusicxml] = useState<string | null>(initial.current.musicxml);
   const storeMeta = initial.current.storeMeta;
   const [loadError, setLoadError] = useState(initial.current.loadError);
   // History replay loads notes asynchronously — stay in a loading state until
@@ -409,12 +409,24 @@ function ResultsScreenInner() {
           setTrackRecord(data);
           if (data?.transpose_semitones != null) setTransposeOffset(data.transpose_semitones);
           if (data?.bpm != null) setBpm(data.bpm);
-          // Populate notes from saved output_data when none arrived via the store.
-          // Guarded: a corrupt output_data string shows the error state, not a crash.
-          if (notes.length === 0 && data?.output_data) {
+          // Populate notes (and musicxml when present) from saved output_data
+          // when none arrived via the store. output_data may be either the
+          // legacy shape — a bare array of notes — or the new shape
+          // {notes, musicxml} that carries the rendered sheet too. Guarded: a
+          // corrupt output_data string shows the error state, not a crash.
+          if (data?.output_data) {
             try {
               const parsed = JSON.parse(data.output_data);
-              if (Array.isArray(parsed)) setNotes(parsed);
+              if (Array.isArray(parsed)) {
+                if (notes.length === 0) setNotes(parsed);
+              } else if (parsed && typeof parsed === 'object') {
+                if (notes.length === 0 && Array.isArray(parsed.notes)) {
+                  setNotes(parsed.notes);
+                }
+                if (!musicxml && typeof parsed.musicxml === 'string' && parsed.musicxml.length > 0) {
+                  setMusicxml(parsed.musicxml);
+                }
+              }
             } catch (e) {
               console.error('[ResultsScreen] failed to parse output_data:', e);
               setLoadError(true);
@@ -551,9 +563,14 @@ function ResultsScreenInner() {
   async function saveNotes(updated: typeof notes) {
     setNotes(updated);
     if (!historyId) return;
+    // Preserve musicxml alongside the edited note list so a later replay still
+    // renders the rich sheet. Old rows that only stored a notes array become
+    // {notes, musicxml: ''} after the first edit.
     await supabase
       .from('conversion_history')
-      .update({ output_data: JSON.stringify(updated) })
+      .update({
+        output_data: JSON.stringify({ notes: updated, musicxml: musicxml ?? '' }),
+      })
       .eq('id', historyId);
   }
 
