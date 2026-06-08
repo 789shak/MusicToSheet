@@ -1,4 +1,4 @@
-import { forwardRef } from 'react';
+import { forwardRef, useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import WebView from 'react-native-webview';
 
@@ -1206,10 +1206,39 @@ function handlePlaybackCommand(cmd){
 }
 
 // ─── OSMD screen HTML ────────────────────────────────────────────────────────
-// Primary in-app renderer when musicxml is available. The XML is URL-encoded so
-// it embeds safely inside a JS string without any escaping edge-cases.
-function buildOsmdScreenHtml(musicxml) {
-  const encoded = encodeURIComponent(musicxml);
+// Primary in-app renderer. Renders MusicXML via OSMD 1.8.6 (CDN). For free tiers
+// the score is truncated to the first `previewSeconds` of music: load the full
+// score, walk SourceMeasures using AbsoluteTimestamp.RealValue and
+// Sheet.DefaultStartTempoInBpm to compute each measure's start in seconds,
+// then re-render with drawUpToMeasureNumber set to the last in-window measure.
+// Adds an upgrade CTA below the score and a rotated watermark overlay.
+//
+// If OSMD fails to load or render, posts type:'osmd_fatal' so the RN component
+// can fall back to the custom buildHtml(notes) renderer.
+function buildOsmdScreenHtml(musicxml, opts) {
+  opts = opts || {};
+  const isFreeTier     = !!opts.isFreeTier;
+  const previewSeconds = Number(opts.previewSeconds) || 30;
+  const watermark      = !!opts.watermark;
+  const encoded        = encodeURIComponent(musicxml);
+
+  const ctaHtml = isFreeTier
+    ? `<div id="upgrade-cta">
+         <div class="cta-icon">🔒</div>
+         <div class="cta-heading">Preview ends at 0:${String(previewSeconds).padStart(2, '0')}</div>
+         <div class="cta-subtext">Unlock the full sheet for $1.99</div>
+         <button class="cta-btn" onclick="postNav('/subscription')">Unlock Full Sheet</button>
+       </div>`
+    : '';
+
+  const watermarkHtml = watermark
+    ? `<div id="watermark">
+         <div class="wm-line">Music-To-Sheet Preview — Upgrade for full version</div>
+         <div class="wm-line">Music-To-Sheet Preview — Upgrade for full version</div>
+         <div class="wm-line">Music-To-Sheet Preview — Upgrade for full version</div>
+       </div>`
+    : '';
+
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -1218,43 +1247,147 @@ function buildOsmdScreenHtml(musicxml) {
   <script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.6/build/opensheetmusicdisplay.min.js"><\/script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #ffffff; padding: 10px; }
+    html, body { background: #ffffff; }
+    body { padding: 10px; position: relative; }
     #osmd { width: 100%; }
-    #fallback { display: none; color: #666; font-family: sans-serif; font-size: 13px;
-                padding: 20px; text-align: center; }
+    #status { color: #666; font-family: sans-serif; font-size: 12px; padding: 8px 0; }
+    #upgrade-cta {
+      background: #111118; border: 1px solid #2D2D3E; border-radius: 12px;
+      padding: 24px 20px 20px; margin: 16px 4px 8px; text-align: center;
+      display: flex; flex-direction: column; align-items: center; gap: 10px;
+      font-family: sans-serif;
+    }
+    .cta-icon { font-size: 26px; }
+    .cta-heading { color: #FFFFFF; font-size: 18px; font-weight: 700; }
+    .cta-subtext { color: #9CA3AF; font-size: 13px; margin-top: -4px; }
+    .cta-btn {
+      width: 100%; background: #0EA5E9; color: #FFFFFF; border: none;
+      border-radius: 10px; padding: 13px 16px; font-size: 14px; font-weight: 700;
+      cursor: pointer; font-family: sans-serif;
+    }
+    #watermark {
+      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      pointer-events: none; overflow: hidden; z-index: 5;
+      display: flex; flex-direction: column; justify-content: space-around;
+    }
+    .wm-line {
+      text-align: center; font-family: sans-serif; font-weight: 700;
+      font-size: 22px; color: #DC143C; opacity: 0.18;
+      transform: rotate(-30deg); white-space: nowrap;
+    }
   </style>
 </head>
 <body>
+  <div id="status">Loading sheet music…</div>
   <div id="osmd"></div>
-  <div id="fallback">Sheet music preview unavailable. Tap Download PDF to view.</div>
+  ${ctaHtml}
+  ${watermarkHtml}
   <script>
-    (function () {
+    var IS_FREE_TIER     = ${isFreeTier ? 'true' : 'false'};
+    var PREVIEW_SECONDS  = ${previewSeconds};
+    var BPM_FALLBACK     = 120;
+
+    function postMsg(obj) {
+      try { window.ReactNativeWebView.postMessage(JSON.stringify(obj)); } catch (e) {}
+    }
+    function postNav(route) { postMsg({ type: 'nav', route: route }); }
+
+    function fatal(reason) {
+      postMsg({ type: 'osmd_fatal', message: reason });
+    }
+
+    function setStatus(msg) {
+      var el = document.getElementById('status');
+      if (el) el.textContent = msg || '';
+    }
+
+    // Compute the last 1-based measure number whose start is < previewSeconds.
+    // Uses SourceMeasure.AbsoluteTimestamp.RealValue (whole notes) and
+    // Sheet.DefaultStartTempoInBpm (verified in OSMD 1.8.6).
+    function cutoffMeasureNumber(osmd) {
+      try {
+        var sheet = osmd.Sheet;
+        if (!sheet || !sheet.SourceMeasures) return null;
+        var measures = sheet.SourceMeasures;
+        if (!measures.length) return null;
+        var bpm = (sheet.HasBPMInfo && sheet.DefaultStartTempoInBpm > 0)
+          ? sheet.DefaultStartTempoInBpm : BPM_FALLBACK;
+        var secPerWhole = 4 * 60 / bpm;
+        var cutoff = null;
+        for (var i = 0; i < measures.length; i++) {
+          var ts = measures[i].AbsoluteTimestamp;
+          if (!ts || typeof ts.RealValue !== 'number') continue;
+          var startSec = ts.RealValue * secPerWhole;
+          if (startSec >= PREVIEW_SECONDS) {
+            cutoff = i;  // 0-based index of first out-of-window measure
+            break;
+          }
+        }
+        if (cutoff === null) return null;     // whole score fits in window
+        if (cutoff === 0)   return 1;         // even first measure overflows; show 1
+        return cutoff;                        // last in-window measure (1-based == 0-based index here)
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function initOsmd() {
       if (typeof opensheetmusicdisplay === 'undefined') {
-        document.getElementById('osmd').style.display = 'none';
-        document.getElementById('fallback').style.display = 'block';
+        fatal('OSMD CDN failed to load');
         return;
       }
-      var osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay('osmd', {
-        backend: 'svg',
-        drawTitle: false,
-        drawComposer: false,
-        autoResize: true
-      });
+      var osmd;
+      try {
+        osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay('osmd', {
+          backend: 'svg',
+          drawTitle: false,
+          drawComposer: false,
+          drawCredits: false,
+          autoResize: true,
+        });
+      } catch (e) {
+        fatal('OSMD constructor failed: ' + e.message);
+        return;
+      }
+
       var musicxml = decodeURIComponent('${encoded}');
       osmd.load(musicxml).then(function () {
-        osmd.render();
         try {
-          var h = document.getElementById('osmd').scrollHeight;
-          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'height', value: h }));
+          osmd.render();
+        } catch (e) {
+          fatal('Initial render failed: ' + e.message);
+          return;
+        }
+
+        if (IS_FREE_TIER) {
+          var lastMeasure = cutoffMeasureNumber(osmd);
+          if (lastMeasure !== null) {
+            try {
+              osmd.setOptions({ drawUpToMeasureNumber: lastMeasure });
+              osmd.render();
+            } catch (e) {
+              // Non-fatal: keep the full render rather than blanking the screen.
+              postMsg({ type: 'osmd_warning', message: 'Truncate render failed: ' + e.message });
+            }
+          }
+        }
+
+        setStatus('');
+        try {
+          var h = document.body.scrollHeight;
+          postMsg({ type: 'height', value: h });
+          postMsg({ type: 'loaded' });
         } catch (e) {}
       }).catch(function (err) {
-        document.getElementById('osmd').style.display = 'none';
-        document.getElementById('fallback').style.display = 'block';
-        try {
-          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'osmd_error', message: err.message }));
-        } catch (e) {}
+        fatal('Load error: ' + (err && err.message ? err.message : String(err)));
       });
-    })();
+    }
+
+    if (document.readyState === 'complete') {
+      initOsmd();
+    } else {
+      window.addEventListener('load', initOsmd);
+    }
   <\/script>
 </body>
 </html>`;
@@ -1342,23 +1475,55 @@ export function buildOsmdPdfHtml(musicxml, meta) {
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
-// Priority: musicxml (OSMD) > previewHtml (SVG fallback) > notes (SVG fallback)
+// Renderer priority:
+//   1. OSMD (musicxml) — proper rhythm, beams, rests; free-tier truncated at
+//      previewSeconds with watermark + upgrade CTA.
+//   2. Custom SVG (notes) — pitch-only fallback when musicxml is missing OR
+//      the OSMD load fails (CDN unreachable, parse error, render throw).
 /**
- * @param {{ notes?: object[], previewHtml?: string|null, musicxml?: string|null, bpm?: number, onMessage?: Function }} props
+ * @param {{
+ *   notes?: object[],
+ *   musicxml?: string|null,
+ *   bpm?: number,
+ *   isFreeTier?: boolean,
+ *   previewSeconds?: number,
+ *   watermark?: boolean,
+ *   tier?: string,
+ *   onMessage?: Function,
+ * }} props
  * @param {any} ref
  */
 const SheetMusicViewer = forwardRef(function SheetMusicViewer(
-  { notes = [], previewHtml = null, musicxml = null, bpm = 120, onMessage },
+  {
+    notes = [],
+    musicxml = null,
+    bpm = 120,
+    isFreeTier = false,
+    previewSeconds = 30,
+    watermark = false,
+    tier,
+    onMessage,
+  },
   ref
 ) {
-  let html;
-  if (previewHtml) {
-    html = previewHtml;                    // SVG via buildScreenHtml — matches PDF quality
-  } else if (musicxml) {
-    html = buildOsmdScreenHtml(musicxml);  // OSMD (CDN-dependent, future option)
-  } else {
-    html = buildHtml(notes, { bpm });      // custom SVG fallback
-  }
+  const [osmdFailed, setOsmdFailed] = useState(false);
+
+  const useOsmd = !!musicxml && !osmdFailed;
+  const html = useOsmd
+    ? buildOsmdScreenHtml(musicxml, { isFreeTier, previewSeconds, watermark, tier })
+    : buildHtml(notes, { bpm });
+
+  const handleMessage = useCallback((event) => {
+    try {
+      const msg = JSON.parse(event.nativeEvent.data);
+      if (msg && msg.type === 'osmd_fatal') {
+        console.warn('[SheetMusicViewer] OSMD fatal, falling back to custom SVG:', msg.message);
+        setOsmdFailed(true);
+        return;
+      }
+    } catch (e) {}
+    if (onMessage) onMessage(event);
+  }, [onMessage]);
 
   return (
     <View style={styles.container}>
@@ -1381,7 +1546,7 @@ const SheetMusicViewer = forwardRef(function SheetMusicViewer(
            default ('none') layer type on some Android System WebView builds
            because the SVG subtree is drawn directly without a backing layer. */
         androidLayerType="hardware"
-        onMessage={onMessage}
+        onMessage={handleMessage}
         onError={(e) =>
           console.log('[SheetMusicViewer] WebView error:', e.nativeEvent)
         }

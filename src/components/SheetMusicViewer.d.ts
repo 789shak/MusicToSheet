@@ -19,9 +19,12 @@ export function buildScreenHtml(notes: NoteEvent[], meta?: SheetMusicMeta): stri
 
 export interface SheetMusicViewerProps {
   notes?: { pitch: string; start: number; duration: number }[];
-  previewHtml?: string | null;
   musicxml?: string | null;
   bpm?: number;
+  isFreeTier?: boolean;
+  previewSeconds?: number;
+  watermark?: boolean;
+  tier?: string;
   onMessage?: (event: any) => void;
 }
 

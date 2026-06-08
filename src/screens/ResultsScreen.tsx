@@ -19,8 +19,8 @@ import { supabase } from '../lib/supabase';
 import { takeResult } from '../lib/resultStore';
 import { useSubscription } from '../hooks/useSubscription';
 import { useAuth } from '../hooks/useAuth';
-import SheetMusicViewer, { buildStaticPdfHtml, buildScreenHtml } from '../components/SheetMusicViewer';
-import { FREE_PREVIEW_SECONDS, pageForNoteIndex } from '../components/sheetLayout';
+import SheetMusicViewer, { buildStaticPdfHtml } from '../components/SheetMusicViewer';
+import { FREE_PREVIEW_SECONDS } from '../components/sheetLayout';
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 const FORMATS = ['Score', 'Part', 'Lead Sheet', 'Tabs', 'Fake Book', 'Staff'];
@@ -270,63 +270,12 @@ function ResultsScreenInner() {
     [notes, transposeOffset]
   );
 
-  // Preview lock boundary: free tiers see notes clearly only for the first
-  // FREE_PREVIEW_SECONDS. Find the first note that starts at/after the cutoff
-  // and lock from the page it lands on. Transpose doesn't change start times,
-  // so this is driven by the original notes. null → no lock (paid, or the whole
-  // track fits inside the preview window).
-  const lockedFromPage = useMemo<number | null>(() => {
-    if (!isFreeTier) return null;
-    const idx = notes.findIndex(n => (n.start ?? 0) >= FREE_PREVIEW_SECONDS);
-    if (idx === -1) return null;
-    return pageForNoteIndex(idx);
-  }, [isFreeTier, notes]);
-
-  // Build SVG-based preview. Free tiers see the first 30 seconds clearly; pages
-  // from lockedFromPage onward are CSS-blurred in the WebView with an inline
-  // upgrade overlay. Paid tiers see all pages clearly.
-  const previewHtml = useMemo(
-    () => {
-      const PER_PAGE   = 40; // 5 rows × 8 notes per row (uniform pagination)
-      const totalPages = Math.max(1, Math.ceil(displayNotes.length / PER_PAGE));
-      console.log('[ResultsScreen] User tier:', { isGuest, tier, isPro, authLoading, hasSession: !!session });
-      console.log('[ResultsScreen] Total notes:', displayNotes.length, '→ ~', totalPages, 'page(s)');
-      console.log(
-        `[ResultsScreen] tier=${tier} isFreeTier=${isFreeTier} lockedFromPage=${lockedFromPage}`,
-        lockedFromPage !== null
-          ? `→ pages ${lockedFromPage + 1}+ will be CSS-blurred`
-          : isFreeTier
-            ? `→ no blur (free tier but all notes < ${FREE_PREVIEW_SECONDS}s)`
-            : '→ no blur (paid tier)',
-      );
-      const metaUsername = isGuest
-        ? null
-        : (session?.user?.user_metadata?.full_name || session?.user?.email || null);
-      const metaDurSecs  = Number(durationSeconds ?? trackRecord?.duration_seconds ?? storeMeta.duration_seconds ?? 0);
-      const metaDuration = metaDurSecs > 0
-        ? `${Math.floor(metaDurSecs / 60)}:${String(Math.floor(metaDurSecs % 60)).padStart(2, '0')}`
-        : null;
-      const metaDateTime = trackRecord?.created_at
-        ? new Date(trackRecord.created_at).toLocaleString('en-GB', {
-            day: '2-digit', month: 'short', year: 'numeric',
-            hour: '2-digit', minute: '2-digit', hour12: true,
-          })
-        : null;
-
-      return buildScreenHtml(displayNotes, {
-        trackName:  trackRecord?.track_name ?? storeMeta.trackName ?? 'Sample Track',
-        instrument: trackRecord?.instrument ?? storeMeta.instrument ?? 'Unknown',
-        format:     activeFormat,
-        bpm,
-        watermark:  !isPro,
-        lockedFromPage,
-        username:   metaUsername,
-        fileName:   trackRecord?.file_name ?? storeMeta.fileName ?? trackRecord?.track_name ?? storeMeta.trackName ?? null,
-        duration:   metaDuration,
-        dateTime:   metaDateTime,
-      });
-    },
-    [displayNotes, trackRecord, activeFormat, bpm, isPro, lockedFromPage, session, isGuest, durationSeconds]
+  // Screen renderer is now OSMD-driven (see SheetMusicViewer). Free-tier 30s
+  // truncation happens inside the WebView using OSMD measure timing — no
+  // page-based locking computed here. PDF export still uses the custom
+  // pitch-only renderer below.
+  console.log(
+    `[ResultsScreen] tier=${tier} isFreeTier=${isFreeTier} musicxml=${musicxml ? musicxml.length + 'chars' : 'none'}`
   );
 
   // Persist transpose & BPM changes to Supabase (skip first render)
@@ -824,7 +773,17 @@ function ResultsScreenInner() {
         {/* ── Sheet Music Viewer ── */}
         <View style={styles.viewerWrapper}>
           <View style={styles.viewerContainer}>
-            <SheetMusicViewer ref={webviewRef} musicxml={musicxml ?? null} previewHtml={previewHtml} notes={displayNotes} bpm={bpm} onMessage={handleWebViewMessage} />
+            <SheetMusicViewer
+              ref={webviewRef}
+              musicxml={musicxml ?? null}
+              notes={displayNotes}
+              bpm={bpm}
+              isFreeTier={isFreeTier}
+              previewSeconds={FREE_PREVIEW_SECONDS}
+              watermark={!isPro}
+              tier={tier}
+              onMessage={handleWebViewMessage}
+            />
           </View>
           {/* Fade hint at the bottom of the sheet for free users */}
           {(tier === 'free' || tier === 'freeGuest') && (
