@@ -1,25 +1,56 @@
 """
 Canonical note-extraction for the async pipeline (audit item M1).
 
-Converts a music21 score into the client-facing note schema with absolute
-start/duration expressed in SECONDS:
-
+The canonical notes list shipped to the client always carries SECONDS
+sourced directly from the transcription model:
     { midi, pitch, start, duration, velocity, confidence }
 
-Kept in its own module (no fastapi/librosa/replicate imports) so it can be
-unit-tested without the full server stack.
+For piano (ByteDance / piano specialist) and Basic Pitch, the model's
+PrettyMIDI output is already in absolute seconds (see pretty_midi.Note —
+Note.start / Note.end are documented as absolute, in seconds). Use
+``midi_data_to_notes`` to build the canonical dict shape directly from
+PrettyMIDI — do NOT route timings through music21 quarter-lengths.
+
+The old ``extract_notes_seconds(score, bpm)`` helper is kept for the
+existing unit tests, but is NO LONGER used by the live pipeline: it
+multiplied music21 offsets by a hard-coded BPM that didn't match the
+score's actual tempo, which inflated note starts ~8x (a real 33s clip
+produced last_note.start=262.958).
+
+Kept import-light (no fastapi/librosa/replicate) so this whole module is
+unit-testable in isolation.
 """
+
+import pretty_midi
+
+
+def midi_data_to_notes(midi_data: "pretty_midi.PrettyMIDI") -> list:
+    """Canonical builder. Reads PrettyMIDI's native seconds straight through."""
+    notes = []
+    for instrument in midi_data.instruments:
+        for note in instrument.notes:
+            notes.append({
+                "midi":       int(note.pitch),
+                "pitch":      pretty_midi.note_number_to_name(note.pitch),
+                "start":      round(float(note.start), 3),
+                "duration":   round(float(note.end) - float(note.start), 3),
+                "velocity":   round(float(note.velocity) / 127.0, 2),
+                "confidence": 0.9,
+            })
+    notes.sort(key=lambda n: n["start"])
+    return notes
 
 
 def extract_notes_seconds(score, bpm: int) -> list:
     """
-    Walk a music21 score and return notes with absolute seconds.
+    DEPRECATED — kept only for the existing music21-based unit tests.
 
-    Uses score.flatten().notes so .offset is absolute (in quarterLengths)
-    relative to the whole score. Iterating via score.recurse().notes returns
-    an offset RELATIVE to each note's parent container (Measure/Voice) —
-    music21's documented gotcha that previously made every async-pipeline
-    note start at 0.
+    Walks a music21 score and returns notes with seconds derived from
+    quarterLength * (60 / bpm). The live pipeline does NOT use this; it
+    builds the canonical notes directly from PrettyMIDI seconds via
+    ``midi_data_to_notes`` above. Removing this entirely would break
+    ``test_note_extraction.py``, which exercises a synthetic score where
+    the conversion is well-defined.
     """
     bpm_safe = float(bpm) if bpm and bpm > 0 else 120.0
     spq = 60.0 / bpm_safe  # seconds per quarter note

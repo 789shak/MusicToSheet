@@ -33,7 +33,7 @@ from jwt.exceptions import PyJWKClientConnectionError
 
 from supabase import create_client as _create_supabase_client
 
-from note_extraction import extract_notes_seconds as _extract_notes_seconds
+from note_extraction import midi_data_to_notes as _midi_data_to_notes_canonical
 
 # ─── App + Rate Limiter ───────────────────────────────────────────────────────
 limiter = Limiter(key_func=get_remote_address)
@@ -352,14 +352,17 @@ def detect_notes_with_basic_pitch(wav_path: str) -> tuple:
         print(f"[basic_pitch] Pitch range after clamping: min={min(p[2] for p in adjusted)}, max={max(p[2] for p in adjusted)}")
 
     # ── Step 3: Build the notes JSON list from clamped events ─────────────────
+    # start/end come directly from Basic Pitch in seconds — do NOT route through
+    # music21 quarter-length math, which is what caused the ~8x inflation bug.
     notes = []
     for start, end, pitch, velocity, confidence in adjusted:
         notes.append({
+            "midi":       int(pitch),
             "pitch":      pretty_midi.note_number_to_name(pitch),
-            "start":      round(start, 3),
-            "duration":   round(end - start, 3),
-            "velocity":   round(velocity, 2),
-            "confidence": round(confidence, 2),
+            "start":      round(float(start), 3),
+            "duration":   round(float(end) - float(start), 3),
+            "velocity":   round(float(velocity), 2),
+            "confidence": round(float(confidence), 2),
         })
 
     # ── Step 4: Build a fresh PrettyMIDI from the clamped events ─────────────
@@ -381,20 +384,10 @@ def detect_notes_with_basic_pitch(wav_path: str) -> tuple:
 
 
 # ─── ByteDance Piano Transcription ───────────────────────────────────────────
-def _midi_data_to_notes(midi_data: pretty_midi.PrettyMIDI) -> list:
-    """Extract notes from a PrettyMIDI object in the standard response dict shape."""
-    notes = []
-    for instrument in midi_data.instruments:
-        for note in instrument.notes:
-            notes.append({
-                "pitch":      pretty_midi.note_number_to_name(note.pitch),
-                "start":      round(note.start, 3),
-                "duration":   round(note.end - note.start, 3),
-                "velocity":   round(note.velocity / 127.0, 2),
-                "confidence": 0.9,
-            })
-    notes.sort(key=lambda n: n["start"])
-    return notes
+# Canonical PrettyMIDI → notes-list builder lives in note_extraction.py so it
+# can be unit-tested without importing the full server stack. Re-export with
+# the original name to keep the call sites below unchanged.
+_midi_data_to_notes = _midi_data_to_notes_canonical
 
 
 async def detect_notes_with_piano_specialist(wav_path: str) -> pretty_midi.PrettyMIDI:
@@ -583,11 +576,12 @@ def generate_musicxml(
         durations_after = [n.duration.quarterLength for n in new_score.recurse().notes[:10]]
         print(f"[musicxml] Quantized durations (first 10): {durations_after}")
 
-        # Step 7: Extract note names from the transposed + quantized score.
-        # These replace the original Basic Pitch notes so the frontend receives
-        # pitch names that match the MusicXML (e.g. "C4" not "C#4").
-        transposed_notes = _extract_notes_seconds(new_score, bpm)
-        print(f"[musicxml] Transposed notes — first 5 pitches: {[n['pitch'] for n in transposed_notes[:5]]}")
+        # Step 7: MusicXML is for RENDERING only. The canonical notes list
+        # comes from the model's native seconds (PrettyMIDI), built by
+        # _midi_data_to_notes / detect_notes_with_basic_pitch. Deriving timings
+        # from music21 quarter-lengths here previously inflated note starts ~8x
+        # because the bpm passed in (120) did not match the score's offsets.
+        transposed_notes = None
 
         # Step 8: Export MusicXML
         try:
