@@ -351,7 +351,9 @@ export default function ProcessingScreen() {
 
           if (job.status === 'done') return job;
           if (job.status === 'error') {
-            throw new Error(job.error_detail ?? 'Processing failed on server');
+            // Prefix so the catch handler can show the server's real reason
+            // (e.g. "The read operation timed out") instead of a generic alert.
+            throw new Error(`__JOB_ERROR__:${job.error_detail ?? 'Processing failed on server'}`);
           }
 
           // Advance visual stages from server-reported stage
@@ -569,6 +571,17 @@ export default function ProcessingScreen() {
           const [, tier, usedStr, maxStr] = msg.split(':');
           const { title, msg: body, upgrade } = getTrackLimitAlert(tier, Number(usedStr), Number(maxStr));
           showErrorAlert(title, body, goBack, upgrade ? goUpgrade : undefined);
+
+        } else if (msg.startsWith('__JOB_ERROR__:')) {
+          // Server processed the job and stored a clear error_detail
+          // (e.g. "The read operation timed out"). Show it verbatim instead
+          // of falling through to a generic "Network request failed" alert.
+          const detail = msg.slice('__JOB_ERROR__:'.length).trim();
+          showErrorAlert(
+            'Processing Failed',
+            detail || 'The server could not process your audio. Please try again.',
+            goBack
+          );
 
         } else if (msg.startsWith('__UPLOAD_FAILED__:')) {
           showErrorAlert(

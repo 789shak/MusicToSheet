@@ -414,16 +414,38 @@ async def detect_notes_with_piano_specialist(wav_path: str) -> pretty_midi.Prett
         timeout=httpx.Timeout(connect=10.0, read=600.0, write=600.0, pool=10.0),
     )
     print("[piano_specialist] Uploading WAV to Replicate piano_transcription...")
-    with open(wav_path, "rb") as audio_file:
-        output = await asyncio.to_thread(
-            repl_client.run,
-            "e7mac/piano_transcription:cef04ff2582f0c074d828f8947e855fed0aabb2c8bc1caccccd481eb0fb8c933",
-            input={"audio_input": audio_file, "make_video": False},
-            # wait=False skips the 60-second Prefer:wait long-poll (which has a hard
-            # 60.5 s read timeout baked into the SDK) and goes straight to polling.
-            # Each poll GET uses the client's 600 s read timeout instead.
-            wait=False,
-        )
+
+    # Single retry on transient timeouts. Replicate occasionally drops the
+    # connection at its proxy on long runs; a 3 s backoff lets the queue settle.
+    output = None
+    last_err: Optional[Exception] = None
+    for attempt in (1, 2):
+        try:
+            with open(wav_path, "rb") as audio_file:
+                output = await asyncio.to_thread(
+                    repl_client.run,
+                    "e7mac/piano_transcription:cef04ff2582f0c074d828f8947e855fed0aabb2c8bc1caccccd481eb0fb8c933",
+                    input={"audio_input": audio_file, "make_video": False},
+                    # wait=False skips the 60-second Prefer:wait long-poll (which has a hard
+                    # 60.5 s read timeout baked into the SDK) and goes straight to polling.
+                    # Each poll GET uses the client's 600 s read timeout instead.
+                    wait=False,
+                )
+            break
+        except Exception as ex:
+            msg = str(ex).lower()
+            transient = ("timeout" in msg) or ("timed out" in msg)
+            print(
+                f"[piano_specialist] Attempt {attempt}/2 failed "
+                f"({type(ex).__name__}: {ex}) — transient={transient}"
+            )
+            last_err = ex
+            if attempt == 1 and transient:
+                await asyncio.sleep(3.0)
+                continue
+            raise
+    if output is None:
+        raise last_err if last_err else RuntimeError("piano specialist returned no output")
 
     midi_url = str(output["midi"])
     print(f"[piano_specialist] Received MIDI URL: {midi_url[:80]}...")
@@ -973,41 +995,81 @@ async def _run_stems_pipeline(job_id: str, body: ProcessRequest) -> None:
             raise Exception(f"Downloaded file too small ({file_size} bytes)")
         _validate_file_size(tmp_path, "Downloaded file")
 
-        # ── Step 2: Demucs stem separation ───────────────────────────────────
-        await _update_job(job_id, stage="separating_stems", progress_pct=30)
-        print(f"[process-async] [{job_id}] Step 2: Running Demucs via Replicate…")
+        # ── Step 2: Demucs stem separation (skipped for piano) ───────────────
+        # Mirror sync /process: piano uses a dedicated piano-transcription
+        # specialist that runs on the raw mix — stem separation is unused, so
+        # skip the Demucs Replicate call entirely. Avoids a 60s timeout for a
+        # step whose output the pipeline never reads.
+        needs_stems = body.instrument.strip().lower() != "piano"
+        detected_stems: list = []
+        stem_urls: dict = {}
 
-        replicate_token = os.environ.get("REPLICATE_API_TOKEN")
-        if not replicate_token:
-            raise Exception("REPLICATE_API_TOKEN not set")
+        if needs_stems:
+            await _update_job(job_id, stage="separating_stems", progress_pct=30)
+            print(f"[process-async] [{job_id}] Step 2: Running Demucs via Replicate…")
 
-        repl_client = replicate.Client(api_token=replicate_token)
-        output = await asyncio.to_thread(
-            repl_client.run,
-            "cjwbw/demucs:25a173108cff36ef9f80f854c162d01df9e6528be175794b81158fa03836d953",
-            input={"audio": body.audio_url},
-        )
-        print(f"[process-async] [{job_id}] Demucs output type: {type(output)}, value: {output}")
+            replicate_token = os.environ.get("REPLICATE_API_TOKEN")
+            if not replicate_token:
+                raise Exception("REPLICATE_API_TOKEN not set")
 
-        # Parse stem URLs from Demucs output
-        detected_stems = []
-        stem_urls = {}
-        if isinstance(output, dict):
-            for stem_name in ("vocals", "drums", "bass", "other"):
-                if output.get(stem_name):
-                    detected_stems.append(stem_name)
-                    stem_urls[stem_name] = str(output[stem_name])
+            # Generous read timeout + wait=False — same pattern as the piano
+            # specialist. The SDK's default ~30s read timeout (and ~60s
+            # Prefer:wait long-poll) are too short for Demucs jobs that can
+            # take a minute or more in the worker queue.
+            repl_client = replicate.Client(
+                api_token=replicate_token,
+                timeout=httpx.Timeout(connect=10.0, read=600.0, write=600.0, pool=10.0),
+            )
+
+            output = None
+            last_err: Optional[Exception] = None
+            for attempt in (1, 2):
+                try:
+                    output = await asyncio.to_thread(
+                        repl_client.run,
+                        "cjwbw/demucs:25a173108cff36ef9f80f854c162d01df9e6528be175794b81158fa03836d953",
+                        input={"audio": body.audio_url},
+                        wait=False,
+                    )
+                    break
+                except Exception as ex:
+                    msg = str(ex).lower()
+                    transient = ("timeout" in msg) or ("timed out" in msg)
+                    print(
+                        f"[process-async] [{job_id}] Demucs attempt {attempt}/2 failed "
+                        f"({type(ex).__name__}: {ex}) — transient={transient}"
+                    )
+                    last_err = ex
+                    if attempt == 1 and transient:
+                        await asyncio.sleep(3.0)
+                        continue
+                    raise
+            if output is None:
+                raise last_err if last_err else Exception("Demucs returned no output")
+            print(f"[process-async] [{job_id}] Demucs output type: {type(output)}, value: {output}")
+
+            # Parse stem URLs from Demucs output
+            if isinstance(output, dict):
+                for stem_name in ("vocals", "drums", "bass", "other"):
+                    if output.get(stem_name):
+                        detected_stems.append(stem_name)
+                        stem_urls[stem_name] = str(output[stem_name])
+            else:
+                stem_order = ["drums", "bass", "other", "vocals"]
+                for idx, url in enumerate(output or []):
+                    if idx < len(stem_order) and url:
+                        name = stem_order[idx]
+                        detected_stems.append(name)
+                        stem_urls[name] = str(url)
+            print(f"[process-async] [{job_id}] Detected stems: {detected_stems}")
         else:
-            stem_order = ["drums", "bass", "other", "vocals"]
-            for idx, url in enumerate(output or []):
-                if idx < len(stem_order) and url:
-                    name = stem_order[idx]
-                    detected_stems.append(name)
-                    stem_urls[name] = str(url)
-        print(f"[process-async] [{job_id}] Detected stems: {detected_stems}")
+            print(
+                f"[process-async] [{job_id}] Step 2: Skipping Demucs — "
+                f"'{body.instrument}' transcribes directly from the raw mix."
+            )
 
         # ── Step 3: Pick stem + convert to WAV ───────────────────────────────
-        selected_stem = INSTRUMENT_TO_STEM.get(body.instrument)
+        selected_stem = INSTRUMENT_TO_STEM.get(body.instrument) if needs_stems else None
         print(f"[process-async] [{job_id}] Instrument '{body.instrument}' → stem '{selected_stem}'")
 
         if selected_stem is None or selected_stem not in stem_urls:
