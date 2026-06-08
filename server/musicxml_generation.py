@@ -1,0 +1,200 @@
+"""
+MusicXML generation from a PrettyMIDI object.
+
+Kept in its own module (no FastAPI / httpx / librosa imports) so the
+unit tests can exercise it without standing up the full server stack —
+same pattern as note_extraction.py.
+
+Notation rules:
+- Piano renders as a grand staff: two stream.PartStaff bound by a
+  layout.StaffGroup (brace). Notes with MIDI >= 60 (C4) go to the
+  treble staff, < 60 to the bass.
+- The detected key signature is written into the score. Every output
+  Note is constructed fresh (Pitch(midi=...) → displayStatus is None),
+  so makeNotation's accidental pass folds in-key notes through the key
+  signature — e.g. F# in G major emits <alter>1</alter> with no
+  <accidental> element.
+- Tempo comes from the input PrettyMIDI's tempo map when present, else
+  falls back to the caller's `bpm` arg. 120 is a conservative default;
+  librosa audio beat-tracking is intentionally NOT used (it is
+  unreliable and frequently picks an octave-wrong tempo for sparse
+  piano content).
+"""
+
+import os
+import tempfile
+import uuid
+import traceback
+
+
+def generate_musicxml(
+    midi_data,
+    track_name: str = "Untitled",
+    instrument_name: str = "Piano",
+    bpm: int = 120,
+) -> tuple:
+    """
+    Convert a PrettyMIDI object → (musicxml_string, None).
+
+    The second tuple slot used to carry a "transposed notes" list back
+    to the caller; that path is gone (we no longer transpose to C/Am to
+    hide accidentals), but the slot is kept so callers' existing
+    `transposed_notes or notes` fallback continues to work unchanged.
+    Both values are None on failure (non-fatal).
+    """
+    import music21
+    from music21 import (
+        stream, meter, tempo, key, clef, instrument, metadata, layout,
+        note, pitch,
+    )
+
+    tmpdir = tempfile.gettempdir()
+    midi_path     = os.path.join(tmpdir, f"{uuid.uuid4()}_output.mid")
+    musicxml_path = os.path.join(tmpdir, f"{uuid.uuid4()}_output.musicxml")
+    try:
+        print("[musicxml] Generating MusicXML...")
+        if midi_data.instruments and midi_data.instruments[0].notes:
+            print(f"[musicxml] First 5 note pitches: {[n.pitch for n in midi_data.instruments[0].notes[:5]]}")
+
+        # ── Tempo: prefer the MIDI's own tempo map; fall back to the
+        #   caller's bpm arg. 120 is a conservative default — we do
+        #   NOT try to estimate tempo from audio (librosa beat-tracking
+        #   is unreliable and frequently picks an octave-wrong value).
+        midi_tempo = float(bpm) if bpm and bpm > 0 else 120.0
+        try:
+            _, tempos = midi_data.get_tempo_changes()
+            if len(tempos) > 0 and 30.0 <= float(tempos[0]) <= 300.0:
+                midi_tempo = float(tempos[0])
+        except Exception:
+            pass
+        qps = midi_tempo / 60.0  # quarter-notes per second
+
+        # ── Write MIDI to a temp file for music21 key analysis only.
+        #   The actual notation is built from raw PrettyMIDI notes
+        #   below so each output Note starts with a fresh accidental
+        #   state.
+        midi_data.write(midi_path)
+        parsed = music21.converter.parse(midi_path)
+        try:
+            detected_key = parsed.analyze('key')
+            key_sharps = int(detected_key.sharps)
+            print(f"[musicxml] Detected key: {detected_key} (sharps={key_sharps})")
+        except Exception as e:
+            print(f"[musicxml] Key analysis failed: {e} — defaulting to C major")
+            detected_key = None
+            key_sharps = 0
+
+        def _snap(ql: float) -> float:
+            if ql < 0.375:    return 0.25
+            if ql < 0.625:    return 0.5
+            if ql < 1.25:     return 1.0
+            if ql < 2.5:      return 2.0
+            return 4.0
+
+        pm_notes = []
+        for inst in midi_data.instruments:
+            for n in inst.notes:
+                pm_notes.append(n)
+        pm_notes.sort(key=lambda n: n.start)
+
+        INSTRUMENT_MAP = {
+            'piano':     instrument.Piano,
+            'guitar':    instrument.Guitar,
+            'violin':    instrument.Violin,
+            'cello':     instrument.Violoncello,
+            'flute':     instrument.Flute,
+            'trumpet':   instrument.Trumpet,
+            'saxophone': instrument.Saxophone,
+            'bass':      instrument.ElectricBass,
+            'vocals':    instrument.Vocalist,
+            'singing':   instrument.Vocalist,
+            'drums':     instrument.UnpitchedPercussion,
+        }
+        inst_class = INSTRUMENT_MAP.get(instrument_name.lower(), instrument.Piano)
+        is_piano = instrument_name.lower() == "piano"
+
+        new_score = stream.Score()
+        md = metadata.Metadata()
+        md.title = track_name
+        new_score.metadata = md
+
+        def _make_note(midi_val: int, ql: float):
+            n = note.Note(pitch.Pitch(midi=midi_val))
+            n.duration.quarterLength = ql
+            return n
+
+        if is_piano:
+            rh = stream.PartStaff()
+            lh = stream.PartStaff()
+
+            rh.insert(0, inst_class())
+            rh.insert(0, clef.TrebleClef())
+            rh.insert(0, key.KeySignature(key_sharps))
+            rh.insert(0, meter.TimeSignature('4/4'))
+            rh.insert(0, tempo.MetronomeMark(number=int(round(midi_tempo))))
+
+            lh.insert(0, inst_class())
+            lh.insert(0, clef.BassClef())
+            lh.insert(0, key.KeySignature(key_sharps))
+            lh.insert(0, meter.TimeSignature('4/4'))
+
+            for pm in pm_notes:
+                ql = _snap(max(0.0625, (pm.end - pm.start) * qps))
+                offset_ql = max(0.0, pm.start * qps)
+                target = rh if int(pm.pitch) >= 60 else lh
+                target.insert(offset_ql, _make_note(int(pm.pitch), ql))
+
+            new_score.insert(0, rh)
+            new_score.insert(0, lh)
+            new_score.insert(0, layout.StaffGroup(
+                [rh, lh], symbol='brace', barTogether=True,
+            ))
+        else:
+            p = stream.Part()
+            p.insert(0, inst_class())
+            p.insert(0, clef.TrebleClef())
+            p.insert(0, key.KeySignature(key_sharps))
+            p.insert(0, meter.TimeSignature('4/4'))
+            p.insert(0, tempo.MetronomeMark(number=int(round(midi_tempo))))
+
+            for pm in pm_notes:
+                ql = _snap(max(0.0625, (pm.end - pm.start) * qps))
+                offset_ql = max(0.0, pm.start * qps)
+                p.insert(offset_ql, _make_note(int(pm.pitch), ql))
+
+            new_score.insert(0, p)
+
+        # makeNotation chunks notes into measures, fills gaps with
+        # rests, and runs makeAccidentals using the KeySignature it
+        # finds on each part. With fresh notes (displayStatus=None) and
+        # the key signature in place, in-key accidentals are folded
+        # into the key signature — no redundant <accidental> element.
+        new_score.makeNotation(inPlace=True)
+
+        try:
+            new_score.write('musicxml', fp=musicxml_path)
+            with open(musicxml_path, 'r', encoding='utf-8', errors='replace') as f:
+                content = f.read()
+        except Exception as e:
+            print(f"[musicxml] MusicXML write/read error: {e}")
+            content = ""
+
+        print(
+            f"[musicxml] MusicXML generated — {len(content):,} chars, "
+            f"key={detected_key} (sharps={key_sharps}), "
+            f"tempo={midi_tempo:.1f} bpm, "
+            f"grand_staff={is_piano}, notes={len(pm_notes)}"
+        )
+        return content, None
+
+    except Exception as e:
+        print(f"[musicxml] Generation failed (non-fatal): {e}\n{traceback.format_exc()}")
+        return None, None
+
+    finally:
+        for f in [midi_path, musicxml_path]:
+            if os.path.exists(f):
+                try:
+                    os.remove(f)
+                except Exception:
+                    pass
