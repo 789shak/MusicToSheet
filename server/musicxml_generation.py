@@ -51,6 +51,15 @@ def generate_musicxml(
     tmpdir = tempfile.gettempdir()
     midi_path     = os.path.join(tmpdir, f"{uuid.uuid4()}_output.mid")
     musicxml_path = os.path.join(tmpdir, f"{uuid.uuid4()}_output.musicxml")
+    # Entry log — proves we are running THIS module (the grand-staff
+    # generator) and lets us compare music21 versions between Render and
+    # the offline pytest if behavior diverges.
+    _will_grand_staff = (instrument_name or "").lower() == "piano"
+    print(
+        f"[musicxml] generator start: "
+        f"instrument={instrument_name!r}, grand_staff_path={_will_grand_staff}, "
+        f"music21={music21.__version__}"
+    )
     try:
         print("[musicxml] Generating MusicXML...")
         if midi_data.instruments and midi_data.instruments[0].notes:
@@ -124,31 +133,48 @@ def generate_musicxml(
             return n
 
         if is_piano:
-            rh = stream.PartStaff()
-            lh = stream.PartStaff()
+            # ── Grand-staff branch ──────────────────────────────────────
+            # If anything in here throws on the live server (PartStaff /
+            # StaffGroup / KeySignature behavior can shift across music21
+            # versions), we want it to ANNOUNCE itself in the logs rather
+            # than be drowned out by the generic outer except. Logs the
+            # full traceback, then re-raises — no silent fallback.
+            try:
+                rh = stream.PartStaff()
+                lh = stream.PartStaff()
 
-            rh.insert(0, inst_class())
-            rh.insert(0, clef.TrebleClef())
-            rh.insert(0, key.KeySignature(key_sharps))
-            rh.insert(0, meter.TimeSignature('4/4'))
-            rh.insert(0, tempo.MetronomeMark(number=int(round(midi_tempo))))
+                rh.insert(0, inst_class())
+                rh.insert(0, clef.TrebleClef())
+                rh.insert(0, key.KeySignature(key_sharps))
+                rh.insert(0, meter.TimeSignature('4/4'))
+                rh.insert(0, tempo.MetronomeMark(number=int(round(midi_tempo))))
 
-            lh.insert(0, inst_class())
-            lh.insert(0, clef.BassClef())
-            lh.insert(0, key.KeySignature(key_sharps))
-            lh.insert(0, meter.TimeSignature('4/4'))
+                lh.insert(0, inst_class())
+                lh.insert(0, clef.BassClef())
+                lh.insert(0, key.KeySignature(key_sharps))
+                lh.insert(0, meter.TimeSignature('4/4'))
 
-            for pm in pm_notes:
-                ql = _snap(max(0.0625, (pm.end - pm.start) * qps))
-                offset_ql = max(0.0, pm.start * qps)
-                target = rh if int(pm.pitch) >= 60 else lh
-                target.insert(offset_ql, _make_note(int(pm.pitch), ql))
+                for pm in pm_notes:
+                    ql = _snap(max(0.0625, (pm.end - pm.start) * qps))
+                    offset_ql = max(0.0, pm.start * qps)
+                    target = rh if int(pm.pitch) >= 60 else lh
+                    target.insert(offset_ql, _make_note(int(pm.pitch), ql))
 
-            new_score.insert(0, rh)
-            new_score.insert(0, lh)
-            new_score.insert(0, layout.StaffGroup(
-                [rh, lh], symbol='brace', barTogether=True,
-            ))
+                new_score.insert(0, rh)
+                new_score.insert(0, lh)
+                new_score.insert(0, layout.StaffGroup(
+                    [rh, lh], symbol='brace', barTogether=True,
+                ))
+                print(
+                    f"[musicxml] grand-staff built: rh_notes={len(rh.flatten().notes)}, "
+                    f"lh_notes={len(lh.flatten().notes)}, key_sharps={key_sharps}"
+                )
+            except Exception as gs_err:
+                print(
+                    f"[musicxml] GRAND-STAFF FAILED, falling back: "
+                    f"{type(gs_err).__name__}: {gs_err}\n{traceback.format_exc()}"
+                )
+                raise
         else:
             p = stream.Part()
             p.insert(0, inst_class())
@@ -169,7 +195,26 @@ def generate_musicxml(
         # finds on each part. With fresh notes (displayStatus=None) and
         # the key signature in place, in-key accidentals are folded
         # into the key signature — no redundant <accidental> element.
-        new_score.makeNotation(inPlace=True)
+        try:
+            new_score.makeNotation(inPlace=True)
+        except Exception as mn_err:
+            print(
+                f"[musicxml] makeNotation FAILED: "
+                f"{type(mn_err).__name__}: {mn_err}\n{traceback.format_exc()}"
+            )
+            raise
+
+        # Confirm grand-staff survived makeNotation: count PartStaff parts
+        # and Part parts in the final Score. If grand_staff_path was True
+        # but n_partstaff == 0, the export will be single-staff regardless
+        # of what we built above.
+        if _will_grand_staff:
+            n_partstaff = sum(1 for p in new_score.parts if isinstance(p, stream.PartStaff))
+            n_part      = sum(1 for p in new_score.parts if not isinstance(p, stream.PartStaff))
+            print(
+                f"[musicxml] post-makeNotation: PartStaff={n_partstaff}, "
+                f"Part={n_part}, total_parts={len(new_score.parts)}"
+            )
 
         try:
             new_score.write('musicxml', fp=musicxml_path)
