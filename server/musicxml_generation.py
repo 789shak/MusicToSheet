@@ -93,12 +93,26 @@ def generate_musicxml(
             detected_key = None
             key_sharps = 0
 
+        # 16th-note grid. MIN_QL is one grid unit — the smallest duration
+        # music21+MusicXML can safely notate end-to-end without slipping
+        # into 32nd/64th/…/2048th fragments after makeNotation splits
+        # notes across barlines.
+        GRID_QL = 0.25
+        MIN_QL  = 0.25
+
         def _snap(ql: float) -> float:
             if ql < 0.375:    return 0.25
             if ql < 0.625:    return 0.5
             if ql < 1.25:     return 1.0
             if ql < 2.5:      return 2.0
             return 4.0
+
+        def _snap_offset(off_ql: float) -> float:
+            # Snap offset to nearest 16th. Pure rounding, no minimum —
+            # offset 0.0 must stay 0.0.
+            if off_ql <= 0.0:
+                return 0.0
+            return round(off_ql / GRID_QL) * GRID_QL
 
         pm_notes = []
         for inst in midi_data.instruments:
@@ -156,7 +170,7 @@ def generate_musicxml(
 
                 for pm in pm_notes:
                     ql = _snap(max(0.0625, (pm.end - pm.start) * qps))
-                    offset_ql = max(0.0, pm.start * qps)
+                    offset_ql = _snap_offset(pm.start * qps)
                     target = rh if int(pm.pitch) >= 60 else lh
                     target.insert(offset_ql, _make_note(int(pm.pitch), ql))
 
@@ -185,10 +199,40 @@ def generate_musicxml(
 
             for pm in pm_notes:
                 ql = _snap(max(0.0625, (pm.end - pm.start) * qps))
-                offset_ql = max(0.0, pm.start * qps)
+                offset_ql = _snap_offset(pm.start * qps)
                 p.insert(offset_ql, _make_note(int(pm.pitch), ql))
 
             new_score.insert(0, p)
+
+        # ── Safety-net quantization ─────────────────────────────────────
+        # Per-note _snap_offset / _snap above handles the common case,
+        # but PartStaff.insert can still leave float-drift offsets that
+        # makeNotation will split into sub-notatable fragments (the
+        # "Cannot convert '2048th' duration to MusicXML" crash).
+        # stream.quantize with recurse=True locks every offset + duration
+        # in every PartStaff/Part to the 16th-note grid. Then we clamp
+        # any note that quantized to ql == 0 up to one grid unit so
+        # MusicXML always has something notatable to write.
+        try:
+            new_score.quantize(
+                quarterLengthDivisors=(4,),
+                processOffsets=True,
+                processDurations=True,
+                inPlace=True,
+                recurse=True,
+            )
+            clamped = 0
+            for n in new_score.recurse().notes:
+                if n.duration.quarterLength < MIN_QL:
+                    n.duration.quarterLength = MIN_QL
+                    clamped += 1
+            if clamped:
+                print(f"[musicxml] clamped {clamped} sub-grid notes up to {MIN_QL} ql")
+        except Exception as q_err:
+            print(
+                f"[musicxml] quantize FAILED (continuing without): "
+                f"{type(q_err).__name__}: {q_err}\n{traceback.format_exc()}"
+            )
 
         # makeNotation chunks notes into measures, fills gaps with
         # rests, and runs makeAccidentals using the KeySignature it
@@ -221,8 +265,21 @@ def generate_musicxml(
             with open(musicxml_path, 'r', encoding='utf-8', errors='replace') as f:
                 content = f.read()
         except Exception as e:
-            print(f"[musicxml] MusicXML write/read error: {e}")
-            content = ""
+            # Never silently store 0-char MusicXML as a successful job.
+            # Surface the failure to the caller (None) so they can mark
+            # the job as failed instead of shipping an empty score.
+            print(
+                f"[musicxml] MusicXML write/read FAILED: "
+                f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+            )
+            return None, None
+
+        if not content or len(content) < 100:
+            print(
+                f"[musicxml] MusicXML export produced empty/tiny output "
+                f"({len(content)} chars) — treating as failure"
+            )
+            return None, None
 
         print(
             f"[musicxml] MusicXML generated — {len(content):,} chars, "

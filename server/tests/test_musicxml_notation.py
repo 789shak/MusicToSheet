@@ -100,3 +100,96 @@ def test_piano_grand_staff_key_sig_and_in_key_accidental():
         "redundant <accidental> tag — makeAccidentals failed to fold via "
         "the key signature."
     )
+
+
+def _build_pathological_5sharp_midi():
+    """
+    Notes biased toward B major / G# minor (5 sharps) with a mix of:
+      - one absurdly short note (0.008s) that pre-fix would round to a
+        sub-notatable quarterLength and crash MusicXML export
+      - notes at non-grid offsets to force makeNotation to either
+        split them at barlines into tiny fragments, or — post-fix —
+        snap them to the 16th-note grid
+      - notes on both staves so the grand-staff path is exercised
+    Pitch palette emphasizes B/D#/F#/G#/C#/E to make Krumhansl pick
+    a 5-sharp key (B major or G# minor) — either is fine for the
+    assertion (fifths == 5 or -7 etc.; we accept |fifths| >= 4).
+    """
+    midi = pretty_midi.PrettyMIDI(initial_tempo=120)
+    piano = pretty_midi.Instrument(program=0)
+    # (pitch, start, end) — start/end deliberately use offsets that are
+    # NOT multiples of 0.125s (a 16th @ 120bpm) to stress the quantizer.
+    events = [
+        (44, 0.0,    0.503),    # G#2  bass
+        (51, 0.503,  1.007),    # D#3  bass
+        (56, 1.007,  1.013),    # G#3  bass  ← 0.006s = 0.012 ql, must clamp
+        (59, 1.013,  1.521),    # B3   bass/treble border
+        (66, 1.521,  2.034),    # F#4  treble
+        (71, 2.034,  2.040),    # B4   treble ← 0.006s pathological
+        (68, 2.040,  2.548),    # G#4  treble
+        (73, 2.548,  3.061),    # C#5  treble
+        (76, 3.061,  3.575),    # E5   treble
+        (71, 3.575,  4.087),    # B4   treble
+        (68, 4.087,  4.600),    # G#4  treble
+        (66, 4.600,  5.115),    # F#4  treble
+        (63, 5.115,  5.625),    # D#4  treble
+        (59, 5.625,  6.135),    # B3
+        (56, 6.135,  6.650),    # G#3  bass
+        (51, 6.650,  7.160),    # D#3  bass
+        (44, 7.160,  7.675),    # G#2  bass
+    ]
+    for pitch_val, start, end in events:
+        piano.notes.append(pretty_midi.Note(
+            velocity=80, pitch=pitch_val, start=start, end=end,
+        ))
+    midi.instruments.append(piano)
+    return midi
+
+
+def test_pathological_short_durations_in_5sharp_key_export_succeeds():
+    """
+    Regression test for the "Cannot convert '2048th' duration to MusicXML"
+    crash that zeroed the grand-staff output. Pre-fix, generate_musicxml
+    would return None or empty string because makeNotation produced
+    sub-notatable fragment durations that the MusicXML exporter rejected.
+
+    Post-fix: stream.quantize + min-duration clamp keep every note on
+    the 16th-note grid, so the export succeeds even with absurdly short
+    input notes in a 5-sharp key.
+    """
+    from musicxml_generation import generate_musicxml
+
+    midi = _build_pathological_5sharp_midi()
+    xml_str, _ = generate_musicxml(midi, "Pathological", "Piano", 120)
+
+    # ── Invariant 1: NON-EMPTY MusicXML.
+    assert xml_str, (
+        "generate_musicxml returned no content — the 2048th-duration "
+        "regression has reappeared"
+    )
+    assert len(xml_str) > 500, (
+        f"MusicXML output suspiciously small ({len(xml_str)} chars) — "
+        "likely a near-empty score from a partial export failure"
+    )
+
+    root = ET.fromstring(xml_str)
+
+    # ── Invariant 2: grand staff survived (<staves>2</staves>).
+    staves_el = root.find(".//part/measure/attributes/staves")
+    assert staves_el is not None and staves_el.text == "2", (
+        f"expected <staves>2</staves>, got "
+        f"{staves_el.text if staves_el is not None else 'missing'} — "
+        "grand-staff layout lost"
+    )
+
+    # ── Invariant 3: a sharps-side key signature (|fifths| >= 4).
+    # We accept any sharp/flat key with |fifths| >= 4 so the test is
+    # robust to Krumhansl picking B major (5), G# minor (5), F# major
+    # (6), etc., without being fragile to small reweightings.
+    fifths_el = root.find(".//part/measure/attributes/key/fifths")
+    assert fifths_el is not None, "no <key><fifths> in the score"
+    fifths_val = int(fifths_el.text)
+    assert abs(fifths_val) >= 4, (
+        f"expected a heavily-sharped/flatted key (|fifths| >= 4), "
+        f"got fifths={fifths_val}"
+    )
