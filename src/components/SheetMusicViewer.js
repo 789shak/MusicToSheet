@@ -209,14 +209,17 @@ function handlePlaybackCommand(cmd) {
     _pbCtx   = new (window.AudioContext || window.webkitAudioContext)();
     _pbStart = _pbCtx.currentTime + 0.05;
     _pbSched = [];
-    var t = _pbStart;
+    var maxEnd = _pbStart;
     for (var i = 0; i < notes.length; i++) {
-      var n = notes[i], dur = Math.max(0.05, (n.duration || 0.5) * (120 / bpm));
-      _tone(_pbCtx, _freq(n.pitch), t, dur * 0.88);
-      _pbSched.push({ idx: i, t0: t, t1: t + dur });
-      t += dur;
+      var n = notes[i];
+      var noteStart = _pbStart + (n.start || 0) * (120 / bpm);
+      var dur = Math.max(0.05, (n.duration || 0.5) * (120 / bpm));
+      _tone(_pbCtx, _freq(n.pitch), noteStart, dur * 0.88);
+      _pbSched.push({ idx: i, t0: noteStart, t1: noteStart + dur });
+      var noteEnd = noteStart + dur;
+      if (noteEnd > maxEnd) maxEnd = noteEnd;
     }
-    _pbTotal = t - _pbStart;
+    _pbTotal = maxEnd - _pbStart;
     _post({ type: 'totalTime', totalTime: _pbTotal });
     _pbTimer = setTimeout(_tick, 80);
   } else if (cmd.type === 'pause') {
@@ -522,14 +525,17 @@ function handlePlaybackCommand(cmd) {
     _pbCtx   = new (window.AudioContext || window.webkitAudioContext)();
     _pbStart = _pbCtx.currentTime + 0.05;
     _pbSched = [];
-    var t = _pbStart;
+    var maxEnd = _pbStart;
     for (var i = 0; i < notes.length; i++) {
-      var n = notes[i], dur = Math.max(0.05, (n.duration || 0.5) * (120 / bpm));
-      _tone(_pbCtx, _freq(n.pitch), t, dur * 0.88);
-      _pbSched.push({ idx: i, t0: t, t1: t + dur });
-      t += dur;
+      var n = notes[i];
+      var noteStart = _pbStart + (n.start || 0) * (120 / bpm);
+      var dur = Math.max(0.05, (n.duration || 0.5) * (120 / bpm));
+      _tone(_pbCtx, _freq(n.pitch), noteStart, dur * 0.88);
+      _pbSched.push({ idx: i, t0: noteStart, t1: noteStart + dur });
+      var noteEnd = noteStart + dur;
+      if (noteEnd > maxEnd) maxEnd = noteEnd;
     }
-    _pbTotal = t - _pbStart;
+    _pbTotal = maxEnd - _pbStart;
     _post({ type: 'totalTime', totalTime: _pbTotal });
     _pbTimer = setTimeout(_tick, 80);
   } else if (cmd.type === 'pause') {
