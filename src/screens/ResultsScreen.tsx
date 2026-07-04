@@ -19,7 +19,7 @@ import { supabase } from '../lib/supabase';
 import { takeResult } from '../lib/resultStore';
 import { useSubscription } from '../hooks/useSubscription';
 import { useAuth } from '../hooks/useAuth';
-import SheetMusicViewer, { buildStaticPdfHtml } from '../components/SheetMusicViewer';
+import SheetMusicViewer, { buildStaticPdfHtml, buildSvgPdfHtml } from '../components/SheetMusicViewer';
 import { FREE_PREVIEW_SECONDS } from '../components/sheetLayout';
 
 // ─── Constants ─────────────────────────────────────────────────────────────
@@ -220,6 +220,9 @@ function ResultsScreenInner() {
   // output_data (history replay). Original notes are never mutated in place.
   const [notes, setNotes] = useState<{ pitch: string; start: number; duration: number }[]>(initial.current.notes);
   const [musicxml, setMusicxml] = useState<string | null>(initial.current.musicxml);
+  // Rendered OSMD SVG captured from the viewer webview — used so the PDF export
+  // matches the on-screen engraving instead of the separate notes-only renderer.
+  const [osmdSvg, setOsmdSvg] = useState<string | null>(null);
   const storeMeta = initial.current.storeMeta;
   const [loadError, setLoadError] = useState(initial.current.loadError);
   // History replay loads notes asynchronously — stay in a loading state until
@@ -335,6 +338,10 @@ function ResultsScreenInner() {
       } else if (msg.type === 'stopped') {
         setPlaybackState('idle');
         setCurrentTime(0);
+      } else if (msg.type === 'osmd_svg') {
+        // The viewer finished rendering and handed us its SVG — cache it so a
+        // PDF export can reuse the exact same engraving.
+        if (typeof msg.svg === 'string' && msg.svg.length > 0) setOsmdSvg(msg.svg);
       } else if (msg.type === 'nav') {
         // Upgrade overlay buttons inside the WebView post navigation requests
         if (msg.route === '/') {
@@ -432,11 +439,24 @@ function ResultsScreenInner() {
       `[ResultsScreen] generatePdf slice: isFreeTier=${isFreeTier} pre=${notes.length} post=${scopedNotes.length}`
     );
     const trimmedNotes = scopedNotes.length > 200 ? scopedNotes.slice(0, 200) : scopedNotes;
-    const html = buildStaticPdfHtml(trimmedNotes, pdfMeta());
+
+    // Prefer the OSMD engraving (matches the on-screen Score) whenever we have
+    // it — for ALL tiers. The paywall still holds: for free tier the on-screen
+    // OSMD is already truncated to the 30s preview (drawUpToMeasureNumber) and
+    // watermarked before we capture its SVG, so the free PDF only ever contains
+    // the preview. Falls back to the static notes renderer when the SVG isn't
+    // available (OSMD CDN miss, or older history rows with no musicxml).
+    let html;
+    if (osmdSvg) {
+      html = buildSvgPdfHtml(osmdSvg, pdfMeta());
+      console.log('PDF SHARE: using OSMD SVG engraving, svg size:', osmdSvg.length, 'chars');
+    } else {
+      html = buildStaticPdfHtml(trimmedNotes, pdfMeta());
+      console.log('PDF SHARE: using static notes renderer, notes:', trimmedNotes.length);
+    }
 
     console.log('PDF SHARE: Starting PDF generation');
-    console.log('STATIC PDF notes count:', trimmedNotes.length);
-    console.log('STATIC PDF HTML size:', html.length, 'chars');
+    console.log('PDF HTML size:', html.length, 'chars');
 
     const pdfPromise = Print.printToFileAsync({ html });
     const timeoutPromise = new Promise<never>((_, reject) =>
