@@ -5,7 +5,10 @@ import traceback
 import subprocess
 import gc
 import time
+import socket
+import ipaddress
 import base64 as _base64
+from urllib.parse import urlparse
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Optional
@@ -199,11 +202,43 @@ def _check_abuse(ip: str, track_key: str = "") -> None:
     _ip_weekly_log[ip].append(now)
 
 # ─── Input Validation Helpers ─────────────────────────────────────────────────
+def _host_resolves_to_public_ip(url: str) -> bool:
+    """
+    SSRF guard. Resolve the URL's host and require EVERY resolved address to be a
+    public IP. Blocks loopback, private, link-local (incl. the cloud metadata
+    endpoint 169.254.169.254), reserved, multicast, and unspecified ranges — the
+    addresses an attacker would target to make the server fetch internal
+    resources. Legit public hosts (Supabase Storage, Replicate) resolve to global
+    IPs and pass. NOTE: this validates the initial host only; re-validating each
+    redirect hop is a further hardening step.
+    """
+    try:
+        host = urlparse(url).hostname
+        if not host:
+            return False
+        infos = socket.getaddrinfo(host, None)
+    except Exception:
+        return False
+    if not infos:
+        return False
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return False
+        if (ip.is_private or ip.is_loopback or ip.is_link_local
+                or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+            return False
+    return True
+
+
 def _validate_url(url: Optional[str]) -> None:
     if not url:
         return
     low = url.lower()
     if low.startswith(("http://", "https://")):
+        if not _host_resolves_to_public_ip(url):
+            raise HTTPException(status_code=400, detail="audio_url host is not permitted")
         return
     if low.startswith("file:///tmp/"):
         return  # Safe: server-local temp files only

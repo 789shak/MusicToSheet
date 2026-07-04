@@ -1,8 +1,13 @@
 import Purchases from 'react-native-purchases';
 import { Platform } from 'react-native';
 
-const API_KEY_ANDROID = process.env.REVENUECAT_API_KEY_ANDROID;
-const API_KEY_IOS     = process.env.REVENUECAT_API_KEY_IOS;
+// NOTE: Expo only inlines env vars prefixed with EXPO_PUBLIC_ into the client
+// bundle. Without that prefix these were always undefined in a real build, so
+// RevenueCat silently disabled itself. RevenueCat SDK (client) keys are designed
+// to live in the app, so EXPO_PUBLIC_ is the correct place for them. Set them as
+// EAS environment variables (see eas.json / the deploy notes).
+const API_KEY_ANDROID = process.env.EXPO_PUBLIC_REVENUECAT_API_KEY_ANDROID;
+const API_KEY_IOS     = process.env.EXPO_PUBLIC_REVENUECAT_API_KEY_IOS;
 const API_KEY         = Platform.OS === 'ios' ? API_KEY_IOS : API_KEY_ANDROID;
 
 let _configured = false;
