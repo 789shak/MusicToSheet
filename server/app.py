@@ -284,11 +284,12 @@ def detect_notes_with_basic_pitch(wav_path: str) -> tuple:
     """
     Run Spotify Basic Pitch on a WAV file.
     Returns (notes, midi_data) where:
-      notes     – list of note dicts with CLAMPED pitches (C4–C6, MIDI 60–84)
-      midi_data – fresh PrettyMIDI object built from the same clamped events
+      notes     – list of note dicts with the model's REAL pitches
+      midi_data – fresh PrettyMIDI object built from the same events
 
-    Clamping happens here so both the frontend JSON and the MusicXML MIDI file
-    are guaranteed to share identical, in-range pitches.
+    Pitches are passed through untouched (guarded only to valid MIDI 0–127) so
+    both the frontend JSON and the MusicXML MIDI file share identical, true
+    pitches. The correct clef is chosen later in generate_musicxml().
     """
     print("[basic_pitch] Running Basic Pitch inference...")
     model_output, _raw_midi, note_events = predict(wav_path)
@@ -339,17 +340,22 @@ def detect_notes_with_basic_pitch(wav_path: str) -> tuple:
             print(f"[basic_pitch] Skipping note event due to error: {ex}")
             continue
 
-    # ── Step 2: Clamp pitches to treble clef range C4–C6 (MIDI 60–84) ───────
+    # ── Step 2: Keep the model's REAL pitches (P0-3 fix) ────────────────────
+    # Previously every pitch was octave-folded into C4–C6 (MIDI 60–84) with a
+    # `while pitch < 60: pitch += 12` / `while pitch > 84: pitch -= 12` loop.
+    # That crushed bass lines, low vocals, and any melody crossing the C4/C6
+    # boundary into the WRONG octave and mangled the contour — the single
+    # biggest reason non-piano output was wrong. We now pass the model's real
+    # pitches through untouched (guarding only the valid MIDI 0–127 range). The
+    # correct clef is chosen downstream in generate_musicxml() from the actual
+    # pitch distribution.
     adjusted = []
     for start, end, pitch, velocity, confidence in raw:
-        while pitch < 60:
-            pitch += 12
-        while pitch > 84:
-            pitch -= 12
+        pitch = max(0, min(127, int(pitch)))
         adjusted.append((start, end, pitch, velocity, confidence))
-    print(f"[basic_pitch] {len(adjusted)} notes after normalization and clamping.")
+    print(f"[basic_pitch] {len(adjusted)} notes after normalization (no octave clamp).")
     if adjusted:
-        print(f"[basic_pitch] Pitch range after clamping: min={min(p[2] for p in adjusted)}, max={max(p[2] for p in adjusted)}")
+        print(f"[basic_pitch] Real pitch range: min={min(p[2] for p in adjusted)}, max={max(p[2] for p in adjusted)}")
 
     # ── Step 3: Build the notes JSON list from clamped events ─────────────────
     # start/end come directly from Basic Pitch in seconds — do NOT route through
@@ -553,8 +559,12 @@ async def process_audio(request: Request, body: ProcessRequest, claims=Depends(v
 
         # Step 2: Convert to WAV via ffmpeg
         print("[process] Step 2: Converting to WAV with ffmpeg...")
+        # P0-4: removed the hard `-t 60` truncation that silently capped every
+        # song at 60 seconds. Full length is transcribed; the real 30-minute
+        # limit is enforced by _validate_duration(). NOTE: for very long files
+        # prefer the async job path (/process-async) to avoid request timeouts.
         result = subprocess.run(
-            ['ffmpeg', '-i', tmp_path, '-t', '60', '-ar', '22050', '-ac', '1', '-sample_fmt', 's16', wav_path, '-y'],
+            ['ffmpeg', '-i', tmp_path, '-ar', '22050', '-ac', '1', '-sample_fmt', 's16', wav_path, '-y'],
             capture_output=True,
             text=True,
         )
@@ -564,21 +574,12 @@ async def process_audio(request: Request, body: ProcessRequest, claims=Depends(v
             raise Exception(f"ffmpeg failed with code {result.returncode}: {result.stderr}")
         print(f"[process] Converted to WAV: {wav_path}")
 
-        # Step 2b: Noise reduction
-        print("[process] Step 2b: Applying noise reduction...")
-        _nr_y, _nr_sr = sf.read(wav_path)
-        _nr_reduced = nr.reduce_noise(
-            y=_nr_y,
-            sr=_nr_sr,
-            prop_decrease=0.6,
-            stationary=False,
-            n_fft=2048,
-            freq_mask_smooth_hz=500,
-        )
-        sf.write(wav_path, _nr_reduced, _nr_sr)
-        del _nr_y, _nr_reduced
-        gc.collect()
-        print("[process] Noise reduction complete")
+        # Step 2b: (P0-4) Pre-transcription noise reduction REMOVED.
+        # Spectral noise reduction distorts the harmonic content the
+        # transcription model reads and can LOWER accuracy on already-clean
+        # recordings — pro engines (AnthemScore/Klangio) do not denoise before
+        # transcription. Users who want denoising can still use the dedicated
+        # /clean-audio endpoint (the in-app Noise Cleaner) as an explicit step.
 
         # Step 3: Load WAV with librosa for duration (also enforces 30-min hard cap)
         print("[process] Step 3: Loading WAV with librosa...")
@@ -723,11 +724,12 @@ async def process_with_stems(request: Request, body: ProcessRequest, claims=Depe
             audio_for_detection = stem_path
 
         # Step 6: Convert to WAV with ffmpeg
-        # TODO: Remove 90-second cap when async processing is implemented
+        # P0-4: removed the hard `-t 90` truncation. Full length is transcribed;
+        # long files should use the async job path (/process-async).
         wav_path = f"/tmp/{uid}_out.wav"
         print("[stems] Step 6: Converting to WAV with ffmpeg...")
         result = subprocess.run(
-            ['ffmpeg', '-i', audio_for_detection, '-t', '90', '-ar', '22050', '-ac', '1', '-sample_fmt', 's16', wav_path, '-y'],
+            ['ffmpeg', '-i', audio_for_detection, '-ar', '22050', '-ac', '1', '-sample_fmt', 's16', wav_path, '-y'],
             capture_output=True,
             text=True,
         )
@@ -735,21 +737,9 @@ async def process_with_stems(request: Request, body: ProcessRequest, claims=Depe
             raise Exception(f"ffmpeg failed: {result.stderr}")
         print(f"[stems] Converted to WAV: {wav_path}")
 
-        # Step 6b: Noise reduction
-        print("[stems] Step 6b: Applying noise reduction...")
-        _nr_y, _nr_sr = sf.read(wav_path)
-        _nr_reduced = nr.reduce_noise(
-            y=_nr_y,
-            sr=_nr_sr,
-            prop_decrease=0.6,
-            stationary=False,
-            n_fft=2048,
-            freq_mask_smooth_hz=500,
-        )
-        sf.write(wav_path, _nr_reduced, _nr_sr)
-        del _nr_y, _nr_reduced
-        gc.collect()
-        print("[stems] Noise reduction complete")
+        # Step 6b: (P0-4) Pre-transcription noise reduction REMOVED — see the
+        # explanation in /process. Denoising before transcription distorts
+        # harmonics and hurts accuracy; use /clean-audio as an explicit step.
 
         # Step 7: Load WAV with librosa for duration
         print("[stems] Step 7: Loading WAV with librosa...")
@@ -944,15 +934,7 @@ async def _run_stems_pipeline(job_id: str, body: ProcessRequest) -> None:
         if conv.returncode != 0:
             raise Exception(f"ffmpeg failed: {conv.stderr}")
 
-        # Noise reduction
-        _nr_y, _nr_sr = sf.read(wav_path)
-        _nr_reduced = nr.reduce_noise(
-            y=_nr_y, sr=_nr_sr,
-            prop_decrease=0.6, stationary=False, n_fft=2048, freq_mask_smooth_hz=500,
-        )
-        sf.write(wav_path, _nr_reduced, _nr_sr)
-        del _nr_y, _nr_reduced
-        gc.collect()
+        # (P0-4) Pre-transcription noise reduction REMOVED — see /process.
 
         # Duration
         _y, _sr = librosa.load(wav_path, sr=22050, mono=True)

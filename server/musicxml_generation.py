@@ -45,7 +45,7 @@ def generate_musicxml(
     import music21
     from music21 import (
         stream, meter, tempo, key, clef, instrument, metadata, layout,
-        note, pitch,
+        note, pitch, chord,
     )
 
     tmpdir = tempfile.gettempdir()
@@ -101,11 +101,15 @@ def generate_musicxml(
         MIN_QL  = 0.25
 
         def _snap(ql: float) -> float:
-            if ql < 0.375:    return 0.25
-            if ql < 0.625:    return 0.5
-            if ql < 1.25:     return 1.0
-            if ql < 2.5:      return 2.0
-            return 4.0
+            # P0-2: snap to the nearest allowed duration on a 16th grid,
+            # now INCLUDING dotted values so dotted eighths/quarters/halves
+            # survive to the score instead of being rounded to the wrong
+            # plain duration. All values are multiples of 0.25, so they stay
+            # notatable through quantize + makeNotation.
+            #   0.25=16th 0.5=8th 0.75=dotted-8th 1.0=quarter
+            #   1.5=dotted-quarter 2.0=half 3.0=dotted-half 4.0=whole
+            allowed = (0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0)
+            return min(allowed, key=lambda a: abs(a - ql))
 
         def _snap_offset(off_ql: float) -> float:
             # Snap offset to nearest 16th. Pure rounding, no minimum —
@@ -142,9 +146,40 @@ def generate_musicxml(
         new_score.metadata = md
 
         def _make_note(midi_val: int, ql: float):
-            n = note.Note(pitch.Pitch(midi=midi_val))
+            n = note.Note(pitch.Pitch(midi=int(midi_val)))
             n.duration.quarterLength = ql
             return n
+
+        def _make_chord(midi_vals, ql: float):
+            c = chord.Chord([pitch.Pitch(midi=int(m)) for m in sorted(set(midi_vals))])
+            c.duration.quarterLength = ql
+            return c
+
+        def _grouped_elements(staff_notes):
+            """
+            P0-1 chord grouping. Notes whose onsets snap to the SAME 16th-grid
+            slot on the same staff are merged into a single music21 Chord
+            instead of being inserted as separate notes. Previously simultaneous
+            notes were inserted independently, so music21 exploded them into up
+            to 5 voices with <backup> elements — the stacked stems / overlapping
+            noteheads that made piano look unreadable. Returns a list of
+            (offset_ql, element) where element is a Note (1 pitch) or Chord (2+).
+            """
+            from collections import defaultdict as _dd
+            buckets = _dd(list)
+            for pm in staff_notes:
+                off = _snap_offset(pm.start * qps)
+                buckets[round(off, 4)].append(pm)
+            out = []
+            for off in sorted(buckets):
+                grp = buckets[off]
+                dur_ql = _snap(max(0.0625, max((g.end - g.start) for g in grp) * qps))
+                pitches = sorted({int(g.pitch) for g in grp})
+                el = (_make_note(pitches[0], dur_ql)
+                      if len(pitches) == 1
+                      else _make_chord(pitches, dur_ql))
+                out.append((off, el))
+            return out
 
         if is_piano:
             # ── Grand-staff branch ──────────────────────────────────────
@@ -168,11 +203,15 @@ def generate_musicxml(
                 lh.insert(0, key.KeySignature(key_sharps))
                 lh.insert(0, meter.TimeSignature('4/4'))
 
-                for pm in pm_notes:
-                    ql = _snap(max(0.0625, (pm.end - pm.start) * qps))
-                    offset_ql = _snap_offset(pm.start * qps)
-                    target = rh if int(pm.pitch) >= 60 else lh
-                    target.insert(offset_ql, _make_note(int(pm.pitch), ql))
+                # Split by staff first (treble >= C4, bass < C4), then group
+                # each staff's simultaneous notes into chords. A real chord that
+                # spans both hands is correctly split across the two staves.
+                rh_notes = [pm for pm in pm_notes if int(pm.pitch) >= 60]
+                lh_notes = [pm for pm in pm_notes if int(pm.pitch) < 60]
+                for off, el in _grouped_elements(rh_notes):
+                    rh.insert(off, el)
+                for off, el in _grouped_elements(lh_notes):
+                    lh.insert(off, el)
 
                 new_score.insert(0, rh)
                 new_score.insert(0, lh)
@@ -190,19 +229,30 @@ def generate_musicxml(
                 )
                 raise
         else:
+            # P0-3 companion: choose the clef from the ACTUAL pitch distribution
+            # now that pitches are no longer octave-clamped upstream. Bass-heavy
+            # content (bass guitar, low vocals, cello) gets a bass clef instead
+            # of being forced onto a treble staff buried in ledger lines.
+            _midis = [int(pm.pitch) for pm in pm_notes] or [60]
+            _median = sorted(_midis)[len(_midis) // 2]
+            chosen_clef = clef.BassClef() if _median < 55 else clef.TrebleClef()  # 55 = G3
+
             p = stream.Part()
             p.insert(0, inst_class())
-            p.insert(0, clef.TrebleClef())
+            p.insert(0, chosen_clef)
             p.insert(0, key.KeySignature(key_sharps))
             p.insert(0, meter.TimeSignature('4/4'))
             p.insert(0, tempo.MetronomeMark(number=int(round(midi_tempo))))
 
-            for pm in pm_notes:
-                ql = _snap(max(0.0625, (pm.end - pm.start) * qps))
-                offset_ql = _snap_offset(pm.start * qps)
-                p.insert(offset_ql, _make_note(int(pm.pitch), ql))
+            # P0-1 chord grouping applies to single-staff instruments too.
+            for off, el in _grouped_elements(pm_notes):
+                p.insert(off, el)
 
             new_score.insert(0, p)
+            print(
+                f"[musicxml] single-staff built: "
+                f"elements={len(p.flatten().notes)}, clef={type(chosen_clef).__name__}"
+            )
 
         # ── Safety-net quantization ─────────────────────────────────────
         # Per-note _snap_offset / _snap above handles the common case,
@@ -294,6 +344,7 @@ def generate_musicxml(
         return None, None
 
     finally:
+        # P0 fixes (chord grouping, dotted rhythm, clef selection) applied July 2026.
         for f in [midi_path, musicxml_path]:
             if os.path.exists(f):
                 try:
