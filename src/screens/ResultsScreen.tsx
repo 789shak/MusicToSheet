@@ -220,9 +220,10 @@ function ResultsScreenInner() {
   // output_data (history replay). Original notes are never mutated in place.
   const [notes, setNotes] = useState<{ pitch: string; start: number; duration: number }[]>(initial.current.notes);
   const [musicxml, setMusicxml] = useState<string | null>(initial.current.musicxml);
-  // Rendered OSMD SVG captured from the viewer webview — used so the PDF export
-  // matches the on-screen engraving instead of the separate notes-only renderer.
-  const [osmdSvg, setOsmdSvg] = useState<string | null>(null);
+  // Print-ready OSMD page SVGs (one per A4 page) captured from the viewer
+  // webview — used so the PDF export matches the on-screen engraving instead of
+  // the separate notes-only renderer.
+  const [osmdPages, setOsmdPages] = useState<string[] | null>(null);
   const storeMeta = initial.current.storeMeta;
   const [loadError, setLoadError] = useState(initial.current.loadError);
   // History replay loads notes asynchronously — stay in a loading state until
@@ -339,9 +340,14 @@ function ResultsScreenInner() {
         setPlaybackState('idle');
         setCurrentTime(0);
       } else if (msg.type === 'osmd_svg') {
-        // The viewer finished rendering and handed us its SVG — cache it so a
-        // PDF export can reuse the exact same engraving.
-        if (typeof msg.svg === 'string' && msg.svg.length > 0) setOsmdSvg(msg.svg);
+        // The viewer finished rendering and handed us the print-ready page
+        // SVGs (one per A4 page) — cache them so the PDF reuses this exact
+        // engraving. Accept a legacy single-svg shape too, for safety.
+        if (Array.isArray(msg.pages) && msg.pages.length > 0) {
+          setOsmdPages(msg.pages);
+        } else if (typeof msg.svg === 'string' && msg.svg.length > 0) {
+          setOsmdPages([msg.svg]);
+        }
       } else if (msg.type === 'nav') {
         // Upgrade overlay buttons inside the WebView post navigation requests
         if (msg.route === '/') {
@@ -447,9 +453,9 @@ function ResultsScreenInner() {
     // the preview. Falls back to the static notes renderer when the SVG isn't
     // available (OSMD CDN miss, or older history rows with no musicxml).
     let html;
-    if (osmdSvg) {
-      html = buildSvgPdfHtml(osmdSvg, pdfMeta());
-      console.log('PDF SHARE: using OSMD SVG engraving, svg size:', osmdSvg.length, 'chars');
+    if (osmdPages && osmdPages.length > 0) {
+      html = buildSvgPdfHtml(osmdPages, pdfMeta());
+      console.log('PDF SHARE: using OSMD A4 engraving, pages:', osmdPages.length);
     } else {
       html = buildStaticPdfHtml(trimmedNotes, pdfMeta());
       console.log('PDF SHARE: using static notes renderer, notes:', trimmedNotes.length);

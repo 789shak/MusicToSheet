@@ -1380,24 +1380,106 @@ function buildOsmdScreenHtml(musicxml, opts) {
 
         setStatus('');
 
-        // Capture the rendered OSMD SVG and hand it to React Native so the PDF
-        // export reuses this exact engraving (grand staff, clean voicing, key)
-        // instead of the separate notes-only renderer. Clone + normalize so it
-        // scales cleanly onto an A4 page. For free tier this is the truncated
-        // preview render, which is fine — the PDF path only uses it for paid.
+        // ── Build print-ready A4 pages for the PDF export ────────────────────
+        // OSMD's own pageFormat did not split into separate page SVGs reliably,
+        // so we paginate ourselves: render a hidden copy at zoom 1 (one tall
+        // continuous SVG), read each music system's vertical extent from OSMD's
+        // graphic model, and crop the SVG into A4-proportioned bands that BREAK
+        // BETWEEN systems. Same width scale on every page → consistent note
+        // size, and no system is ever split across a page boundary. Falls back
+        // to a single page if the graphic model can't be read.
         try {
-          var svgForPdf = document.querySelector('#osmd svg');
-          if (svgForPdf) {
-            var svgClone = svgForPdf.cloneNode(true);
-            var sw = parseInt(svgForPdf.getAttribute('width') || '0', 10);
-            var sh = parseInt(svgForPdf.getAttribute('height') || '0', 10);
-            if (sw > 0 && sh > 0 && !svgClone.getAttribute('viewBox')) {
-              svgClone.setAttribute('viewBox', '0 0 ' + sw + ' ' + sh);
-            }
-            svgClone.setAttribute('width', '100%');
-            svgClone.removeAttribute('height');
-            postMsg({ type: 'osmd_svg', svg: svgClone.outerHTML });
-          }
+          var pdfHost = document.createElement('div');
+          pdfHost.style.position = 'absolute';
+          pdfHost.style.left = '-100000px';
+          pdfHost.style.top = '0';
+          pdfHost.style.width = '1000px';
+          document.body.appendChild(pdfHost);
+          var osmdPdf = new opensheetmusicdisplay.OpenSheetMusicDisplay(pdfHost, {
+            backend: 'svg', autoResize: false,
+            drawTitle: false, drawComposer: false, drawCredits: false,
+          });
+          osmdPdf.load(musicxml).then(function () {
+            try {
+              osmdPdf.render();
+              if (IS_FREE_TIER) {
+                var lmPdf = cutoffMeasureNumber(osmdPdf);
+                if (lmPdf !== null) {
+                  osmdPdf.setOptions({ drawUpToMeasureNumber: lmPdf });
+                  osmdPdf.render();
+                }
+              }
+
+              var svgEl = pdfHost.querySelector('svg');
+              var W = parseInt(svgEl.getAttribute('width') || '0', 10);
+              var Htot = parseInt(svgEl.getAttribute('height') || '0', 10);
+              var uip = 10.0 * (osmdPdf.zoom || 1);   // OSMD: 10px per unit * zoom
+
+              // Vertical extent (px) of each music system.
+              var systems = [];
+              try {
+                var gpages = osmdPdf.GraphicSheet.MusicPages;
+                for (var gp = 0; gp < gpages.length; gp++) {
+                  var mss = gpages[gp].MusicSystems || [];
+                  for (var i = 0; i < mss.length; i++) {
+                    var sh = mss[i].PositionAndShape;
+                    var top = sh.AbsolutePosition.y;
+                    var bot = top;
+                    if (sh.Size && typeof sh.Size.height === 'number') {
+                      bot = top + sh.Size.height;
+                    } else if (typeof sh.BorderBottom === 'number' && typeof sh.BorderTop === 'number') {
+                      top = sh.AbsolutePosition.y + sh.BorderTop;
+                      bot = sh.AbsolutePosition.y + sh.BorderBottom;
+                    }
+                    systems.push({ top: top * uip, bot: bot * uip });
+                  }
+                }
+              } catch (e) { systems = []; }
+
+              // Greedy-pack systems into A4-proportioned bands (conservative
+              // 1.28 ratio leaves room for margins + header so nothing overflows).
+              var bands = [];
+              var bandMax = W * 1.28;
+              if (systems.length > 1) {
+                var bandTop = systems[0].top;
+                var lastBot = systems[0].bot;
+                for (var j = 1; j < systems.length; j++) {
+                  if (systems[j].bot - bandTop > bandMax) {
+                    bands.push({ top: bandTop, bot: lastBot });
+                    bandTop = systems[j].top;
+                  }
+                  lastBot = systems[j].bot;
+                }
+                bands.push({ top: bandTop, bot: lastBot });
+              } else {
+                // No per-system info: split into equal A4-height bands so the
+                // output still paginates and is sized correctly.
+                var y = 0;
+                while (y < Htot) {
+                  bands.push({ top: y, bot: Math.min(Htot, y + bandMax) });
+                  y += bandMax;
+                }
+                if (!bands.length) bands.push({ top: 0, bot: Htot });
+              }
+
+              var pages = [];
+              var pad = W * 0.015;
+              for (var k = 0; k < bands.length; k++) {
+                var vbTop = Math.max(0, bands[k].top - pad);
+                var vbH = (bands[k].bot - bands[k].top) + pad * 2;
+                var c = svgEl.cloneNode(true);
+                c.setAttribute('viewBox', '0 ' + vbTop + ' ' + W + ' ' + vbH);
+                c.setAttribute('preserveAspectRatio', 'xMinYMin meet');
+                c.removeAttribute('width');
+                c.removeAttribute('height');
+                pages.push(c.outerHTML);
+              }
+              if (pages.length) postMsg({ type: 'osmd_svg', pages: pages });
+            } catch (e) {}
+            try { pdfHost.parentNode.removeChild(pdfHost); } catch (e) {}
+          }).catch(function () {
+            try { pdfHost.parentNode.removeChild(pdfHost); } catch (e) {}
+          });
         } catch (e) {}
 
         try {
@@ -1502,11 +1584,17 @@ export function buildOsmdPdfHtml(musicxml, meta) {
 }
 
 // ─── SVG → PDF (matches the on-screen OSMD engraving exactly) ─────────────────
-// Wraps a PRE-RENDERED OSMD <svg> (captured from the live viewer via the
-// 'osmd_svg' message) in a static A4 page. Because the SVG is already rendered,
-// expo-print captures it reliably on first paint — no async OSMD timing to lose.
-export function buildSvgPdfHtml(svg, meta) {
+// Wraps PRE-RENDERED, A4-paginated OSMD page SVGs (captured from the live viewer
+// via the 'osmd_svg' message — one <svg> per A4 page) into a print-ready doc.
+// Each page SVG goes on its own printed page (page-break-after), so systems are
+// never cut mid-staff and the sizing is print-correct. Because the SVGs are
+// already rendered, expo-print captures them reliably — no async OSMD timing.
+// Accepts an array of svg strings (preferred) or a single svg string (legacy).
+export function buildSvgPdfHtml(pages, meta) {
   meta = meta || {};
+  if (typeof pages === 'string') pages = [pages];
+  if (!Array.isArray(pages)) pages = [];
+
   const trackName  = htmlEsc(meta.trackName  || 'Untitled');
   const instrument = htmlEsc(meta.instrument || 'Unknown');
   const format     = htmlEsc(meta.format     || 'Score');
@@ -1517,44 +1605,54 @@ export function buildSvgPdfHtml(svg, meta) {
   const bpm       = meta.bpm || 120;
   const watermark = meta.watermark || false;
 
-  const watermarkHtml = watermark
-    ? `<div style="position:fixed;top:50%;left:50%;
-         transform:translate(-50%,-50%) rotate(-40deg);
-         font-size:24px;font-weight:700;color:rgba(220,20,60,0.18);
-         white-space:nowrap;pointer-events:none;z-index:999;">
-         Music-To-Sheet Preview — Upgrade for full version
-       </div>`
+  const wmHtml = watermark
+    ? `<div class="wm">Music-To-Sheet Preview — Upgrade for full version</div>`
     : '';
 
+  const headerHtml = `<div class="hdr">
+      <div class="hdr-title">${trackName}</div>
+      <div class="hdr-meta">${instrument} &middot; ${format} &middot; ${date} &middot; &#9833; = ${bpm}</div>
+    </div>`;
+
+  const pagesHtml = pages
+    .map((svg, i) => `<section class="page">
+      ${i === 0 ? headerHtml : ''}
+      ${wmHtml}
+      ${svg}
+    </section>`)
+    .join('');
+
+  // Each `svg` is a viewBox-cropped band that is at most ~1.28× as tall as it is
+  // wide — deliberately shorter than A4 (1.41×) so that scaling it to the page
+  // WIDTH leaves its height comfortably inside one A4 sheet. Every page uses the
+  // same width scale, so note size is identical across pages, and page-break-
+  // after puts each band on its own sheet with nothing cut.
   return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8"/>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    @page { margin: 12mm; }
-    body { background: #ffffff; font-family: sans-serif; padding: 0 8px; color: #111118; }
-    .header { padding-bottom: 10px; border-bottom: 1px solid #E5E7EB; margin-bottom: 12px; }
-    .header-title { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
-    .header-meta  { font-size: 12px; color: #6B7280; }
-    .sheet { width: 100%; }
-    .sheet svg { width: 100% !important; height: auto !important; display: block; }
-    .footer { padding-top: 10px; border-top: 1px solid #E5E7EB; font-size: 9px;
-              color: #333333; text-align: center; margin-top: 14px; }
+    @page { size: A4 portrait; margin: 8mm; }
+    html, body { margin: 0; padding: 0; background: #ffffff; }
+    /* Uniform top offset on EVERY page so the first system always starts at the
+       same vertical position. Page 1's header sits inside this space (absolute)
+       instead of pushing the music further down, so page 2's first line lines up
+       exactly with page 1's first line. */
+    .page { position: relative; width: 100%; padding-top: 13mm; page-break-after: always; }
+    .page:last-child { page-break-after: auto; }
+    .page > svg { display: block; width: 100%; height: auto; }
+    .hdr { position: absolute; top: 0; left: 0; right: 0; font-family: sans-serif; }
+    .hdr-title { font-size: 13px; font-weight: 700; color: #111118; }
+    .hdr-meta  { font-size: 9px; color: #6B7280; }
+    .wm { position: absolute; top: 46%; left: 50%;
+          transform: translate(-50%,-50%) rotate(-30deg);
+          font-size: 22px; font-weight: 700; color: rgba(220,20,60,0.15);
+          white-space: nowrap; pointer-events: none; z-index: 5; }
   </style>
 </head>
 <body>
-  ${watermarkHtml}
-  <div class="header">
-    <div class="header-title">${trackName}</div>
-    <div class="header-meta">${instrument} &middot; ${format} &middot; ${date} &middot; &#9833; = ${bpm}</div>
-  </div>
-  <div class="sheet">${svg}</div>
-  <div class="footer">
-    Generated by Music-To-Sheet &nbsp;|&nbsp; musictosheet.com &nbsp;|&nbsp;
-    <span style="color:#DC143C">For personal use only</span>
-    &nbsp;&mdash;&nbsp; not licensed for distribution
-  </div>
+  ${pagesHtml}
 </body>
 </html>`;
 }
