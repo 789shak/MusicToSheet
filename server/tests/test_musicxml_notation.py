@@ -182,14 +182,16 @@ def test_pathological_short_durations_in_5sharp_key_export_succeeds():
         "grand-staff layout lost"
     )
 
-    # ── Invariant 3: a sharps-side key signature (|fifths| >= 4).
-    # We accept any sharp/flat key with |fifths| >= 4 so the test is
-    # robust to Krumhansl picking B major (5), G# minor (5), F# major
-    # (6), etc., without being fragile to small reweightings.
+    # ── Invariant 3: conservative-key fallback.
+    # This synthetic data auto-detects as a 5+ sharp key (B major / G# minor /
+    # F# major). Post-fix, any extreme (|sharps| >= 5) auto-detected key is
+    # replaced by C major (0) because Krumhansl guesses that extreme are almost
+    # always wrong on noisy transcriptions and render as an ugly wall of sharps.
+    # So the score must now notate in C (fifths == 0) with accidentals.
     fifths_el = root.find(".//part/measure/attributes/key/fifths")
     assert fifths_el is not None, "no <key><fifths> in the score"
     fifths_val = int(fifths_el.text)
-    assert abs(fifths_val) >= 4, (
-        f"expected a heavily-sharped/flatted key (|fifths| >= 4), "
-        f"got fifths={fifths_val}"
+    assert fifths_val == 0, (
+        f"expected conservative fallback to C major (fifths=0) for an extreme "
+        f"auto-detected key, got fifths={fifths_val}"
     )

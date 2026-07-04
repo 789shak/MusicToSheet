@@ -107,3 +107,50 @@ def test_single_notes_still_work_and_no_crash_on_mixed_content():
     root = ET.fromstring(xml_str)
     staves_el = root.find(".//part/measure/attributes/staves")
     assert staves_el is not None and staves_el.text == "2", "grand staff lost"
+
+
+def test_overlapping_sustained_notes_do_not_explode_into_voices():
+    """
+    P0-1b: sustained/overlapping notes on one staff must be clipped to the next
+    onset so they collapse to a single voice — NOT stacked into many voices with
+    <backup> elements (the 'messy / half-empty measures' look). We assert the
+    <backup> count stays low relative to the number of notes.
+    """
+    import random
+    from musicxml_generation import generate_musicxml
+    random.seed(7)
+    events = []
+    t = 0.0
+    for _ in range(80):
+        pitch_val = random.choice([45, 47, 49, 52, 56, 58, 61, 64, 67])
+        dur = random.choice([0.4, 0.8, 1.2, 1.6])   # long -> heavy overlap pre-fix
+        events.append((pitch_val, t, t + dur))
+        t += random.choice([0.0, 0.15, 0.25, 0.4])
+    xml_str, _ = generate_musicxml(_midi(events), "Overlap", "Piano", 120)
+    assert xml_str, "no MusicXML produced"
+    backups = xml_str.count("<backup>")
+    # Pre-fix this synthetic input produced ~120 backups; the clip fix brings it
+    # to a small fraction. Guard generously at < 40 to avoid flakiness.
+    assert backups < 40, (
+        f"{backups} <backup> elements — overlapping notes are still exploding "
+        "into stacked voices instead of clipping to a single clean voice."
+    )
+
+
+def test_extreme_key_falls_back_to_c_major():
+    """Conservative key: a 5+ sharp auto-detected key must fall back to C (0)."""
+    from musicxml_generation import generate_musicxml
+    # Pitch palette biased to G# minor / B major (5 sharps): B D# F# G# C# E.
+    ev = [
+        (44, 0.0, 0.5), (51, 0.5, 1.0), (56, 1.0, 1.5), (59, 1.5, 2.0),
+        (66, 2.0, 2.5), (68, 2.5, 3.0), (63, 3.0, 3.5), (61, 3.5, 4.0),
+        (59, 4.0, 4.5), (56, 4.5, 5.0), (51, 5.0, 5.5), (44, 5.5, 6.0),
+    ]
+    xml_str, _ = generate_musicxml(_midi(ev), "ExtremeKey", "Piano", 120)
+    root = ET.fromstring(xml_str)
+    fifths = root.find(".//part/measure/attributes/key/fifths")
+    assert fifths is not None, "no key signature written"
+    assert int(fifths.text) == 0, (
+        f"expected conservative fallback to C major (0), got fifths={fifths.text} "
+        "— extreme key signatures should be suppressed."
+    )

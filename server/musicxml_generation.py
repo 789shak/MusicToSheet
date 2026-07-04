@@ -93,6 +93,17 @@ def generate_musicxml(
             detected_key = None
             key_sharps = 0
 
+        # Conservative key signature: Krumhansl key-detection on a NOISY
+        # transcription frequently picks an extreme signature (e.g. g# minor =
+        # 5 sharps) that is almost always wrong and renders as an intimidating
+        # "wall of sharps." When the guess needs 5+ accidentals, fall back to C
+        # major / no key signature and let individual accidentals carry the
+        # pitches — this is what most transcription tools do and it reads far
+        # cleaner. Simple 0–4 accidental keys are kept as detected.
+        if abs(key_sharps) >= 5:
+            print(f"[musicxml] key_sharps={key_sharps} is extreme for a transcription — falling back to C major (0)")
+            key_sharps = 0
+
         # 16th-note grid. MIN_QL is one grid unit — the smallest duration
         # music21+MusicXML can safely notate end-to-end without slipping
         # into 32nd/64th/…/2048th fragments after makeNotation splits
@@ -170,10 +181,19 @@ def generate_musicxml(
             for pm in staff_notes:
                 off = _snap_offset(pm.start * qps)
                 buckets[round(off, 4)].append(pm)
+            offs = sorted(buckets)
             out = []
-            for off in sorted(buckets):
+            for idx, off in enumerate(offs):
                 grp = buckets[off]
-                dur_ql = _snap(max(0.0625, max((g.end - g.start) for g in grp) * qps))
+                raw_ql = max((g.end - g.start) for g in grp) * qps
+                # P0-1b: clip each note/chord to the NEXT onset so notes on a
+                # staff never overlap. Sustained/overlapping piano notes were
+                # exploding into stacked voices (many <backup> elements) with
+                # rests filling every gap — the "messy / half-empty" look. One
+                # note per onset per staff = a single clean voice.
+                if idx + 1 < len(offs):
+                    raw_ql = min(raw_ql, offs[idx + 1] - off)
+                dur_ql = _snap(max(0.0625, raw_ql))
                 pitches = sorted({int(g.pitch) for g in grp})
                 el = (_make_note(pitches[0], dur_ql)
                       if len(pitches) == 1
