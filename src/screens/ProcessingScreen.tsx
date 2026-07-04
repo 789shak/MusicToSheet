@@ -706,7 +706,7 @@ export default function ProcessingScreen() {
       {slowWarning && (
         <View style={styles.slowWrap}>
           <Ionicons name="information-circle-outline" size={13} color="#FFFFFF" style={{ marginRight: 6 }} />
-          <Text style={styles.slowText}>Your file is being processed, this may take up to 30-60 seconds</Text>
+          <Text style={styles.slowText}>Your file is being processed, the duration for the process is based on the file size, track length and your internet speed.</Text>
         </View>
       )}
 
@@ -714,7 +714,7 @@ export default function ProcessingScreen() {
       {pianoHint && (
         <View style={styles.slowWrap}>
           <Ionicons name="musical-notes-outline" size={13} color="#FFFFFF" style={{ marginRight: 6 }} />
-          <Text style={styles.slowText}>Transcribing piano notes — this can take a few minutes for accuracy.</Text>
+          <Text style={styles.slowText}>Transcribing curating notes for your amazing track.</Text>
         </View>
       )}
 
@@ -786,9 +786,9 @@ const styles = StyleSheet.create({
   slowWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1A1305',
+    backgroundColor: 'rgba(34, 197, 94, 0.5)',   // green @ 50% opacity
     borderWidth: 1,
-    borderColor: '#F59E0B40',
+    borderColor: 'rgba(34, 197, 94, 0.6)',
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 9,
