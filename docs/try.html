@@ -11,6 +11,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<!-- OpenSheetMusicDisplay: proper engraving of the server's MusicXML, matching the app -->
+<script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.6/build/opensheetmusicdisplay.min.js"></script>
 <style>
 :root {
   --bg: #080810;
@@ -860,8 +862,10 @@ convertBtn.addEventListener('click', async () => {
     resultsSection.classList.add('visible');
     resultTitle.textContent = selectedFile.name.replace(/\.[^.]+$/, '') + ' — ' + instrument;
 
-    // Render sheet music preview
-    renderSheetPreview(notes);
+    // Render sheet music preview — prefer the OSMD engraving of the server's
+    // MusicXML (grand staff, chords, real rhythm), the same as the app. Falls
+    // back to the basic note renderer if MusicXML is missing or OSMD fails.
+    renderSheetPreviewOsmd(result.musicxml, notes);
 
   } catch (err) {
     processingSection.classList.remove('visible');
@@ -904,6 +908,70 @@ function normalizeNotes(notes) {
     console.warn('Unknown note format:', n);
     return null;
   }).filter(Boolean);
+}
+
+// ── OSMD preview renderer ────────────────────────────────────────────────────
+// Renders the server's MusicXML with OpenSheetMusicDisplay (same engine as the
+// mobile app) for a professional grand-staff engraving. Limited to the first
+// ~30 seconds and watermarked to preserve the "download the app for the full
+// sheet" funnel. Falls back to the basic note renderer on any failure.
+function renderSheetPreviewOsmd(musicxml, fallbackNotes) {
+  if (!musicxml || typeof opensheetmusicdisplay === 'undefined') {
+    renderSheetPreview(fallbackNotes);
+    return;
+  }
+  sheetPreview.innerHTML =
+    '<div id="osmdHost" style="position:relative; width:100%; background:#ffffff; border-radius:8px; padding:10px 8px;"></div>';
+  var host = document.getElementById('osmdHost');
+  try {
+    var osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay(host, {
+      backend: 'svg', drawTitle: false, drawComposer: false,
+      drawCredits: false, autoResize: true,
+    });
+    osmd.load(musicxml).then(function () {
+      osmd.render();
+      // Truncate to a ~30s preview so the web teaser doesn't give away the full sheet.
+      try {
+        var cut = cutoffMeasureNumberWeb(osmd, 30);
+        if (cut !== null) { osmd.setOptions({ drawUpToMeasureNumber: cut }); osmd.render(); }
+      } catch (e) {}
+      addPreviewWatermark(host);
+    }).catch(function () {
+      renderSheetPreview(fallbackNotes);
+    });
+  } catch (e) {
+    renderSheetPreview(fallbackNotes);
+  }
+}
+
+// Last 1-based measure whose start is < previewSeconds (ported from the app).
+function cutoffMeasureNumberWeb(osmd, previewSeconds) {
+  try {
+    var sheet = osmd.Sheet;
+    if (!sheet || !sheet.SourceMeasures || !sheet.SourceMeasures.length) return null;
+    var measures = sheet.SourceMeasures;
+    var bpm = (sheet.HasBPMInfo && sheet.DefaultStartTempoInBpm > 0)
+      ? sheet.DefaultStartTempoInBpm : 120;
+    var secPerWhole = 4 * 60 / bpm;
+    for (var i = 0; i < measures.length; i++) {
+      var ts = measures[i].AbsoluteTimestamp;
+      if (!ts || typeof ts.RealValue !== 'number') continue;
+      if (ts.RealValue * secPerWhole >= previewSeconds) return i === 0 ? 1 : i;
+    }
+    return null;  // whole (short) piece fits in the window
+  } catch (e) { return null; }
+}
+
+function addPreviewWatermark(host) {
+  var wm = document.createElement('div');
+  wm.style.cssText =
+    'position:absolute; inset:0; pointer-events:none; display:flex; ' +
+    'align-items:center; justify-content:center; overflow:hidden;';
+  wm.innerHTML =
+    '<span style="transform:rotate(-24deg); font-size:20px; font-weight:800; ' +
+    'color:rgba(14,165,233,0.16); white-space:nowrap;">' +
+    'Preview — download the app for the full sheet</span>';
+  host.appendChild(wm);
 }
 
 function renderSheetPreview(rawNotes) {
