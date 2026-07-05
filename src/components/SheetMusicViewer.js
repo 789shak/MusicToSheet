@@ -1609,14 +1609,22 @@ export function buildSvgPdfHtml(pages, meta) {
     ? `<div class="wm">Music-To-Sheet Preview — Upgrade for full version</div>`
     : '';
 
-  const headerHtml = `<div class="hdr">
-      <div class="hdr-title">${trackName}</div>
-      <div class="hdr-meta">${instrument} &middot; ${format} &middot; ${date} &middot; &#9833; = ${bpm}</div>
+  const total = pages.length;
+  // Running header on EVERY page: track name (left) + n/total (right). Page 1
+  // additionally shows the meta line. The header is absolutely positioned inside
+  // each page's top margin, so its height never shifts the music — the first
+  // system stays at the same position on every page.
+  const headerFor = (i) => `<div class="hdr">
+      <div class="hdr-row">
+        <span class="hdr-name">${trackName}</span>
+        <span class="hdr-page">${i + 1}/${total}</span>
+      </div>
+      ${i === 0 ? `<div class="hdr-meta">${instrument} &middot; ${format} &middot; ${date} &middot; &#9833; = ${bpm}</div>` : ''}
     </div>`;
 
   const pagesHtml = pages
     .map((svg, i) => `<section class="page">
-      ${i === 0 ? headerHtml : ''}
+      ${headerFor(i)}
       ${wmHtml}
       ${svg}
     </section>`)
@@ -1643,8 +1651,12 @@ export function buildSvgPdfHtml(pages, meta) {
     .page:last-child { page-break-after: auto; }
     .page > svg { display: block; width: 100%; height: auto; }
     .hdr { position: absolute; top: 0; left: 0; right: 0; font-family: sans-serif; }
-    .hdr-title { font-size: 13px; font-weight: 700; color: #111118; }
-    .hdr-meta  { font-size: 9px; color: #6B7280; }
+    .hdr-row { display: flex; justify-content: space-between; align-items: baseline; }
+    .hdr-name { font-size: 12px; font-weight: 700; color: #111118;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                max-width: 80%; }
+    .hdr-page { font-size: 10px; font-weight: 600; color: #6B7280; white-space: nowrap; }
+    .hdr-meta { font-size: 9px; color: #6B7280; margin-top: 2px; }
     .wm { position: absolute; top: 46%; left: 50%;
           transform: translate(-50%,-50%) rotate(-30deg);
           font-size: 22px; font-weight: 700; color: rgba(220,20,60,0.15);
