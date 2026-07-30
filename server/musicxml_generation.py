@@ -104,6 +104,41 @@ def generate_musicxml(
             print(f"[musicxml] key_sharps={key_sharps} is extreme for a transcription — falling back to C major (0)")
             key_sharps = 0
 
+        # Time signature detection
+        detected_ts = '4/4'  # default
+        try:
+            ts_analysis = parsed.recurse().getElementsByClass('TimeSignature')
+            if ts_analysis:
+                detected_ts = ts_analysis[0].ratioString
+                print(f"[musicxml] Detected time signature from MIDI: {detected_ts}")
+            else:
+                # Attempt meter analysis from note patterns
+                # Simple heuristic: if most note onsets cluster in groups of 3 beats, use 3/4
+                all_offsets = [n.offset for n in parsed.recurse().notes]
+                if all_offsets:
+                    # Normalize offsets to beat positions within a bar
+                    # Check if 3-beat grouping fits better than 4-beat
+                    mod3_hits = sum(1 for o in all_offsets if round(o % 3.0, 2) < 0.3)
+                    mod4_hits = sum(1 for o in all_offsets if round(o % 4.0, 2) < 0.3)
+                    ratio3 = mod3_hits / len(all_offsets) if all_offsets else 0
+                    ratio4 = mod4_hits / len(all_offsets) if all_offsets else 0
+                    if ratio3 > ratio4 * 1.3:
+                        detected_ts = '3/4'
+                    elif ratio3 > ratio4 * 1.1:
+                        # Check for 6/8 - compound meter
+                        mod6_hits = sum(1 for o in all_offsets if round(o % 6.0, 2) < 0.3)
+                        ratio6 = mod6_hits / len(all_offsets) if all_offsets else 0
+                        if ratio6 > ratio4:
+                            detected_ts = '6/8'
+                        else:
+                            detected_ts = '3/4'
+                    else:
+                        detected_ts = '4/4'
+                print(f"[musicxml] Estimated time signature from note patterns: {detected_ts}")
+        except Exception as ts_err:
+            print(f"[musicxml] Time signature detection failed: {ts_err} — defaulting to 4/4")
+            detected_ts = '4/4'
+
         # 16th-note grid. MIN_QL is one grid unit — the smallest duration
         # music21+MusicXML can safely notate end-to-end without slipping
         # into 32nd/64th/…/2048th fragments after makeNotation splits
@@ -156,14 +191,16 @@ def generate_musicxml(
         md.title = track_name
         new_score.metadata = md
 
-        def _make_note(midi_val: int, ql: float):
+        def _make_note(midi_val: int, ql: float, vel: int = 80):
             n = note.Note(pitch.Pitch(midi=int(midi_val)))
             n.duration.quarterLength = ql
+            n.volume.velocity = vel
             return n
 
-        def _make_chord(midi_vals, ql: float):
+        def _make_chord(midi_vals, ql: float, vel: int = 80):
             c = chord.Chord([pitch.Pitch(midi=int(m)) for m in sorted(set(midi_vals))])
             c.duration.quarterLength = ql
+            c.volume.velocity = vel
             return c
 
         def _grouped_elements(staff_notes):
@@ -195,9 +232,10 @@ def generate_musicxml(
                     raw_ql = min(raw_ql, offs[idx + 1] - off)
                 dur_ql = _snap(max(0.0625, raw_ql))
                 pitches = sorted({int(g.pitch) for g in grp})
-                el = (_make_note(pitches[0], dur_ql)
+                avg_vel = int(sum(g.velocity for g in grp) / len(grp))
+                el = (_make_note(pitches[0], dur_ql, avg_vel)
                       if len(pitches) == 1
-                      else _make_chord(pitches, dur_ql))
+                      else _make_chord(pitches, dur_ql, avg_vel))
                 out.append((off, el))
             return out
 
@@ -215,13 +253,13 @@ def generate_musicxml(
                 rh.insert(0, inst_class())
                 rh.insert(0, clef.TrebleClef())
                 rh.insert(0, key.KeySignature(key_sharps))
-                rh.insert(0, meter.TimeSignature('4/4'))
+                rh.insert(0, meter.TimeSignature(detected_ts))
                 rh.insert(0, tempo.MetronomeMark(number=int(round(midi_tempo))))
 
                 lh.insert(0, inst_class())
                 lh.insert(0, clef.BassClef())
                 lh.insert(0, key.KeySignature(key_sharps))
-                lh.insert(0, meter.TimeSignature('4/4'))
+                lh.insert(0, meter.TimeSignature(detected_ts))
 
                 # Split by staff first (treble >= C4, bass < C4), then group
                 # each staff's simultaneous notes into chords. A real chord that
@@ -261,7 +299,7 @@ def generate_musicxml(
             p.insert(0, inst_class())
             p.insert(0, chosen_clef)
             p.insert(0, key.KeySignature(key_sharps))
-            p.insert(0, meter.TimeSignature('4/4'))
+            p.insert(0, meter.TimeSignature(detected_ts))
             p.insert(0, tempo.MetronomeMark(number=int(round(midi_tempo))))
 
             # P0-1 chord grouping applies to single-staff instruments too.
@@ -273,6 +311,34 @@ def generate_musicxml(
                 f"[musicxml] single-staff built: "
                 f"elements={len(p.flatten().notes)}, clef={type(chosen_clef).__name__}"
             )
+
+        # Insert dynamics markings at significant velocity transitions
+        from music21 import dynamics
+        DYN_MAP = [
+            (0,   20,  'ppp'),
+            (20,  40,  'pp'),
+            (40,  55,  'p'),
+            (55,  70,  'mp'),
+            (70,  85,  'mf'),
+            (85,  100, 'f'),
+            (100, 115, 'ff'),
+            (115, 128, 'fff'),
+        ]
+        def _vel_to_dyn(v):
+            for lo, hi, label in DYN_MAP:
+                if lo <= v < hi:
+                    return label
+            return 'mf'
+
+        for part in new_score.parts:
+            prev_dyn = None
+            for el in part.recurse().notes:
+                vel = el.volume.velocity if el.volume.velocity else 80
+                current_dyn = _vel_to_dyn(vel)
+                if current_dyn != prev_dyn:
+                    dyn_mark = dynamics.Dynamic(current_dyn)
+                    part.insert(el.offset, dyn_mark)
+                    prev_dyn = current_dyn
 
         # ── Safety-net quantization ─────────────────────────────────────
         # Per-note _snap_offset / _snap above handles the common case,
