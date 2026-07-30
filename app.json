@@ -58,7 +58,14 @@
       ],
       "expo-secure-store",
       "expo-audio",
-      "expo-asset"
+      "expo-asset",
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-3727257220772079~2339245532",
+          "iosAppId": "ca-app-pub-3727257220772079~6754572659"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

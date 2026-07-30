@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { setResult, makeResultId } from '../lib/resultStore';
 import { processAudio, uploadTempFile, processAudioAsync, pollJob } from '../lib/api';
+import { loadInterstitial, showInterstitial } from '../lib/ads';
 import { useSubscription } from '../hooks/useSubscription';
 import {
   computeTrackHash,
@@ -284,6 +285,10 @@ export default function ProcessingScreen() {
   const tierRef = useRef(tier);
   useEffect(() => { tierRef.current = tier; }, [tier]);
 
+  // Preload the interstitial as soon as processing starts, so it's ready by
+  // the time the conversion finishes (free-tier users only see it here).
+  useEffect(() => { loadInterstitial(); }, []);
+
   const [currentStage, setCurrentStage] = useState(0);
   const [slowWarning, setSlowWarning] = useState(false);
   const [pianoHint, setPianoHint] = useState(false);
@@ -339,6 +344,18 @@ export default function ProcessingScreen() {
     // Polling timeout for async jobs: 15 minutes
     const ASYNC_POLL_TIMEOUT_MS = 15 * 60 * 1_000;
     const ASYNC_POLL_INTERVAL_MS = 5_000;
+
+    // Free-tier conversions see a full-screen interstitial before Results;
+    // pro/virtuosos entitlements skip it entirely. showInterstitial() never
+    // blocks — it resolves immediately if the ad isn't loaded or fails.
+    async function goToResults(params: Record<string, any>) {
+      const isPaidTier = tierRef.current === 'advancedPro' || tierRef.current === 'virtuosos';
+      if (!isPaidTier) {
+        await showInterstitial();
+      }
+      if (cancelled) return;
+      router.replace({ pathname: '/results', params });
+    }
 
     async function run() {
       // ── Inner helper: poll GET /jobs/{jobId} until done or error ────────────
@@ -492,9 +509,7 @@ export default function ProcessingScreen() {
 
         // Guest users: skip DB insert, navigate with notes in params only.
         if (!uid) {
-          if (!cancelled) {
-            router.replace({ pathname: '/results', params: resultParams });
-          }
+          await goToResults(resultParams);
           return;
         }
 
@@ -539,16 +554,13 @@ export default function ProcessingScreen() {
         if (dbError) {
           console.log('[ProcessingScreen] conversion_history insert error:', dbError);
           // Still pass notes so the screen isn't blank
-          router.replace({ pathname: '/results', params: resultParams });
+          await goToResults(resultParams);
           return;
         }
 
         console.log('[ProcessingScreen] saved record, historyId:', historyRow.id);
 
-        router.replace({
-          pathname: '/results',
-          params: { historyId: historyRow.id, ...resultParams },
-        });
+        await goToResults({ historyId: historyRow.id, ...resultParams });
       } catch (e: any) {
         if (cancelled) return;
         console.log('[ProcessingScreen] error:', e);
